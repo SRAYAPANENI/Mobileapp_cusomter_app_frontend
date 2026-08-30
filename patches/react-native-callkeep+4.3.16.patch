@@ -1,0 +1,25 @@
+diff --git a/node_modules/react-native-callkeep/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java b/node_modules/react-native-callkeep/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java
+index 025480a..61b3e41 100644
+--- a/node_modules/react-native-callkeep/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java
++++ b/node_modules/react-native-callkeep/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java
+@@ -439,7 +439,9 @@ public class RNCallKeepModule extends ReactContextBaseJavaModule implements Life
+         this.displayIncomingCall(uuid, number, callerName, false, null);
+     }
+ 
+-    @ReactMethod
++    // Not @ReactMethod: TurboModules (New Architecture) can't expose two JS
++    // methods with the same name (Java overloading isn't valid here). The
++    // 3-arg version above is the one callable from JS; this stays Java-only.
+     public void displayIncomingCall(String uuid, String number, String callerName, boolean hasVideo) {
+         this.displayIncomingCall(uuid, number, callerName, hasVideo, null);
+     }
+@@ -488,7 +490,8 @@ public class RNCallKeepModule extends ReactContextBaseJavaModule implements Life
+         this.startCall(uuid, number, callerName, false, null);
+     }
+ 
+-    @ReactMethod
++    // Not @ReactMethod — same TurboModule duplicate-name restriction as
++    // displayIncomingCall above.
+     public void startCall(String uuid, String number, String callerName, boolean hasVideo) {
+         this.startCall(uuid, number, callerName, hasVideo, null);
+     }
