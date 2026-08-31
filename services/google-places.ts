@@ -5,7 +5,10 @@ import Constants from 'expo-constants';
  * Uses the API key from app.json
  */
 
-export const GOOGLE_PLACES_API_KEY = Constants.expoConfig?.android?.config?.googleMaps?.apiKey || 'AIzaSyC9GCq5AcsfOek3gTzAJHe1105SryMJc8Q';
+export const GOOGLE_PLACES_API_KEY = Constants.expoConfig?.android?.config?.googleMaps?.apiKey ?? '';
+if (!GOOGLE_PLACES_API_KEY && __DEV__) {
+  console.warn('GOOGLE_PLACES_API_KEY is not configured — set android.config.googleMaps.apiKey in app.json/app.config.js.');
+}
 
 export interface GooglePlaceSuggestion {
   description: string;
