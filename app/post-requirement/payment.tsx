@@ -526,7 +526,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   // Header
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
   backButton: { padding: 8, marginRight: 8 },
-  headerTitle: { flex: 1, fontSize: 20, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
+  headerTitle: { flex: 1, fontSize: 20, lineHeight: 25, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
   secureTag: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -536,7 +536,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 20,
   },
-  secureTagText: { fontSize: 11, fontFamily: Fonts.poppinsSemiBold, color: '#10B981' },
+  secureTagText: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppinsSemiBold, color: '#10B981' },
 
   // Order Card
   orderCard: {
@@ -551,11 +551,11 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     elevation: 3,
   },
   orderRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
-  orderLabel: { fontSize: 14, fontFamily: Fonts.poppins, color: t.textSecondary },
-  orderValue: { fontSize: 14, fontFamily: Fonts.poppinsSemiBold, color: t.textPrimary },
+  orderLabel: { fontSize: 14, lineHeight: 18, fontFamily: Fonts.poppins, color: t.textSecondary },
+  orderValue: { fontSize: 14, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: t.textPrimary },
   divider: { height: 1, backgroundColor: t.inputFilled, marginVertical: 10 },
-  totalLabel: { fontSize: 16, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
-  totalValue: { fontSize: 20, fontFamily: Fonts.poppinsBold },
+  totalLabel: { fontSize: 16, lineHeight: 20, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
+  totalValue: { fontSize: 20, lineHeight: 25, fontFamily: Fonts.poppinsBold },
 
   // Method Tabs
   tabRow: { flexDirection: 'row', gap: 8, marginBottom: 20, flexWrap: 'wrap' },
@@ -573,7 +573,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     borderColor: t.border,
     backgroundColor: t.card,
   },
-  tabLabel: { fontSize: 11, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary },
+  tabLabel: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary },
 
   // Section
   section: {
@@ -587,7 +587,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     shadowRadius: 12,
     elevation: 2,
   },
-  sectionTitle: { fontSize: 16, fontFamily: Fonts.poppinsBold, color: t.textPrimary, marginBottom: 16 },
+  sectionTitle: { fontSize: 16, lineHeight: 20, fontFamily: Fonts.poppinsBold, color: t.textPrimary, marginBottom: 16 },
 
   // UPI
   upiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
@@ -610,12 +610,12 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     borderRadius: 10,
     overflow: 'hidden',
   },
-  upiName: { fontSize: 11, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary, textAlign: 'center' },
+  upiName: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary, textAlign: 'center' },
 
   // OR divider
   orRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   orLine: { flex: 1, height: 1, backgroundColor: t.border },
-  orText: { marginHorizontal: 12, fontSize: 12, fontFamily: Fonts.poppins, color: t.textMuted },
+  orText: { marginHorizontal: 12, fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppins, color: t.textMuted },
 
   // Input
   inputWrapper: {
@@ -632,7 +632,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   input: {
     flex: 1,
     height: '100%',
-    fontSize: 15,
+    fontSize: 15, lineHeight: 19,
     fontFamily: Fonts.poppins,
     color: t.textPrimary,
     paddingHorizontal: 8,
@@ -652,7 +652,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
   },
-  cardTypeBtnText: { fontSize: 13, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary },
+  cardTypeBtnText: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary },
   cardPreview: {
     backgroundColor: '#1E1B4B',
     borderRadius: 20,
@@ -665,15 +665,15 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     elevation: 8,
   },
   cardPreviewTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
-  cardPreviewBank: { fontSize: 12, fontFamily: Fonts.poppinsBold, color: 'rgba(255,255,255,0.7)', letterSpacing: 2 },
+  cardPreviewBank: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsBold, color: 'rgba(255,255,255,0.7)', letterSpacing: 2 },
   cardChip: { width: 32, height: 24, borderRadius: 6, backgroundColor: '#FFCE48' },
-  cardPreviewNumber: { fontSize: 18, fontFamily: Fonts.poppinsBold, color: '#fff', letterSpacing: 3, marginBottom: 24 },
+  cardPreviewNumber: { fontSize: 18, lineHeight: 22, fontFamily: Fonts.poppinsBold, color: '#fff', letterSpacing: 3, marginBottom: 24 },
   cardPreviewBottom: { flexDirection: 'row', justifyContent: 'space-between' },
-  cardPreviewMiniLabel: { fontSize: 9, fontFamily: Fonts.poppins, color: 'rgba(255,255,255,0.5)', letterSpacing: 1 },
-  cardPreviewMiniValue: { fontSize: 13, fontFamily: Fonts.poppinsBold, color: '#fff' },
+  cardPreviewMiniLabel: { fontSize: 9, lineHeight: 13, fontFamily: Fonts.poppins, color: 'rgba(255,255,255,0.5)', letterSpacing: 1 },
+  cardPreviewMiniValue: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsBold, color: '#fff' },
 
   fieldGroup: { marginBottom: 12 },
-  fieldLabel: { fontSize: 13, fontFamily: Fonts.poppinsSemiBold, color: t.textPrimary, marginBottom: 6 },
+  fieldLabel: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: t.textPrimary, marginBottom: 6 },
   rowFields: { flexDirection: 'row' },
 
   // Info Box
@@ -708,14 +708,14 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  bankInitialText: { fontSize: 16, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
-  bankName: { flex: 1, fontSize: 15, fontFamily: Fonts.poppinsSemiBold, color: t.textPrimary },
-  morebanksText: { fontSize: 13, fontFamily: Fonts.poppins, color: '#3B82F6', textAlign: 'center', marginTop: 8 },
+  bankInitialText: { fontSize: 16, lineHeight: 20, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
+  bankName: { flex: 1, fontSize: 15, lineHeight: 19, fontFamily: Fonts.poppinsSemiBold, color: t.textPrimary },
+  morebanksText: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppins, color: '#3B82F6', textAlign: 'center', marginTop: 8 },
 
   // Trust
   trustRow: { flexDirection: 'row', justifyContent: 'center', gap: 20, marginTop: 4 },
   trustBadge: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  trustLabel: { fontSize: 12, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary },
+  trustLabel: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary },
 
   // Footer
   footer: {
@@ -739,7 +739,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
-  payButtonText: { fontSize: 17, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  payButtonText: { fontSize: 17, lineHeight: 21, fontFamily: Fonts.poppinsBold, color: '#111827' },
 
   // Processing Modal
   processingOverlay: {
@@ -757,8 +757,8 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     width: '100%',
     gap: 16,
   },
-  processingTitle: { fontSize: 18, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
-  processingSubtitle: { fontSize: 13, fontFamily: Fonts.poppins, color: t.textSecondary, textAlign: 'center' },
+  processingTitle: { fontSize: 18, lineHeight: 22, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
+  processingSubtitle: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppins, color: t.textSecondary, textAlign: 'center' },
 
   // Success Modal
   successOverlay: {
@@ -788,7 +788,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     width: 64, height: 64, borderRadius: 32,
     justifyContent: 'center', alignItems: 'center',
   },
-  successTitle: { fontSize: 22, fontFamily: Fonts.poppinsBold, color: t.textPrimary, textAlign: 'center', marginBottom: 12 },
+  successTitle: { fontSize: 22, lineHeight: 28, fontFamily: Fonts.poppinsBold, color: t.textPrimary, textAlign: 'center', marginBottom: 12 },
   successMessage: {
     fontSize: 14, fontFamily: Fonts.poppins, color: t.textSecondary,
     textAlign: 'center', lineHeight: 22, marginBottom: 20,
@@ -799,7 +799,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     borderRadius: 20, marginBottom: 28, gap: 8,
   },
   statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981' },
-  statusText: { fontSize: 12, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary },
+  statusText: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary },
   successBtn: {
     width: '100%', height: 56, borderRadius: 16,
     justifyContent: 'center', alignItems: 'center',
@@ -807,11 +807,11 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     shadowColor: '#FFCE48', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
   },
-  successBtnText: { fontSize: 16, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  successBtnText: { fontSize: 16, lineHeight: 20, fontFamily: Fonts.poppinsBold, color: '#111827' },
   successBtnOutline: {
     width: '100%', height: 56, borderRadius: 16,
     justifyContent: 'center', alignItems: 'center',
     borderWidth: 1, borderColor: t.border,
   },
-  successBtnOutlineText: { fontSize: 16, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary },
+  successBtnOutlineText: { fontSize: 16, lineHeight: 20, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary },
 }); }

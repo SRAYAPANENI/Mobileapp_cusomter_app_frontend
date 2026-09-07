@@ -161,12 +161,12 @@ function makeStyles(t: typeof Colors.light) {
       marginBottom: 20,
     },
     modalTitle: {
-      fontSize: 20,
+      fontSize: 20, lineHeight: 25,
       fontFamily: Fonts.poppinsBold,
       color: t.textPrimary,
     },
     modalSubtitle: {
-      fontSize: 14,
+      fontSize: 14, lineHeight: 18,
       fontFamily: Fonts.poppins,
       color: t.textSecondary,
       marginTop: 4,
@@ -226,7 +226,7 @@ function makeStyles(t: typeof Colors.light) {
       backgroundColor: '#FFCE48',
     },
     reasonText: {
-      fontSize: 15,
+      fontSize: 15, lineHeight: 19,
       fontFamily: Fonts.poppinsSemiBold,
       color: t.textPrimary,
     },
@@ -239,7 +239,7 @@ function makeStyles(t: typeof Colors.light) {
       borderRadius: 12,
       padding: 16,
       marginTop: 12,
-      fontSize: 14,
+      fontSize: 14, lineHeight: 18,
       fontFamily: Fonts.poppins,
       color: t.textPrimary,
       minHeight: 100,
@@ -249,7 +249,7 @@ function makeStyles(t: typeof Colors.light) {
     },
     errorText: {
       color: '#EF4444',
-      fontSize: 13,
+      fontSize: 13, lineHeight: 17,
       fontFamily: Fonts.poppinsSemiBold,
       marginTop: 12,
       textAlign: 'center',
@@ -268,7 +268,7 @@ function makeStyles(t: typeof Colors.light) {
       backgroundColor: t.inputFilled,
     },
     modalCloseBtnText: {
-      fontSize: 16,
+      fontSize: 16, lineHeight: 20,
       fontFamily: Fonts.poppinsBold,
       color: t.textSecondary,
     },
@@ -285,7 +285,7 @@ function makeStyles(t: typeof Colors.light) {
       elevation: 4,
     },
     confirmCancelBtnText: {
-      fontSize: 16,
+      fontSize: 16, lineHeight: 20,
       fontFamily: Fonts.poppinsBold,
       color: '#fff',
     },

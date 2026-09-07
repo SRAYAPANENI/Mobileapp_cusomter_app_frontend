@@ -332,7 +332,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     marginBottom: 20,
   },
   title: {
-    fontSize: 28,
+    fontSize: 28, lineHeight: 35,
     fontFamily: Fonts.poppinsBold,
     textAlign: 'center',
     marginBottom: 12,
@@ -351,13 +351,13 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     marginBottom: 20,
   },
   label: {
-    fontSize: 14,
+    fontSize: 14, lineHeight: 18,
     fontFamily: Fonts.poppinsSemiBold,
     marginBottom: 10,
     opacity: 0.8,
   },
   linkText: {
-    fontSize: 12,
+    fontSize: 12, lineHeight: 16,
     fontFamily: Fonts.poppinsSemiBold,
     marginBottom: 8,
   },
@@ -376,7 +376,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   callingCodeText: {
     fontFamily: Fonts.poppinsSemiBold,
-    fontSize: 16,
+    fontSize: 16, lineHeight: 20,
   },
   otpInputContainer: {
     width: '100%',
@@ -393,7 +393,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     height: 60,
     borderRadius: 16,
     paddingHorizontal: 20,
-    fontSize: 16,
+    fontSize: 16, lineHeight: 20,
     fontFamily: Fonts.poppins,
   },
   eyeIcon: {
@@ -409,7 +409,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     borderRadius: 8,
   },
   resendRowText: {
-    fontSize: 13,
+    fontSize: 13, lineHeight: 17,
     fontFamily: Fonts.poppins,
     opacity: 0.7,
   },
@@ -431,7 +431,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   actionButtonText: {
     fontFamily: Fonts.poppinsBold,
-    fontSize: 18,
+    fontSize: 18, lineHeight: 22,
     color: '#000',
   },
 }); }

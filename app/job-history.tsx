@@ -330,7 +330,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 18, lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
@@ -359,7 +359,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     flex: 1,
   },
   jobTitle: {
-    fontSize: 17,
+    fontSize: 17, lineHeight: 21,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
@@ -370,7 +370,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     marginTop: 4,
   },
   professionalName: {
-    fontSize: 13,
+    fontSize: 13, lineHeight: 17,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
   },
@@ -383,7 +383,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     borderRadius: 12,
   },
   statusText: {
-    fontSize: 11,
+    fontSize: 11, lineHeight: 15,
     fontFamily: Fonts.poppinsBold,
   },
   infoGrid: {
@@ -397,12 +397,12 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     gap: 6,
   },
   infoText: {
-    fontSize: 13,
+    fontSize: 13, lineHeight: 17,
     fontFamily: Fonts.poppins,
     color: t.textSecondary,
   },
   infoValue: {
-    fontSize: 14,
+    fontSize: 14, lineHeight: 18,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
@@ -421,7 +421,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     paddingVertical: 11,
   },
   rateBtnText: {
-    fontSize: 14,
+    fontSize: 14, lineHeight: 18,
     fontFamily: Fonts.poppinsBold,
     color: '#111827',
   },
@@ -432,7 +432,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     marginBottom: 12,
   },
   sectionLabel: {
-    fontSize: 12,
+    fontSize: 12, lineHeight: 16,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textMuted,
     textTransform: 'uppercase',
@@ -444,7 +444,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     gap: 6,
   },
   overallNumber: {
-    fontSize: 18,
+    fontSize: 18, lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
@@ -472,13 +472,13 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     borderColor: t.borderSubtle,
   },
   metricLabel: {
-    fontSize: 10,
+    fontSize: 10, lineHeight: 14,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
     marginBottom: 4,
   },
   metricValue: {
-    fontSize: 14,
+    fontSize: 14, lineHeight: 18,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
     marginBottom: 8,

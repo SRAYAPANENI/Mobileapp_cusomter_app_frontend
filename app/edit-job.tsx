@@ -372,10 +372,10 @@ function makeStyles(t: typeof Colors.light) {
       borderBottomColor: t.border,
     },
     backButton: { width: 40, height: 40, justifyContent: 'center' },
-    headerTitle: { fontSize: 18, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
+    headerTitle: { fontSize: 18, lineHeight: 22, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
     scrollContent: { padding: 20, paddingBottom: 40 },
     label: {
-      fontSize: 13,
+      fontSize: 13, lineHeight: 17,
       fontFamily: Fonts.poppinsSemiBold,
       color: t.textSecondary,
       marginBottom: 8,
@@ -386,7 +386,7 @@ function makeStyles(t: typeof Colors.light) {
       borderRadius: 14,
       paddingHorizontal: 16,
       paddingVertical: 14,
-      fontSize: 14,
+      fontSize: 14, lineHeight: 18,
       fontFamily: Fonts.poppins,
       color: t.textPrimary,
       borderWidth: 1,
@@ -415,7 +415,7 @@ function makeStyles(t: typeof Colors.light) {
       borderColor: t.brand,
     },
     urgencyText: {
-      fontSize: 12,
+      fontSize: 12, lineHeight: 16,
       fontFamily: Fonts.poppinsSemiBold,
       color: t.textSecondary,
     },
@@ -440,7 +440,7 @@ function makeStyles(t: typeof Colors.light) {
       borderColor: t.border,
     },
     scheduleText: {
-      fontSize: 14,
+      fontSize: 14, lineHeight: 18,
       fontFamily: Fonts.poppinsSemiBold,
       color: t.textPrimary,
     },
@@ -462,7 +462,7 @@ function makeStyles(t: typeof Colors.light) {
       alignItems: 'center',
     },
     saveButtonText: {
-      fontSize: 16,
+      fontSize: 16, lineHeight: 20,
       fontFamily: Fonts.poppinsBold,
       color: '#000',
     },

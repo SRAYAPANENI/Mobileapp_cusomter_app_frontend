@@ -190,7 +190,7 @@ function makeStyles(t: typeof Colors.light) {
       marginBottom: 20,
     },
     modalTitle: {
-      fontSize: 20,
+      fontSize: 20, lineHeight: 25,
       fontFamily: Fonts.poppinsBold,
       color: t.textPrimary,
     },
@@ -205,7 +205,7 @@ function makeStyles(t: typeof Colors.light) {
       alignItems: 'center',
     },
     pickerLabel: {
-      fontSize: 12,
+      fontSize: 12, lineHeight: 16,
       fontFamily: Fonts.poppinsBold,
       color: t.textMuted,
       marginBottom: 12,
@@ -225,7 +225,7 @@ function makeStyles(t: typeof Colors.light) {
       marginBottom: 4,
     },
     pickerItemText: {
-      fontSize: 18,
+      fontSize: 18, lineHeight: 22,
       fontFamily: Fonts.poppinsSemiBold,
       color: t.textPrimary,
     },
@@ -237,12 +237,12 @@ function makeStyles(t: typeof Colors.light) {
       marginBottom: 20,
     },
     doneButtonText: {
-      fontSize: 16,
+      fontSize: 16, lineHeight: 20,
       fontFamily: Fonts.poppinsBold,
       color: '#000',
     },
     errorText: {
-      fontSize: 13,
+      fontSize: 13, lineHeight: 17,
       fontFamily: Fonts.poppinsSemiBold,
       color: '#EF4444',
       textAlign: 'center',

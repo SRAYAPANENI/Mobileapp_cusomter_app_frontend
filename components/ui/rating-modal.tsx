@@ -163,13 +163,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    fontSize: 24,
+    fontSize: 24, lineHeight: 30,
     fontFamily: Fonts.poppinsBold,
     color: '#111827',
     marginTop: 0,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 14, lineHeight: 18,
     fontFamily: Fonts.poppins,
     color: '#6B7280',
     textAlign: 'center',
@@ -181,12 +181,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   dimensionLabel: {
-    fontSize: 14,
+    fontSize: 14, lineHeight: 18,
     fontFamily: Fonts.poppinsSemiBold,
     color: '#111827',
   },
   dimensionHint: {
-    fontSize: 11,
+    fontSize: 11, lineHeight: 15,
     fontFamily: Fonts.poppins,
     color: '#9CA3AF',
     marginTop: 1,
@@ -206,14 +206,14 @@ const styles = StyleSheet.create({
     minHeight: 80,
     textAlignVertical: 'top',
     fontFamily: Fonts.poppins,
-    fontSize: 14,
+    fontSize: 14, lineHeight: 18,
     color: '#111827',
     marginTop: 8,
     marginBottom: 16,
   },
   errorText: {
     color: '#EF4444',
-    fontSize: 13,
+    fontSize: 13, lineHeight: 17,
     fontFamily: Fonts.poppinsSemiBold,
     textAlign: 'center',
     marginBottom: 12,
@@ -235,14 +235,14 @@ const styles = StyleSheet.create({
   },
   submitButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 16, lineHeight: 20,
     fontFamily: Fonts.poppinsBold,
   },
   disabledButtonText: {
     color: '#9CA3AF',
   },
   hintText: {
-    fontSize: 12,
+    fontSize: 12, lineHeight: 16,
     fontFamily: Fonts.poppins,
     color: '#F59E0B',
     marginBottom: 8,
@@ -266,7 +266,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   successTitle: {
-    fontSize: 22,
+    fontSize: 22, lineHeight: 28,
     fontFamily: Fonts.poppinsBold,
     color: '#111827',
     marginBottom: 12,

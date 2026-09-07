@@ -152,7 +152,7 @@ function makeStyles(t: typeof Colors.light) {
       marginBottom: 20,
     },
     modalTitle: {
-      fontSize: 20,
+      fontSize: 20, lineHeight: 25,
       fontFamily: Fonts.poppinsBold,
       color: t.textPrimary,
     },
@@ -164,7 +164,7 @@ function makeStyles(t: typeof Colors.light) {
       paddingHorizontal: 8,
     },
     calendarMonthText: {
-      fontSize: 18,
+      fontSize: 18, lineHeight: 22,
       fontFamily: Fonts.poppinsBold,
       color: t.textPrimary,
     },
@@ -176,7 +176,7 @@ function makeStyles(t: typeof Colors.light) {
     dayName: {
       width: (width - 80) / 7,
       textAlign: 'center',
-      fontSize: 13,
+      fontSize: 13, lineHeight: 17,
       fontFamily: Fonts.poppinsBold,
       color: t.textMuted,
     },
@@ -193,7 +193,7 @@ function makeStyles(t: typeof Colors.light) {
       marginBottom: 4,
     },
     dayText: {
-      fontSize: 15,
+      fontSize: 15, lineHeight: 19,
       fontFamily: Fonts.poppinsSemiBold,
       color: t.textPrimary,
     },

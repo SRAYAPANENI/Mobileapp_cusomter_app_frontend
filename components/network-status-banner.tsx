@@ -76,7 +76,7 @@ const styles = StyleSheet.create({
     elevation: 9999,
   },
   text: {
-    fontSize: 13,
+    fontSize: 13, lineHeight: 17,
     fontFamily: Fonts.poppinsBold,
   },
 });

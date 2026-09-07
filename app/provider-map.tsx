@@ -708,7 +708,7 @@ export default function ProviderMapScreen() {
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#E8EAF0' },
   fallback: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F9FAFB' },
-  fallbackText: { fontSize: 16, fontFamily: Fonts.poppins, color: '#6B7280' },
+  fallbackText: { fontSize: 16, lineHeight: 20, fontFamily: Fonts.poppins, color: '#6B7280' },
 
   // ── Provider pin overlay — plain views positioned by screen pixel ──
   markerBox: { position: 'absolute', width: MARKER_BOX_W, height: MARKER_BOX_H },
@@ -764,10 +764,10 @@ const s = StyleSheet.create({
   },
   headerBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   headerMid: { flex: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 16, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  headerTitle: { fontSize: 16, lineHeight: 20, fontFamily: Fonts.poppinsBold, color: '#111827' },
   headerSubRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
   headerDot: { width: 6, height: 6, borderRadius: 3 },
-  headerSub: { fontSize: 12, fontFamily: Fonts.poppins, color: '#6B7280' },
+  headerSub: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppins, color: '#6B7280' },
 
   // ── Search + quick-filter chips ──
   searchWrap: {
@@ -783,7 +783,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 9,
   },
   searchInput: {
-    flex: 1, fontSize: 14, fontFamily: Fonts.poppins, color: '#111827', padding: 0,
+    flex: 1, fontSize: 14, lineHeight: 18, fontFamily: Fonts.poppins, color: '#111827', padding: 0,
   },
   chipsScroll: { marginTop: 10 },
   chipsContent: { paddingHorizontal: 16 },
@@ -792,7 +792,7 @@ const s = StyleSheet.create({
     backgroundColor: '#F3F4F6', marginRight: 8,
   },
   chipActive: { backgroundColor: '#FFCE48' },
-  chipText: { fontSize: 12, fontFamily: Fonts.poppinsSemiBold, color: '#6B7280' },
+  chipText: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsSemiBold, color: '#6B7280' },
   chipTextActive: { color: '#111827' },
 
   // ── Locate FAB ──
@@ -820,7 +820,7 @@ const s = StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 }, elevation: 8,
   },
-  locatingText: { fontSize: 14, fontFamily: Fonts.poppinsSemiBold, color: '#111827' },
+  locatingText: { fontSize: 14, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: '#111827' },
 
   // ── Bottom Provider Shelf ──
   shelf: {
@@ -835,8 +835,8 @@ const s = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 20, marginBottom: 12,
   },
-  shelfHeadTitle: { fontSize: 15, fontFamily: Fonts.poppinsBold, color: '#111827' },
-  shelfHeadSub: { fontSize: 12, fontFamily: Fonts.poppins, color: '#6B7280' },
+  shelfHeadTitle: { fontSize: 15, lineHeight: 19, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  shelfHeadSub: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppins, color: '#6B7280' },
   shelfScroll: { paddingHorizontal: 16, paddingBottom: 4, gap: 10 },
 
   shelfCard: {
@@ -868,17 +868,17 @@ const s = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   shelfAvatarImg: { width: 42, height: 42 },
-  shelfAvatarInitial: { fontSize: 18, fontFamily: Fonts.poppinsBold, color: '#fff' },
+  shelfAvatarInitial: { fontSize: 18, lineHeight: 22, fontFamily: Fonts.poppinsBold, color: '#fff' },
 
-  shelfName: { fontSize: 12, fontFamily: Fonts.poppinsBold, color: '#111827', textAlign: 'center' },
-  shelfProf: { fontSize: 10, fontFamily: Fonts.poppins, color: '#6B7280', textAlign: 'center', marginTop: 2 },
+  shelfName: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsBold, color: '#111827', textAlign: 'center' },
+  shelfProf: { fontSize: 10, lineHeight: 14, fontFamily: Fonts.poppins, color: '#6B7280', textAlign: 'center', marginTop: 2 },
   shelfRatingRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 6 },
-  shelfRating: { fontSize: 11, fontFamily: Fonts.poppinsSemiBold, color: '#374151' },
+  shelfRating: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppinsSemiBold, color: '#374151' },
   shelfStatusPill: {
     marginTop: 6, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20,
   },
-  shelfStatusText: { fontSize: 10, fontFamily: Fonts.poppinsSemiBold },
-  shelfTime: { fontSize: 9, fontFamily: Fonts.poppins, color: '#9CA3AF', marginTop: 4 },
+  shelfStatusText: { fontSize: 10, lineHeight: 14, fontFamily: Fonts.poppinsSemiBold },
+  shelfTime: { fontSize: 9, lineHeight: 13, fontFamily: Fonts.poppins, color: '#9CA3AF', marginTop: 4 },
 
   // ── Detail Bottom Sheet ──
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.3)' },
@@ -919,15 +919,15 @@ const s = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   sheetAvatarImg: { width: 62, height: 62 },
-  sheetAvatarInitial: { fontSize: 26, fontFamily: Fonts.poppinsBold, color: '#fff' },
+  sheetAvatarInitial: { fontSize: 26, lineHeight: 32, fontFamily: Fonts.poppinsBold, color: '#fff' },
 
   sheetInfo: { flex: 1, gap: 2 },
-  sheetName: { fontSize: 20, fontFamily: Fonts.poppinsBold, color: '#111827' },
-  sheetProfession: { fontSize: 13, fontFamily: Fonts.poppins, color: '#6B7280' },
+  sheetName: { fontSize: 20, lineHeight: 25, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  sheetProfession: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppins, color: '#6B7280' },
   sheetStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
-  statusText: { fontSize: 12, fontFamily: Fonts.poppinsSemiBold },
-  seenText: { fontSize: 11, fontFamily: Fonts.poppins, color: '#9CA3AF' },
+  statusText: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsSemiBold },
+  seenText: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppins, color: '#9CA3AF' },
 
   // Stats 3-box row
   sheetStatsRow: {
@@ -936,8 +936,8 @@ const s = StyleSheet.create({
     paddingVertical: 14, marginBottom: 16,
   },
   sheetStatBox: { flex: 1, alignItems: 'center' },
-  sheetStatVal: { fontSize: 18, fontFamily: Fonts.poppinsBold, color: '#111827' },
-  sheetStatLabel: { fontSize: 11, fontFamily: Fonts.poppins, color: '#6B7280', marginTop: 2 },
+  sheetStatVal: { fontSize: 18, lineHeight: 22, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  sheetStatLabel: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppins, color: '#6B7280', marginTop: 2 },
   sheetStatDivider: { width: 1, height: 32, backgroundColor: '#E5E7EB' },
 
   skillsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
@@ -945,13 +945,13 @@ const s = StyleSheet.create({
     backgroundColor: '#EEF2FF', borderRadius: 20,
     paddingHorizontal: 12, paddingVertical: 5,
   },
-  skillText: { fontSize: 12, fontFamily: Fonts.poppinsSemiBold, color: '#4F46E5' },
+  skillText: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsSemiBold, color: '#4F46E5' },
 
   viewProfileBtn: {
     borderRadius: 18, borderWidth: 1.5, borderColor: '#E5E7EB',
     paddingVertical: 13, alignItems: 'center', marginBottom: 10,
   },
-  viewProfileBtnText: { fontSize: 14, fontFamily: Fonts.poppinsSemiBold, color: '#4B5563' },
+  viewProfileBtnText: { fontSize: 14, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: '#4B5563' },
 
   directBtn: {
     backgroundColor: '#FFCE48', borderRadius: 18,
@@ -959,7 +959,7 @@ const s = StyleSheet.create({
   },
   directBtnDisabled: { backgroundColor: '#F3F4F6' },
   directBtnActive: { backgroundColor: '#111827' },
-  directBtnText: { fontSize: 15, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  directBtnText: { fontSize: 15, lineHeight: 19, fontFamily: Fonts.poppinsBold, color: '#111827' },
   directBtnTextDim: { color: '#9CA3AF' },
   directBtnTextActive: { color: '#fff' },
 
@@ -981,13 +981,13 @@ const s = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 5,
   },
   shortlistChipArrow: { fontSize: 11, color: '#9CA3AF', marginRight: -2 },
-  shortlistChipText: { fontSize: 12, fontFamily: Fonts.poppinsSemiBold, color: '#111827', maxWidth: 70 },
-  shortlistText: { flex: 1, fontSize: 13, fontFamily: Fonts.poppinsSemiBold, color: '#111827' },
+  shortlistChipText: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsSemiBold, color: '#111827', maxWidth: 70 },
+  shortlistText: { flex: 1, fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: '#111827' },
   shortlistSendBtn: {
     backgroundColor: '#FFCE48', borderRadius: 16,
     paddingHorizontal: 18, paddingVertical: 14,
     shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 }, elevation: 6,
   },
-  shortlistSendText: { fontSize: 13, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  shortlistSendText: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsBold, color: '#111827' },
 });

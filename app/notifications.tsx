@@ -253,12 +253,12 @@ function makeStyles(t: typeof Colors.light) {
       width: 40, height: 40, borderRadius: 20,
       backgroundColor: t.inputFilled, justifyContent: 'center', alignItems: 'center',
     },
-    headerTitle: { fontSize: 20, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
+    headerTitle: { fontSize: 20, lineHeight: 25, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
     loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     listContent: { paddingHorizontal: 20, paddingBottom: 40 },
     sectionHeader: { marginTop: 24, marginBottom: 12 },
     sectionTitle: {
-      fontSize: 13, fontFamily: Fonts.poppinsBold, color: t.textMuted,
+      fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsBold, color: t.textMuted,
       textTransform: 'uppercase', letterSpacing: 1,
     },
     notificationCard: {
@@ -276,16 +276,16 @@ function makeStyles(t: typeof Colors.light) {
       alignItems: 'center', marginBottom: 4,
     },
     title: {
-      fontSize: 14, fontFamily: Fonts.poppinsSemiBold,
+      fontSize: 14, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold,
       color: t.textPrimary, flex: 1, marginRight: 8,
     },
-    time: { fontSize: 11, fontFamily: Fonts.poppins, color: t.textMuted },
+    time: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppins, color: t.textMuted },
     message: { fontSize: 13, fontFamily: Fonts.poppins, color: t.textSecondary, lineHeight: 19 },
     unreadDot: {
       width: 8, height: 8, borderRadius: 4, backgroundColor: '#FFCE48',
       position: 'absolute', top: 16, right: 16,
     },
     emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingTop: 100 },
-    emptyText: { marginTop: 16, fontSize: 15, fontFamily: Fonts.poppinsSemiBold, color: t.textMuted },
+    emptyText: { marginTop: 16, fontSize: 15, lineHeight: 19, fontFamily: Fonts.poppinsSemiBold, color: t.textMuted },
   });
 }

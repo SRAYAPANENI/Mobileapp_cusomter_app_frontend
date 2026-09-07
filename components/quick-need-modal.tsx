@@ -207,21 +207,21 @@ const s = StyleSheet.create({
   dragHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginBottom: 4 },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   iconWrap: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 17, fontFamily: Fonts.poppinsBold, color: '#111827' },
-  subtitle: { fontSize: 12, fontFamily: Fonts.poppins, color: '#6B7280', marginTop: 2 },
+  title: { fontSize: 17, lineHeight: 21, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  subtitle: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppins, color: '#6B7280', marginTop: 2 },
   closeBtn: { padding: 4 },
 
   locationRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: '#F3F4F6', borderRadius: 12, padding: 12,
   },
-  locationText: { flex: 1, fontSize: 13, fontFamily: Fonts.poppins, color: '#111827' },
+  locationText: { flex: 1, fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppins, color: '#111827' },
 
   notesWrap: { gap: 6 },
-  notesLabel: { fontSize: 12, fontFamily: Fonts.poppinsBold, color: '#6B7280' },
+  notesLabel: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsBold, color: '#6B7280' },
   notesInput: {
     borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
-    padding: 12, minHeight: 56, fontSize: 14, fontFamily: Fonts.poppins,
+    padding: 12, minHeight: 56, fontSize: 14, lineHeight: 18, fontFamily: Fonts.poppins,
     color: '#111827', textAlignVertical: 'top',
   },
 
@@ -235,12 +235,12 @@ const s = StyleSheet.create({
   },
 
   retryRow: { alignItems: 'center', paddingVertical: 2 },
-  retryText: { fontSize: 13, fontFamily: Fonts.poppinsSemiBold, color: '#EF4444' },
+  retryText: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: '#EF4444' },
 
   postButton: { backgroundColor: '#FFCE48', borderRadius: 16, paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
   postButtonDisabled: { opacity: 0.5 },
-  postButtonText: { fontSize: 15, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  postButtonText: { fontSize: 15, lineHeight: 19, fontFamily: Fonts.poppinsBold, color: '#111827' },
 
   centerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 8 },
-  centerText: { fontSize: 14, fontFamily: Fonts.poppins, color: '#6B7280' },
+  centerText: { fontSize: 14, lineHeight: 18, fontFamily: Fonts.poppins, color: '#6B7280' },
 });

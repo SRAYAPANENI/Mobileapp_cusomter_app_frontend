@@ -39,8 +39,8 @@ export function NoInternetState({ onRetry, message }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
   iconWrap: { width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  title: { fontSize: 19, fontFamily: Fonts.poppinsBold, textAlign: 'center' },
+  title: { fontSize: 19, lineHeight: 24, fontFamily: Fonts.poppinsBold, textAlign: 'center' },
   subtitle: { fontSize: 14, fontFamily: Fonts.poppins, textAlign: 'center', marginTop: 8, lineHeight: 20 },
   retryBtn: { marginTop: 24, backgroundColor: '#FFCE48', borderRadius: 14, paddingHorizontal: 28, paddingVertical: 12 },
-  retryBtnText: { fontSize: 14, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  retryBtnText: { fontSize: 14, lineHeight: 18, fontFamily: Fonts.poppinsBold, color: '#111827' },
 });

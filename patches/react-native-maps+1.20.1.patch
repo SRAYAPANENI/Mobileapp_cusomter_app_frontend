@@ -1,0 +1,26 @@
+diff --git a/node_modules/react-native-maps/react-native-maps.podspec b/node_modules/react-native-maps/react-native-maps.podspec
+index c0aee19..7fd9e9d 100644
+--- a/node_modules/react-native-maps/react-native-maps.podspec
++++ b/node_modules/react-native-maps/react-native-maps.podspec
+@@ -12,9 +12,20 @@ Pod::Spec.new do |s|
+   s.platform     = :ios, "11.0"
+ 
+   s.source       = { :git => "https://github.com/react-native-maps/react-native-maps.git", :tag=> "v#{s.version}" }
+-  s.source_files  = "ios/AirMaps/**/*.{h,m}"
++  # AirGoogleMaps is the PROVIDER_GOOGLE implementation (AIRGoogleMap*,
++  # AIRGMSMarker, etc.) — this podspec never included it, so any app using
++  # provider={PROVIDER_GOOGLE} on iOS got the "AirGoogleMaps dir must be
++  # added to your xCode project" runtime error no matter what else was
++  # configured (Podfile GoogleMaps pod, GMSServices.provideAPIKey, ...).
++  s.source_files  = "ios/AirMaps/**/*.{h,m}", "ios/AirGoogleMaps/**/*.{h,m}"
+   s.resource_bundles = {
+       'ReactNativeMapsPrivacy' => ['ios/PrivacyInfo.xcprivacy']
+   }
+   s.dependency 'React-Core'
++  s.dependency 'GoogleMaps'
++  s.dependency 'Google-Maps-iOS-Utils'
++  # Every AirGoogleMaps class body is wrapped in #ifdef HAVE_GOOGLE_MAPS —
++  # without this defined, they compile to nothing and every reference to
++  # e.g. AIRGoogleMapOverlay fails as an undeclared identifier.
++  s.pod_target_xcconfig = { 'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) HAVE_GOOGLE_MAPS=1' }
+ end

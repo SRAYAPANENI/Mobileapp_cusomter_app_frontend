@@ -101,10 +101,14 @@ export function ActiveJobStatusBanner() {
   // kept landing on top of whatever screen-specific content lived there —
   // the greeting name, then the home screen's voice-hero card and its
   // mascot — because that content isn't fixed-height across screens/states.
-  const [fabPos, setFabPos] = useState(() => ({
-    x: width - CIRCLE_SIZE - 16,
-    y: clamp(height - CIRCLE_SIZE - insets.bottom - 110, insets.top + 8, height - CIRCLE_SIZE - insets.bottom - 8),
-  }));
+  const [fabPos, setFabPos] = useState(() => {
+    const initial = {
+      x: width - CIRCLE_SIZE - 16,
+      y: clamp(height - CIRCLE_SIZE - insets.bottom - 110, insets.top + 8, height - CIRCLE_SIZE - insets.bottom - 8),
+    };
+    console.log('[DEBUG FAB] initial fabPos:', JSON.stringify(initial), 'width:', width, 'height:', height, 'insets:', JSON.stringify(insets));
+    return initial;
+  });
   // Mirrors `fabPos` for the same stale-closure reason as viewStateRef —
   // needed inside onPanResponderRelease to know which list row a tap landed
   // on (the row "buttons" aren't real Touchables — see note there).
@@ -241,6 +245,7 @@ export function ActiveJobStatusBanner() {
 
   const primary = banners[0];
   const { w: boxW, h: boxH } = boxSizeFor(viewState, banners.length);
+  console.log('[DEBUG FAB] render — viewState:', viewState, 'fabPos:', JSON.stringify(fabPos), 'boxW/H:', boxW, boxH, 'pathname:', pathname);
   // Re-clamped against the LIVE width/height on every render (unlike the
   // stale width/height captured inside the PanResponder's closures) — a
   // real safety net if fabPos was ever set for a different box size or the
@@ -345,6 +350,7 @@ const styles = StyleSheet.create({
   circle: {
     flex: 1,
     borderRadius: CIRCLE_SIZE / 2,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#2563EB',
@@ -370,7 +376,7 @@ const styles = StyleSheet.create({
   },
   pillText: {
     flex: 1,
-    fontSize: 11,
+    fontSize: 11, lineHeight: 15,
     fontFamily: Fonts.poppinsSemiBold,
     color: '#FFFFFF',
   },
@@ -394,7 +400,7 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255,255,255,0.2)',
   },
   listHeaderText: {
-    fontSize: 11,
+    fontSize: 11, lineHeight: 15,
     fontFamily: Fonts.poppinsBold,
     color: '#FFFFFF',
   },
@@ -409,7 +415,7 @@ const styles = StyleSheet.create({
   },
   listRowText: {
     flex: 1,
-    fontSize: 11,
+    fontSize: 11, lineHeight: 15,
     fontFamily: Fonts.poppinsSemiBold,
     color: '#FFFFFF',
   },
@@ -432,7 +438,7 @@ const styles = StyleSheet.create({
     elevation: 9,
   },
   badgeText: {
-    fontSize: 11,
+    fontSize: 11, lineHeight: 15,
     fontFamily: Fonts.poppinsBold,
     color: '#fff',
   },

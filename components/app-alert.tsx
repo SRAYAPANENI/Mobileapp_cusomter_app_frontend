@@ -215,7 +215,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   title: {
-    fontSize: 20,
+    fontSize: 20, lineHeight: 25,
     fontFamily: Fonts.poppinsBold,
     color: '#111827',
     textAlign: 'center',
@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
   },
   buttonText: {
-    fontSize: 15,
+    fontSize: 15, lineHeight: 19,
     fontFamily: Fonts.poppinsBold,
   },
   secondaryButtonText: {

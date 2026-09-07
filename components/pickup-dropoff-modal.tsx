@@ -333,36 +333,36 @@ const s = StyleSheet.create({
   dragHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginBottom: 4 },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   iconWrap: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#E0F2FE', alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 17, fontFamily: Fonts.poppinsBold, color: '#111827' },
-  subtitle: { fontSize: 12, fontFamily: Fonts.poppins, color: '#6B7280', marginTop: 2 },
+  title: { fontSize: 17, lineHeight: 21, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  subtitle: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppins, color: '#6B7280', marginTop: 2 },
   closeBtn: { padding: 4 },
 
   fieldWrap: { position: 'relative', gap: 6, marginBottom: 14 },
-  fieldLabel: { fontSize: 12, fontFamily: Fonts.poppinsBold, color: '#6B7280' },
+  fieldLabel: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsBold, color: '#6B7280' },
   searchInputRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
     paddingHorizontal: 12, height: 46, backgroundColor: '#F9FAFB',
   },
-  searchInput: { flex: 1, fontSize: 14, fontFamily: Fonts.poppins, color: '#111827' },
+  searchInput: { flex: 1, fontSize: 14, lineHeight: 18, fontFamily: Fonts.poppins, color: '#111827' },
   suggestionsBox: {
     borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
     marginTop: 4, backgroundColor: '#F9FAFB', overflow: 'hidden',
   },
   suggestionRow: { paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
-  suggestionMainText: { fontSize: 13, fontFamily: Fonts.poppinsSemiBold, color: '#111827' },
-  suggestionSecondaryText: { fontSize: 11, fontFamily: Fonts.poppins, color: '#6B7280', marginTop: 2 },
-  fieldError: { fontSize: 11, fontFamily: Fonts.poppinsSemiBold, color: '#EF4444', marginTop: 4 },
+  suggestionMainText: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: '#111827' },
+  suggestionSecondaryText: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppins, color: '#6B7280', marginTop: 2 },
+  fieldError: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppinsSemiBold, color: '#EF4444', marginTop: 4 },
 
   locationRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: '#F3F4F6', borderRadius: 12, padding: 12, marginBottom: 14,
   },
-  locationText: { flex: 1, fontSize: 13, fontFamily: Fonts.poppins, color: '#111827' },
+  locationText: { flex: 1, fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppins, color: '#111827' },
 
   notesInput: {
     borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
-    padding: 12, minHeight: 70, fontSize: 14, fontFamily: Fonts.poppins,
+    padding: 12, minHeight: 70, fontSize: 14, lineHeight: 18, fontFamily: Fonts.poppins,
     color: '#111827', textAlignVertical: 'top',
   },
 
@@ -380,12 +380,12 @@ const s = StyleSheet.create({
   },
 
   retryRow: { alignItems: 'center', paddingVertical: 2 },
-  retryText: { fontSize: 13, fontFamily: Fonts.poppinsSemiBold, color: '#EF4444' },
+  retryText: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: '#EF4444' },
 
   postButton: { backgroundColor: '#FFCE48', borderRadius: 16, paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
   postButtonDisabled: { opacity: 0.5 },
-  postButtonText: { fontSize: 15, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  postButtonText: { fontSize: 15, lineHeight: 19, fontFamily: Fonts.poppinsBold, color: '#111827' },
 
   centerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 8 },
-  centerText: { fontSize: 14, fontFamily: Fonts.poppins, color: '#6B7280' },
+  centerText: { fontSize: 14, lineHeight: 18, fontFamily: Fonts.poppins, color: '#6B7280' },
 });

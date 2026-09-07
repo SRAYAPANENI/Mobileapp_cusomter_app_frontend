@@ -655,12 +655,12 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     right: 20,
   },
   nameText: {
-    fontSize: 28,
+    fontSize: 28, lineHeight: 35,
     fontFamily: Fonts.poppinsBold,
     color: '#fff',
   },
   professionText: {
-    fontSize: 16,
+    fontSize: 16, lineHeight: 20,
     fontFamily: Fonts.poppinsSemiBold,
     color: '#E5E7EB',
     marginTop: -4,
@@ -672,7 +672,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     gap: 6,
   },
   ratingText: {
-    fontSize: 14,
+    fontSize: 14, lineHeight: 18,
     fontFamily: Fonts.poppinsSemiBold,
     color: '#fff',
   },
@@ -687,7 +687,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     marginLeft: 8,
   },
   verifiedText: {
-    fontSize: 10,
+    fontSize: 10, lineHeight: 14,
     fontFamily: Fonts.poppinsBold,
     color: '#34D399',
   },
@@ -713,13 +713,13 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     flex: 1,
   },
   statValue: {
-    fontSize: 16,
+    fontSize: 16, lineHeight: 20,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
     marginTop: 4,
   },
   statLabel: {
-    fontSize: 11,
+    fontSize: 11, lineHeight: 15,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
   },
@@ -747,7 +747,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     borderColor: t.textPrimary,
   },
   tabText: {
-    fontSize: 13,
+    fontSize: 13, lineHeight: 17,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
   },
@@ -758,7 +758,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     padding: 20,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 18, lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
     marginBottom: 10,
@@ -781,7 +781,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     borderRadius: 12,
   },
   skillText: {
-    fontSize: 12,
+    fontSize: 12, lineHeight: 16,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textPrimary,
   },
@@ -796,12 +796,12 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     borderColor: t.border,
   },
   priceValue: {
-    fontSize: 20,
+    fontSize: 20, lineHeight: 25,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
   priceLabel: {
-    fontSize: 12,
+    fontSize: 12, lineHeight: 16,
     fontFamily: Fonts.poppins,
     color: t.textSecondary,
   },
@@ -836,7 +836,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   mediaSkillText: {
     color: '#fff',
-    fontSize: 10,
+    fontSize: 10, lineHeight: 14,
     fontFamily: Fonts.poppinsBold,
   },
   videoOverlay: {
@@ -909,7 +909,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   viewerTagText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 14, lineHeight: 18,
     fontFamily: Fonts.poppinsBold,
   },
   reviewCard: {
@@ -927,12 +927,12 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     marginBottom: 4,
   },
   customerName: {
-    fontSize: 14,
+    fontSize: 14, lineHeight: 18,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
   reviewDate: {
-    fontSize: 11,
+    fontSize: 11, lineHeight: 15,
     fontFamily: Fonts.poppins,
     color: t.textMuted,
   },
@@ -942,7 +942,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     marginBottom: 8,
   },
   reviewComment: {
-    fontSize: 13,
+    fontSize: 13, lineHeight: 17,
     fontFamily: Fonts.poppins,
     color: t.textSecondary,
     fontStyle: 'italic',
@@ -960,7 +960,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     gap: 10,
   },
   metricLabel: {
-    fontSize: 11,
+    fontSize: 11, lineHeight: 15,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
     width: 80,
@@ -977,7 +977,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     borderRadius: 2,
   },
   metricScore: {
-    fontSize: 11,
+    fontSize: 11, lineHeight: 15,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
     width: 28,
@@ -1003,12 +1003,12 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     backgroundColor: '#10B981',
   },
   historyTitle: {
-    fontSize: 13,
+    fontSize: 13, lineHeight: 17,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textPrimary,
   },
   historyDate: {
-    fontSize: 11,
+    fontSize: 11, lineHeight: 15,
     fontFamily: Fonts.poppins,
     color: t.textMuted,
     marginTop: 2,
@@ -1020,7 +1020,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     borderRadius: 8,
   },
   historyBadgeText: {
-    fontSize: 11,
+    fontSize: 11, lineHeight: 15,
     fontFamily: Fonts.poppinsBold,
     color: '#059669',
   },
@@ -1036,7 +1036,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     borderColor: '#FEF3C7',
   },
   historyRatingText: {
-    fontSize: 11,
+    fontSize: 11, lineHeight: 15,
     fontFamily: Fonts.poppinsBold,
     color: '#D97706',
   },
@@ -1048,7 +1048,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     gap: 8,
   },
   historyComment: {
-    fontSize: 12,
+    fontSize: 12, lineHeight: 16,
     fontFamily: Fonts.poppins,
     color: t.textSecondary,
     fontStyle: 'italic',
@@ -1075,7 +1075,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     elevation: 4,
   },
   hireButtonText: {
-    fontSize: 16,
+    fontSize: 16, lineHeight: 20,
     fontFamily: Fonts.poppinsBold,
     color: '#000',
   },
@@ -1108,7 +1108,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     marginBottom: 20,
   },
   successTitle: {
-    fontSize: 22,
+    fontSize: 22, lineHeight: 28,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
     textAlign: 'center',
@@ -1131,7 +1131,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   successButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 16, lineHeight: 20,
     fontFamily: Fonts.poppinsBold,
     textAlign: 'center',
   },
