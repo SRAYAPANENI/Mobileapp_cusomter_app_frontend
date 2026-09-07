@@ -181,7 +181,7 @@ export default function DescribeProblemScreen() {
   useFocusEffect(
     useCallback(() => {
       const backAction = () => {
-        router.replace('/(tabs)/home');
+        router.canGoBack() ? router.back() : router.replace('/(tabs)/home');
         return true;
       };
       const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
@@ -199,10 +199,10 @@ export default function DescribeProblemScreen() {
 
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(tabs)/home')}>
+            <TouchableOpacity style={styles.backButton} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/home')}>
               <ArrowLeft size={24} color={themeColors.text} />
             </TouchableOpacity>
-            <Image source={require('@/assets/images/logo.png')} style={styles.logo} contentFit="contain" />
+            <Image source={require('@/assets/images/logo-mark.png')} style={styles.logo} contentFit="contain" />
           </View>
 
           {/* Title */}

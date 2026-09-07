@@ -229,7 +229,7 @@ export const SkoFyApi = {
       // should never actually fire. Kept as a safety net in case the
       // contract ever changes.
       if (data.role !== 'customer') {
-        throw { success: false, error_code: 'WRONG_APP', message: 'This number is registered as a Service Provider account. Please use the SkoFy Provider app.' } as ApiError;
+        throw { success: false, error_code: 'WRONG_APP', message: 'This number is registered as a Service Provider account. Please use the Dodorez Provider app.' } as ApiError;
       }
       await TokenStore.setTokens(data.tokens.access_token, data.tokens.refresh_token);
       const user: AuthUser = {
@@ -262,7 +262,7 @@ export const SkoFyApi = {
         skipAuth: true,
       });
       if (data.role !== 'customer') {
-        throw { success: false, error_code: 'WRONG_APP', message: 'This number is registered as a Service Provider account. Please use the SkoFy Provider app.' } as ApiError;
+        throw { success: false, error_code: 'WRONG_APP', message: 'This number is registered as a Service Provider account. Please use the Dodorez Provider app.' } as ApiError;
       }
       await TokenStore.setTokens(data.tokens.access_token, data.tokens.refresh_token);
       const user: AuthUser = {
@@ -345,6 +345,8 @@ export const SkoFyApi = {
       id_number?: string;
       id_document_url?: string;
       created_at: string;
+      avg_overall_rating: number | null;
+      review_count: number;
     }> => request('/customers/me'),
 
     updateProfile: async (data: { name?: string; email?: string; id_number?: string; id_document_url?: string; profile_image_url?: string }) =>

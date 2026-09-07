@@ -1,4 +1,5 @@
 import AnimatedBackground from '@/components/animated-background';
+import AnimatedBrandMark from '@/components/animated-brand-mark';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
@@ -6,7 +7,6 @@ import { useAppContext } from '@/context/AppContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SkoFyApi } from '@/services/api';
 import { registerFcmToken } from '@/services/callManager';
-import { Image } from 'expo-image';
 import * as Location from 'expo-location';
 import { router, useFocusEffect } from 'expo-router';
 import { AlertTriangle, ChevronDown, Eye, EyeOff, LogOut } from 'lucide-react-native';
@@ -197,11 +197,7 @@ export default function LoginScreen() {
       >
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
-            <Image
-              source={require('@/assets/images/logo.png')}
-              style={styles.logo}
-              contentFit="contain"
-            />
+            <AnimatedBrandMark offsetX={40} />
             <ThemedText type="title" style={styles.title}>Welcome Back</ThemedText>
             <ThemedText style={styles.subtitle}>Login to start posting needs</ThemedText>
           </View>
@@ -467,6 +463,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
+    justifyContent: 'center',
     paddingHorizontal: 24,
     paddingTop: 60,
     paddingBottom: 40,
@@ -475,22 +472,18 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     alignItems: 'center',
     marginBottom: 40,
   },
-  logo: {
-    width: 100,
-    height: 100,
-    marginBottom: 24,
-  },
   title: {
     fontSize: 28,
     lineHeight: 36,
     textAlign: 'center',
-    marginBottom: 8,
+    marginTop: 16,
     fontFamily: Fonts.poppinsBold,
   },
   subtitle: {
     fontSize: 16,
     textAlign: 'center',
     opacity: 0.6,
+    marginTop: 8,
   },
   form: {
     width: '100%',

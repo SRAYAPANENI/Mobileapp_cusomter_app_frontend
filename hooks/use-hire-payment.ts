@@ -62,7 +62,7 @@ export function useHirePayment() {
   const runPaymentSheet = async (clientSecret: string): Promise<PaymentResult> => {
     const { ephemeral_key_secret, stripe_customer_id } = await SkoFyApi.payments.createEphemeralKey();
     const { error: initError } = await initPaymentSheet({
-      merchantDisplayName: 'SkoFy',
+      merchantDisplayName: 'Dodorez',
       customerId: stripe_customer_id,
       customerEphemeralKeySecret: ephemeral_key_secret,
       paymentIntentClientSecret: clientSecret,

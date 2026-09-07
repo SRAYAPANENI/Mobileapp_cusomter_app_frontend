@@ -280,7 +280,7 @@ export default function MyJobsScreen() {
   useFocusEffect(useCallback(() => {
     loadJobs();
     const backAction = () => {
-      router.replace('/(tabs)/home');
+      router.canGoBack() ? router.back() : router.replace('/(tabs)/home');
       return true;
     };
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
@@ -296,12 +296,12 @@ export default function MyJobsScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(tabs)/home')}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/home')}>
           <ChevronLeft size={24} color="#000" />
         </TouchableOpacity>
         <ThemedText style={styles.headerTitle}>Your Jobs</ThemedText>
         <Image
-          source={require('@/assets/images/logo.png')}
+          source={require('@/assets/images/logo-mark.png')}
           style={styles.logo}
           contentFit="contain"
         />

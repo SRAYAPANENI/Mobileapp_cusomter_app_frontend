@@ -537,7 +537,7 @@ export function VoicePostModal({
       ADULT_REQUEST_RE.lastIndex = 0;
       const blockMsg: ChatMessage = {
         role: 'assistant',
-        content: "SkoFy is a home services platform and cannot assist with that request. This session has been ended.",
+        content: "Dodorez is a home services platform and cannot assist with that request. This session has been ended.",
       };
       setMessages(prev => [...prev, blockMsg]);
       speakText(blockMsg.content);
@@ -649,7 +649,7 @@ export function VoicePostModal({
       } else {
         // Treat an unrecognised profession the same as a coming-soon reply
         const effectiveReply = (res.is_complete && !KNOWN_PROFESSIONS.has(res.job_data?.profession ?? ''))
-          ? `We're adding ${res.job_data?.profession ?? 'that service'} to SkoFy soon! Can I help you with something else?`
+          ? `We're adding ${res.job_data?.profession ?? 'that service'} to Dodorez soon! Can I help you with something else?`
           : res.reply;
         const isComingSoon = /we'?re adding .+ to skofy soon|not yet available on skofy/i.test(effectiveReply);
         if (isComingSoon) {
@@ -843,7 +843,7 @@ export function VoicePostModal({
             <Text style={s.headerTitle}>
               {phase === 'success' ? 'Job Posted!'
                : (phase === 'confirm' || phase === 'posting') ? 'Confirm Job'
-               : 'Hey SkoFy'}
+               : 'Hey Dodorez'}
             </Text>
           </View>
           {phase !== 'posting' && phase !== 'success' && (
@@ -1226,7 +1226,7 @@ export function VoicePostModal({
                 {phase === 'idle'       && 'Tap mic to speak'}
                 {phase === 'listening'  && 'Listening… pause to send'}
                 {phase === 'processing' && 'Thinking…'}
-                {phase === 'speaking'   && 'SkoFy is speaking…'}
+                {phase === 'speaking'   && 'Dodorez is speaking…'}
               </Text>
               {phase === 'speaking' && (
                 <Text style={s.interruptHint}>Tap the orb to interrupt</Text>

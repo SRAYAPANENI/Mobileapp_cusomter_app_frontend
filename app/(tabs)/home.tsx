@@ -1,4 +1,5 @@
 import notifee from '@notifee/react-native';
+import AnimatedBrandMark from '@/components/animated-brand-mark';
 import { VoicePostModal } from '@/components/voice-post-modal';
 import { QuickNeedModal } from '@/components/quick-need-modal';
 import { PickupDropoffModal } from '@/components/pickup-dropoff-modal';
@@ -50,9 +51,7 @@ import {
   Zap,
 } from 'lucide-react-native';
 import Reanimated, {
-  FadeIn,
   FadeInUp,
-  ZoomIn,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -537,7 +536,7 @@ export default function HomeScreen() {
         id: `provider-${i}`,
         latitude: lat + r * Math.cos(angle),
         longitude: lon + r * Math.sin(angle),
-        name: `Skofy Pro ${i + 1}`,
+        name: `Dodorez Pro ${i + 1}`,
       });
     }
     return providers;
@@ -1177,13 +1176,13 @@ export default function HomeScreen() {
       <View style={styles.cultfitHeroCtaRow}>
         {/* Dark + gold instead of a competing gradient hue — the one bold
             multi-color flourish in this app is reserved for the persistent
-            "Hey SkoFy" orb in the bottom bar; every other surface stays
+            "Hey Dodorez" orb in the bottom bar; every other surface stays
             branded (charcoal + gold) so that orb keeps reading as special
             instead of one more colorful thing among many. */}
         <TouchableOpacity style={styles.cultfitPrimaryCta} onPress={handleVoiceTrigger} activeOpacity={0.88}>
           <View style={styles.cultfitCtaSolid}>
             <Mic size={17} color="#FFCE48" strokeWidth={2.5} />
-            <ThemedText style={styles.cultfitPrimaryCtaText}>Ask SkoFy</ThemedText>
+            <ThemedText style={styles.cultfitPrimaryCtaText}>Ask Dodorez</ThemedText>
           </View>
         </TouchableOpacity>
 
@@ -1233,7 +1232,7 @@ export default function HomeScreen() {
               <Mic size={24} color="#111827" strokeWidth={2.5} />
             </RNAnimated.View>
           </TouchableOpacity>
-          <ThemedText style={styles.centerNavOrbLabel}>Hey SkoFy</ThemedText>
+          <ThemedText style={styles.centerNavOrbLabel}>Hey Dodorez</ThemedText>
         </View>
 
         {/* 4. Book Tab */}
@@ -1306,10 +1305,9 @@ export default function HomeScreen() {
     return (
       <View style={styles.onboardingContainer}>
         <StatusBar barStyle="dark-content" />
-        <Reanimated.View entering={ZoomIn.duration(800)} style={styles.loaderLogoContainer}>
-          <Image source={require('@/assets/images/logo.png')} style={styles.loaderLogo} contentFit="contain" />
-        </Reanimated.View>
-        <Reanimated.Text entering={FadeIn.delay(400)} style={styles.loaderBrand}>SkoFy</Reanimated.Text>
+        <View style={styles.loaderLogoContainer}>
+          <AnimatedBrandMark size={64} nameSize={32} offsetX={20} />
+        </View>
         <View style={styles.loaderContent}>
           <ActivityIndicator size="small" color="#FFCE48" />
           <ThemedText style={styles.loaderText}>Finding your location...</ThemedText>
@@ -1352,11 +1350,10 @@ export default function HomeScreen() {
         {/* ── Redesigned Header ── */}
         <Reanimated.View entering={FadeInUp.duration(600)} style={[styles.headerSection, { paddingTop: Platform.OS === 'ios' ? insets.top + 8 : 36 }]}>
 
-          {/* Brand Row: Logo + SkoFy name */}
+          {/* Brand Row: Logo + Dodorez name */}
           <View style={styles.headerBrandRow}>
             <View style={styles.headerBrandLeft}>
-              <Image source={require('@/assets/images/logo.png')} style={styles.headerBrandLogo} contentFit="contain" />
-              <ThemedText style={styles.headerBrandName}>SkoFy</ThemedText>
+              <AnimatedBrandMark size={28} nameSize={20} centered={false} />
             </View>
             <TouchableOpacity style={styles.notificationButton} onPress={() => { setUnreadNotifCount(0); router.push('/notifications'); }}>
               <Bell size={22} color="#111827" />
@@ -1741,7 +1738,7 @@ export default function HomeScreen() {
           <Reanimated.View entering={FadeInUp} style={styles.locPermModalCard}>
             <View style={styles.locPermIconWrap}><MapPin size={32} color="#EF4444" /></View>
             <ThemedText style={styles.locPermTitle}>Location Access Needed</ThemedText>
-            <ThemedText style={styles.locPermSubtitle}>We need your location to show nearby providers and post jobs accurately. Enable location access for SkoFy in your phone's settings, then come back and try again.</ThemedText>
+            <ThemedText style={styles.locPermSubtitle}>We need your location to show nearby providers and post jobs accurately. Enable location access for Dodorez in your phone's settings, then come back and try again.</ThemedText>
             <TouchableOpacity style={styles.locPermPrimaryBtn} onPress={() => { setShowLocationModal(false); Linking.openSettings(); }}>
               <ThemedText style={styles.locPermPrimaryBtnText}>Open Settings</ThemedText>
             </TouchableOpacity>
@@ -1831,17 +1828,13 @@ function makeStyles(t: typeof Colors.light) {
   return StyleSheet.create({
   container: { flex: 1, backgroundColor: t.card },
   onboardingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: t.card },
-  loaderLogoContainer: { width: 100, height: 100, marginBottom: 16 },
-  loaderLogo: { flex: 1 },
-  loaderBrand: { fontSize: 32, fontFamily: Fonts.poppinsBold, color: '#000', marginBottom: 40 },
+  loaderLogoContainer: { marginBottom: 40 },
   loaderContent: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: t.surface, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 20 },
   loaderText: { fontSize: 14, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary },
   // ── New scrollable layout ──────────────────────────────────────────────────
   headerSection: { paddingHorizontal: 16, paddingBottom: 14, backgroundColor: t.card },
   headerBrandRow: { flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'space-between' as const, marginBottom: 10 },
-  headerBrandLeft: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6 },
-  headerBrandLogo: { width: 28, height: 28 },
-  headerBrandName: { fontSize: 20, fontFamily: Fonts.poppinsBold, color: t.textPrimary, letterSpacing: -0.3 },
+  headerBrandLeft: { flexDirection: 'row' as const, alignItems: 'center' as const },
   headerTopRow: { flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'space-between' as const, marginBottom: 10 },
   headerGreeting: { fontSize: 16, fontFamily: Fonts.poppinsSemiBold, color: t.textPrimary },
   locationPillRow: {

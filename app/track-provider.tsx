@@ -778,7 +778,7 @@ export default function TrackProviderScreen() {
       return (
         <View style={[styles.map, { backgroundColor: themeColors.inputFilled, justifyContent: 'center', alignItems: 'center' }]}>
           <Image
-            source={require('@/assets/images/logo.png')}
+            source={require('@/assets/images/logo-mark.png')}
             style={{ width: 100, height: 100, opacity: 0.2 }}
             contentFit="contain"
           />
@@ -946,7 +946,7 @@ export default function TrackProviderScreen() {
               params: { id: provider.id, providerId: provider.id, jobId: jobId ?? '', viewOnly: 'true' },
             })}
           >
-            <Image source={provider?.image ? { uri: provider.image } : require('@/assets/images/logo.png')} style={styles.avatar} />
+            <Image source={provider?.image ? { uri: provider.image } : require('@/assets/images/icon-mark.png')} style={styles.avatar} />
             <View style={styles.providerInfo}>
               <ThemedText style={styles.providerName}>{provider?.name ?? 'Provider'}</ThemedText>
               <View style={styles.ratingRow}>

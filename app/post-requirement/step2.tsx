@@ -269,7 +269,7 @@ export default function VerifyProblemScreen() {
             </TouchableOpacity>
 
             <Image
-              source={require('@/assets/images/logo.png')}
+              source={require('@/assets/images/logo-mark.png')}
               style={styles.logo}
               contentFit="contain"
             />

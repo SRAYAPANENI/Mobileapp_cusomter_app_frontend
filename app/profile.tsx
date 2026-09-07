@@ -53,7 +53,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
@@ -77,42 +76,6 @@ interface JobHistory {
   } | null;
 }
 
-
-const gaugeStyles = StyleSheet.create({
-  container: { width: 50, height: 50, justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
-  textContainer: { position: 'absolute', justifyContent: 'center', alignItems: 'center' },
-});
-
-function SkillGauge({ score }: { score: number }) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const themeColors = Colors[colorScheme];
-  const size = 50;
-  const strokeWidth = 5;
-  const center = size / 2;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const progress = (score / 100) * circumference;
-
-  return (
-    <View style={gaugeStyles.container}>
-      <Svg width={size} height={size}>
-        <Circle cx={center} cy={center} r={radius} stroke="#F3F4F6" strokeWidth={strokeWidth} fill="none" />
-        <Circle
-          cx={center} cy={center} r={radius}
-          stroke="#FFCE48" strokeWidth={strokeWidth} fill="none"
-          strokeDasharray={`${progress} ${circumference}`}
-          strokeLinecap="round"
-          transform={`rotate(-90 ${center} ${center})`}
-        />
-      </Svg>
-      <View style={gaugeStyles.textContainer}>
-        <ThemedText style={{ fontSize: 10, fontFamily: Fonts.poppinsBold, color: themeColors.textPrimary }}>
-          {score}%
-        </ThemedText>
-      </View>
-    </View>
-  );
-}
 
 export default function ProfileScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -171,7 +134,8 @@ export default function ProfileScreen() {
     idType: 'Government ID',
     idNumber: '',
     isVerified: false,
-    skillScore: 0,
+    customerRating: null as number | null,
+    reviewCount: 0,
     totalJobs: 0,
     totalSpent: 0,
   });
@@ -222,6 +186,8 @@ export default function ProfileScreen() {
           email: profile.email || '',
           profileImage: profile.profile_image_url || null,
           idNumber: profile.id_number || '',
+          customerRating: profile.avg_overall_rating,
+          reviewCount: profile.review_count,
           addresses: addressList.map(a => ({
             id: a.id,
             type: a.label || 'Address',
@@ -663,7 +629,7 @@ export default function ProfileScreen() {
   useFocusEffect(
     useCallback(() => {
       const backAction = () => {
-        router.replace('/(tabs)/home');
+        router.canGoBack() ? router.back() : router.replace('/(tabs)/home');
         return true;
       };
       const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
@@ -678,7 +644,7 @@ export default function ProfileScreen() {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(tabs)/home')}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/home')}>
             <ChevronLeft size={24} color="#000" />
           </TouchableOpacity>
           <ThemedText style={styles.headerTitle}>My Profile</ThemedText>
@@ -710,7 +676,7 @@ export default function ProfileScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(tabs)/home')}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/home')}>
           <ChevronLeft size={24} color="#000" />
         </TouchableOpacity>
         <ThemedText style={styles.headerTitle}>My Profile</ThemedText>
@@ -761,9 +727,16 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.divider} />
           <View style={styles.statItem}>
-            <SkillGauge score={userData.skillScore} />
-            <ThemedText style={styles.statLabel}>HCI Meter</ThemedText>
-            <ThemedText style={[styles.statLabel, { fontSize: 9 }]}>Human Capital Index</ThemedText>
+            <View style={styles.ratingRow}>
+              <Star size={16} color="#FFCE48" fill="#FFCE48" />
+              <ThemedText style={styles.statValue}>
+                {userData.customerRating != null ? userData.customerRating.toFixed(1) : '—'}
+              </ThemedText>
+            </View>
+            <ThemedText style={styles.statLabel}>Customer Rating</ThemedText>
+            <ThemedText style={[styles.statLabel, { fontSize: 9 }]}>
+              {userData.reviewCount > 0 ? `${userData.reviewCount} review${userData.reviewCount === 1 ? '' : 's'}` : 'No ratings yet'}
+            </ThemedText>
           </View>
           <View style={styles.divider} />
           <View style={styles.statItem}>
