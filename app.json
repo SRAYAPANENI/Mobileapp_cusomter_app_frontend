@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "skofy-customer-app",
+    "name": "Dodorez",
     "slug": "skofy-customer-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -64,12 +64,13 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/logo.png",
-          "imageWidth": 160,
+          "image": "./assets/images/splash-blank.png",
+          "imageWidth": 1,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#1E2530",
+            "image": "./assets/images/splash-blank-dark.png"
           }
         }
       ],
@@ -84,7 +85,9 @@
           "merchantIdentifier": "merchant.com.anonymous.skofycustomerapp",
           "enableGooglePay": true
         }
-      ]
+      ],
+      "./plugins/with-real-device-architecture.js",
+      "./plugins/with-jetifier.js"
     ],
     "experiments": {
       "typedRoutes": true,

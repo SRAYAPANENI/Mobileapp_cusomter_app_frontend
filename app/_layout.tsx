@@ -5,6 +5,7 @@ import { Stack, router, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef } from 'react';
+import { View } from 'react-native';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import 'react-native-reanimated';
 
@@ -45,11 +46,22 @@ export default function RootLayout() {
   const pathnameRef = useRef(pathname);
   useEffect(() => { pathnameRef.current = pathname; }, [pathname]);
 
+  // Hiding this on fontsLoaded alone fires before the actual splash route
+  // (app/index.tsx) has laid out and painted a frame — same latent gap fixed
+  // on the provider app's splash (loading late / white flash / feels like it
+  // skips straight past the animation). Hiding on the rendered tree's own
+  // onLayout below waits for real content instead; this effect stays only as
+  // a safety net for a font *load error*, where there may be nothing else to
+  // layout-trigger the hide.
   useEffect(() => {
-    if (loaded || error) {
+    if (error) {
       SplashScreen.hideAsync();
     }
-  }, [loaded, error]);
+  }, [error]);
+
+  const handleRootLayout = () => {
+    SplashScreen.hideAsync();
+  };
 
   useEffect(() => {
     initCallManager();
@@ -74,31 +86,33 @@ export default function RootLayout() {
   }
 
   return (
-    <KeyboardProvider>
-      <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY}>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <AppProvider>
-            <PostRequirementProvider>
-              <Stack screenOptions={{ headerShown: false }}>
-                <Stack.Screen name="index" />
-                <Stack.Screen name="login" options={{ animation: 'fade' }} />
-                <Stack.Screen name="register" options={{ animation: 'slide_from_right' }} />
-                <Stack.Screen name="forgot-password" options={{ animation: 'slide_from_right' }} />
-                <Stack.Screen name="(tabs)" options={{ animation: 'slide_from_right' }} />
-                <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-              </Stack>
-              <NetworkStatusBanner />
-              <ActiveJobStatusBanner />
-              {/* "auto" follows the device's actual system theme, not our
-                  locked-light useColorScheme — on a dark-mode device that would
-                  pick light (white) icons over this app's light backgrounds and
-                  make them invisible. Pinned to dark icons to match. */}
-              <StatusBar style="dark" />
-            </PostRequirementProvider>
-          </AppProvider>
-        </ThemeProvider>
-      </StripeProvider>
-    </KeyboardProvider>
+    <View style={{ flex: 1 }} onLayout={handleRootLayout}>
+      <KeyboardProvider>
+        <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY}>
+          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+            <AppProvider>
+              <PostRequirementProvider>
+                <Stack screenOptions={{ headerShown: false }}>
+                  <Stack.Screen name="index" />
+                  <Stack.Screen name="login" options={{ animation: 'fade' }} />
+                  <Stack.Screen name="register" options={{ animation: 'slide_from_right' }} />
+                  <Stack.Screen name="forgot-password" options={{ animation: 'slide_from_right' }} />
+                  <Stack.Screen name="(tabs)" options={{ animation: 'slide_from_right' }} />
+                  <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+                </Stack>
+                <NetworkStatusBanner />
+                <ActiveJobStatusBanner />
+                {/* "auto" follows the device's actual system theme, not our
+                    locked-light useColorScheme — on a dark-mode device that would
+                    pick light (white) icons over this app's light backgrounds and
+                    make them invisible. Pinned to dark icons to match. */}
+                <StatusBar style="dark" />
+              </PostRequirementProvider>
+            </AppProvider>
+          </ThemeProvider>
+        </StripeProvider>
+      </KeyboardProvider>
+    </View>
   );
 }
 

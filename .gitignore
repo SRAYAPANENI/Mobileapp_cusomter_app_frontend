@@ -37,6 +37,12 @@ build_log.txt
 .env.*
 !.env.example
 
+# Firebase config — contains API keys, downloaded per-developer/CI from
+# the Firebase console, never committed (a leaked key here is exactly
+# what GitHub/Google's secret scanners flag).
+google-services.json
+GoogleService-Info.plist
+
 # typescript
 *.tsbuildinfo
 

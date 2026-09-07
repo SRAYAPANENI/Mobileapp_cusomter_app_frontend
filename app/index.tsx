@@ -1,7 +1,7 @@
 import AnimatedBackground from '@/components/animated-background';
+import AnimatedBrandMark from '@/components/animated-brand-mark';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
@@ -45,11 +45,7 @@ export default function SplashScreen() {
     <View style={styles.container}>
       <AnimatedBackground />
       <Animated.View style={[styles.content, { opacity }]}>
-        <Image
-          source={require('@/assets/images/logo.png')}
-          style={styles.logo}
-          contentFit="contain"
-        />
+        <AnimatedBrandMark size={48} nameSize={30} />
         <Text style={styles.tagline}>Work. Earn. Grow.</Text>
       </Animated.View>
     </View>
@@ -67,17 +63,13 @@ function makeStyles(t: typeof Colors.light) {
     content: {
       alignItems: 'center',
     },
-    logo: {
-      width: 240,
-      height: 80,
-    },
     tagline: {
       fontSize: 16,
       color: '#8e8e93',
       letterSpacing: 2,
       fontWeight: '500',
       textAlign: 'center',
-      marginTop: 8,
+      marginTop: 20,
     },
   });
 }

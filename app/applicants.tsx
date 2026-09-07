@@ -397,7 +397,7 @@ export default function ApplicantsScreen() {
 
         <View style={styles.headerCenter}>
           <Image
-            source={require('@/assets/images/logo.png')}
+            source={require('@/assets/images/logo-mark.png')}
             style={styles.logo}
             contentFit="contain"
           />

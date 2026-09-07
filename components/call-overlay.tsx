@@ -149,7 +149,7 @@ export function CallOverlay({
             </>
           )}
           <Image
-            source={profileImage ? { uri: profileImage } : require('@/assets/images/logo.png')}
+            source={profileImage ? { uri: profileImage } : require('@/assets/images/icon-mark.png')}
             style={styles.avatar}
           />
         </View>

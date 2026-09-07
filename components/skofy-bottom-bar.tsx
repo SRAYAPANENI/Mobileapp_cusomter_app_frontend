@@ -160,7 +160,7 @@ export function SkoFyBottomBar({ activeTab, onBookPress }: SkoFyBottomBarProps) 
               activeOpacity={0.85}
             >
               <Sparkles size={13} color="#FFCE48" />
-              <Text style={styles.nudgeBannerText}>Need a service? Ask Hey SkoFy</Text>
+              <Text style={styles.nudgeBannerText}>Need a service? Ask Hey Dodorez</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setShowVoiceNudge(false)}
@@ -190,7 +190,7 @@ export function SkoFyBottomBar({ activeTab, onBookPress }: SkoFyBottomBarProps) 
               </View>
             </RNAnimated.View>
           </TouchableOpacity>
-          <ThemedText style={styles.centerOrbLabel} numberOfLines={1}>Hey SkoFy</ThemedText>
+          <ThemedText style={styles.centerOrbLabel} numberOfLines={1}>Hey Dodorez</ThemedText>
         </View>
 
         {/* Navigation pill */}
@@ -377,7 +377,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   centerSpacer: {
-    width: 78, // Dedicated space for the center orb + its "Hey SkoFy" label so tabs never collide
+    width: 78, // Dedicated space for the center orb + its "Hey Dodorez" label so tabs never collide
   },
   activeTabPill: {
     flexDirection: 'row',

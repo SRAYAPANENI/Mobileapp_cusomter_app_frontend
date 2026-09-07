@@ -337,7 +337,7 @@ export default function ChatScreen() {
       // if the mic permission was denied (especially permanently, after
       // repeated testing), the only path forward is Settings, so give a
       // direct way there instead of leaving the user to find it themselves.
-      appAlert.show('error', 'Call Failed', "Could not access the microphone. Enable microphone access for SkoFy in your phone's settings and try again.", [
+      appAlert.show('error', 'Call Failed', "Could not access the microphone. Enable microphone access for Dodorez in your phone's settings and try again.", [
         { text: 'Cancel', variant: 'secondary' },
         { text: 'Open Settings', onPress: () => Linking.openSettings() },
       ]);
@@ -381,7 +381,7 @@ export default function ChatScreen() {
       registerSpeakerHandler(() => toggleSpeakerRef.current());
     } catch (err) {
       console.error('Failed to answer call:', err);
-      appAlert.show('error', 'Call Failed', "Could not answer the call. Enable microphone access for SkoFy in your phone's settings and try again.", [
+      appAlert.show('error', 'Call Failed', "Could not answer the call. Enable microphone access for Dodorez in your phone's settings and try again.", [
         { text: 'Cancel', variant: 'secondary' },
         { text: 'Open Settings', onPress: () => Linking.openSettings() },
       ]);
