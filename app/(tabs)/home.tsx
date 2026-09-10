@@ -2003,6 +2003,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   locationBadgeLabel: {
     fontSize: 9,
+    lineHeight: 15,
     fontFamily: Fonts.poppinsBold,
     color: '#F59E0B',
     letterSpacing: 0.8,
@@ -2136,12 +2137,14 @@ function makeStyles(t: typeof Colors.light) {
   },
   cultfitHeroTitle: {
     fontSize: 17,
+    lineHeight: 23,
     fontFamily: Fonts.poppinsBold,
     color: '#111827',
     flexShrink: 1,
   },
   cultfitHeroSub: {
     fontSize: 12.5,
+    lineHeight: 18.5,
     fontFamily: Fonts.poppins,
     color: '#6B7280',
   },
@@ -2166,6 +2169,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   cultfitPrimaryCtaText: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsBold,
     color: '#FFFFFF',
   },
@@ -2183,6 +2187,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   cultfitSecondaryCtaText: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsSemiBold,
     color: '#374151',
   },
@@ -2219,6 +2224,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   quickGridLabel: {
     fontSize: 11,
+    lineHeight: 17,
     fontFamily: Fonts.poppinsSemiBold,
     color: '#374151',
     textAlign: 'center',
@@ -2268,11 +2274,13 @@ function makeStyles(t: typeof Colors.light) {
   },
   navTabLabel: {
     fontSize: 10,
+    lineHeight: 16,
     fontFamily: Fonts.poppinsSemiBold,
     color: '#6B7280',
   },
   navTabLabelActive: {
     fontSize: 11,
+    lineHeight: 17,
     fontFamily: Fonts.poppinsBold,
     color: '#111827',
   },
@@ -2298,6 +2306,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   navBadgeText: {
     fontSize: 9,
+    lineHeight: 15,
     fontFamily: Fonts.poppinsBold,
     color: '#FFFFFF',
   },
@@ -2324,6 +2333,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   centerNavOrbLabel: {
     fontSize: 10,
+    lineHeight: 16,
     fontFamily: Fonts.poppinsBold,
     color: '#111827',
     marginTop: 3,
@@ -2347,6 +2357,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   navAvatarInitialsText: {
     fontSize: 11,
+    lineHeight: 17,
     fontFamily: Fonts.poppinsBold,
     color: '#D97706',
   },
@@ -2485,6 +2496,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   sheetTitle: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: '#1E293B',
   },
@@ -2521,6 +2533,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   sheetGpsTag: {
     fontSize: 9.5,
+    lineHeight: 15.5,
     fontFamily: Fonts.poppinsBold,
     color: '#15803D',
     letterSpacing: 0.5,
@@ -2562,6 +2575,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   redetectPrimaryBtnText: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsBold,
     color: '#111827',
   },
@@ -2574,6 +2588,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   sheetCloseBtnText: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppinsSemiBold,
     color: '#64748B',
   },
@@ -2582,11 +2597,13 @@ function makeStyles(t: typeof Colors.light) {
   },
   locationModalTitle: {
     fontSize: 20,
+    lineHeight: 26,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
   locationModalSubtitle: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppins,
     color: t.textSecondary,
     marginTop: 4,
@@ -2612,11 +2629,13 @@ function makeStyles(t: typeof Colors.light) {
   },
   locationLabel: {
     fontSize: 15,
+    lineHeight: 21,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
   locationText: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppins,
     color: t.textSecondary,
     marginTop: 2,
@@ -2634,12 +2653,14 @@ function makeStyles(t: typeof Colors.light) {
   },
   dividerText: {
     fontSize: 10,
+    lineHeight: 16,
     fontFamily: Fonts.poppinsBold,
     color: t.textMuted,
     letterSpacing: 1,
   },
   noAddressText: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppins,
     color: t.textMuted,
     textAlign: 'center',
@@ -2654,6 +2675,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   closeLocationBtnText: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: t.textSecondary,
   },
@@ -2684,6 +2706,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   exitTitle: {
     fontSize: 22,
+    lineHeight: 28,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
     marginBottom: 8,
@@ -2715,6 +2738,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   exitCancelText: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: t.textSecondary,
   },
@@ -2723,6 +2747,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   exitConfirmText: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: '#fff',
   },
@@ -2755,6 +2780,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   locPermTitle: {
     fontSize: 20,
+    lineHeight: 26,
     fontFamily: Fonts.poppinsBold,
     color: '#111827',
     marginTop: 16,
@@ -2779,6 +2805,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   locPermPrimaryBtnText: {
     fontSize: 15,
+    lineHeight: 21,
     fontFamily: Fonts.poppinsBold,
     color: '#111827',
   },
@@ -2788,6 +2815,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   locPermSecondaryBtnText: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsSemiBold,
     color: '#9CA3AF',
   },

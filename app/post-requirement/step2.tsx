@@ -558,12 +558,14 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   title: {
     fontSize: 24,
+    lineHeight: 30,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppins,
     color: t.textSecondary,
     textAlign: 'center',
@@ -580,6 +582,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   problemLabel: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
     marginBottom: 8,
@@ -601,11 +604,13 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
   scheduleSubtitle: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppins,
     color: t.textSecondary,
     marginTop: 2,
@@ -613,6 +618,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   editLink: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppinsBold,
     color: '#FFCE48',
   },
@@ -631,6 +637,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   chipText: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppinsBold,
     color: '#fff',
   },
@@ -653,6 +660,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   skillChipText: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
   },
@@ -674,6 +682,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   jobTypeText: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
   },
@@ -694,6 +703,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   scheduleText: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textPrimary,
   },
@@ -715,6 +725,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   summaryButtonText: {
     fontSize: 18,
+    lineHeight: 24,
     fontFamily: Fonts.poppinsBold,
     color: '#000',
   },
@@ -739,11 +750,13 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   modalTitle: {
     fontSize: 20,
+    lineHeight: 26,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
   modalSubtitle: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppins,
     color: t.textSecondary,
     marginBottom: 20,
@@ -758,6 +771,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   calendarMonthText: {
     fontSize: 18,
+    lineHeight: 24,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
@@ -770,6 +784,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     width: (width - 80) / 7,
     textAlign: 'center',
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppinsBold,
     color: t.textMuted,
   },
@@ -787,6 +802,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   dayText: {
     fontSize: 15,
+    lineHeight: 21,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textPrimary,
   },
@@ -803,6 +819,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   pickerLabel: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppinsBold,
     color: t.textMuted,
     marginBottom: 12,
@@ -823,6 +840,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   pickerItemText: {
     fontSize: 18,
+    lineHeight: 24,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textPrimary,
   },
@@ -839,6 +857,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 15,
+    lineHeight: 21,
     fontFamily: Fonts.poppins,
     color: t.textPrimary,
   },
@@ -852,6 +871,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   listItemText: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textPrimary,
   },
@@ -870,6 +890,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   modalSkillChipText: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
   },
@@ -882,6 +903,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   doneButtonText: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: '#000',
   }

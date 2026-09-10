@@ -914,11 +914,13 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   userName: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
   userStatus: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppins,
     color: '#10B981',
   },
@@ -950,11 +952,13 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   callLogText: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppins,
     color: '#6B7280',
   },
   callLogTime: {
     fontSize: 11,
+    lineHeight: 17,
     fontFamily: Fonts.poppins,
     color: '#9CA3AF',
   },
@@ -1002,6 +1006,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   timestampText: {
     fontSize: 10,
+    lineHeight: 16,
     fontFamily: Fonts.poppins,
   },
   userTimestamp: {

@@ -593,12 +593,12 @@ export default function ProfileScreen() {
       {item.receivedRating && (
         <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#F3F4F6' }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <ThemedText style={{ fontSize: 11, fontFamily: Fonts.poppinsSemiBold, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            <ThemedText style={{ fontSize: 11, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 }}>
               Rating from Provider
             </ThemedText>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <Star size={13} color="#FFCE48" fill="#FFCE48" />
-              <ThemedText style={{ fontSize: 13, fontFamily: Fonts.poppinsBold, color: '#111827' }}>
+              <ThemedText style={{ fontSize: 13, lineHeight: 19, fontFamily: Fonts.poppinsBold, color: '#111827' }}>
                 {item.receivedRating.overall.toFixed(1)}
               </ThemedText>
             </View>
@@ -798,7 +798,7 @@ export default function ProfileScreen() {
               <ThemedText style={styles.infoValue}>{userData.phone || '—'}</ThemedText>
             </View>
             <View style={{ backgroundColor: '#ECFDF5', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, alignSelf: 'center' }}>
-              <ThemedText style={{ fontSize: 11, color: '#10B981', fontFamily: Fonts.poppinsBold }}>Verified</ThemedText>
+              <ThemedText style={{ fontSize: 11, lineHeight: 17, color: '#10B981', fontFamily: Fonts.poppinsBold }}>Verified</ThemedText>
             </View>
           </View>
 
@@ -821,7 +821,7 @@ export default function ProfileScreen() {
             </View>
             {!isEditing && userData.email && (
               <TouchableOpacity onPress={() => setIsEmailModalOpen(true)}>
-                <ThemedText style={{ fontSize: 12, color: '#FFCE48', fontFamily: Fonts.poppinsBold }}>Change</ThemedText>
+                <ThemedText style={{ fontSize: 12, lineHeight: 18, color: '#FFCE48', fontFamily: Fonts.poppinsBold }}>Change</ThemedText>
               </TouchableOpacity>
             )}
           </View>
@@ -936,7 +936,7 @@ export default function ProfileScreen() {
 
           {userData.addresses.length === 0 && !isEditing && (
             <View style={{ paddingVertical: 20, alignItems: 'center' }}>
-              <ThemedText style={{ color: '#9CA3AF', fontFamily: Fonts.poppins, fontSize: 14 }}>No addresses saved yet</ThemedText>
+              <ThemedText style={{ color: '#9CA3AF', fontFamily: Fonts.poppins, fontSize: 14, lineHeight: 20 }}>No addresses saved yet</ThemedText>
             </View>
           )}
 
@@ -981,7 +981,7 @@ export default function ProfileScreen() {
           {/* ID Document Photos — up to 3 (Front / Back / Additional) */}
           <View style={{ marginTop: 20, borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 16 }}>
             <ThemedText style={[styles.infoLabel, { marginBottom: 4 }]}>ID Document Photos</ThemedText>
-            <ThemedText style={{ fontSize: 11, fontFamily: Fonts.poppins, color: '#9CA3AF', marginBottom: 14 }}>
+            <ThemedText style={{ fontSize: 11, lineHeight: 17, fontFamily: Fonts.poppins, color: '#9CA3AF', marginBottom: 14 }}>
               Upload front, back, and any additional page (up to 3)
             </ThemedText>
             <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -1018,15 +1018,15 @@ export default function ProfileScreen() {
                         onLongPress={() => handlePickDocSlot(idx, true)}
                       >
                         <Camera size={18} color="#9CA3AF" />
-                        <ThemedText style={{ fontSize: 10, fontFamily: Fonts.poppins, color: '#9CA3AF' }}>Tap / Hold</ThemedText>
+                        <ThemedText style={{ fontSize: 10, lineHeight: 16, fontFamily: Fonts.poppins, color: '#9CA3AF' }}>Tap / Hold</ThemedText>
                       </TouchableOpacity>
                     )}
-                    <ThemedText style={{ fontSize: 11, fontFamily: Fonts.poppinsSemiBold, color: '#6B7280' }}>{label}</ThemedText>
+                    <ThemedText style={{ fontSize: 11, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: '#6B7280' }}>{label}</ThemedText>
                   </View>
                 );
               })}
             </View>
-            <ThemedText style={{ fontSize: 10, fontFamily: Fonts.poppins, color: '#C4C9D4', marginTop: 8, textAlign: 'center' }}>
+            <ThemedText style={{ fontSize: 10, lineHeight: 16, fontFamily: Fonts.poppins, color: '#C4C9D4', marginTop: 8, textAlign: 'center' }}>
               Tap to pick from gallery · Long-press to take photo
             </ThemedText>
           </View>
@@ -1168,15 +1168,15 @@ export default function ProfileScreen() {
             <View style={{ width: 24 }} />
           </View>
           <ScrollView contentContainerStyle={{ padding: 20 }}>
-            <ThemedText style={{ fontSize: 18, fontFamily: Fonts.poppinsBold, marginBottom: 12 }}>1. Agreement</ThemedText>
+            <ThemedText style={{ fontSize: 18, lineHeight: 24, fontFamily: Fonts.poppinsBold, marginBottom: 12 }}>1. Agreement</ThemedText>
             <ThemedText style={{ color: '#4B5563', lineHeight: 24, marginBottom: 20 }}>
               By using SkoFy, you agree to connect with various service providers. We act as a platform for discovery...
             </ThemedText>
-            <ThemedText style={{ fontSize: 18, fontFamily: Fonts.poppinsBold, marginBottom: 12 }}>2. Privacy</ThemedText>
+            <ThemedText style={{ fontSize: 18, lineHeight: 24, fontFamily: Fonts.poppinsBold, marginBottom: 12 }}>2. Privacy</ThemedText>
             <ThemedText style={{ color: '#4B5563', lineHeight: 24, marginBottom: 20 }}>
               Your data is protected under our strict security policies. We never share your personal information with third parties without consent...
             </ThemedText>
-            <ThemedText style={{ fontSize: 18, fontFamily: Fonts.poppinsBold, marginBottom: 12 }}>3. Payments</ThemedText>
+            <ThemedText style={{ fontSize: 18, lineHeight: 24, fontFamily: Fonts.poppinsBold, marginBottom: 12 }}>3. Payments</ThemedText>
             <ThemedText style={{ color: '#4B5563', lineHeight: 24, marginBottom: 20 }}>
               Inspection fees are paid directly to providers unless booked via the app wallet...
             </ThemedText>
@@ -1384,7 +1384,7 @@ export default function ProfileScreen() {
         >
           <View style={[styles.modalContent, { borderRadius: 24 }, modalBottomPad]}>
             <ThemedText style={[styles.modalTitle, { marginBottom: 8 }]}>Update Email Address</ThemedText>
-            <ThemedText style={{ color: '#6B7280', fontFamily: Fonts.poppins, fontSize: 13, marginBottom: 20 }}>
+            <ThemedText style={{ color: '#6B7280', fontFamily: Fonts.poppins, fontSize: 13, lineHeight: 19, marginBottom: 20 }}>
               We'll use this to secure your account and send receipts.
             </ThemedText>
             <TextInput
@@ -1491,6 +1491,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   headerTitle: {
     fontSize: 20,
+    lineHeight: 26,
     fontFamily: Fonts.poppinsBold,
     color: '#000',
   },
@@ -1540,6 +1541,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   userName: {
     fontSize: 22,
+    lineHeight: 28,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
@@ -1551,6 +1553,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   userPhone: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
   },
@@ -1565,6 +1568,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   verifiedText: {
     fontSize: 10,
+    lineHeight: 16,
     fontFamily: Fonts.poppinsBold,
     color: '#10B981',
   },
@@ -1593,11 +1597,13 @@ function makeStyles(t: typeof Colors.light) {
   },
   statValue: {
     fontSize: 18,
+    lineHeight: 24,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
   statLabel: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppins,
     color: t.textMuted,
     marginTop: 2,
@@ -1617,16 +1623,19 @@ function makeStyles(t: typeof Colors.light) {
   },
   sectionTitle: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
   editLink: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppinsBold,
     color: '#FFCE48',
   },
   viewAllLink: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppinsSemiBold,
     color: '#6B7280',
   },
@@ -1654,11 +1663,13 @@ function makeStyles(t: typeof Colors.light) {
   },
   actionTitle: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsBold,
     color: '#92400E',
   },
   actionSubtitle: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppins,
     color: '#B45309',
   },
@@ -1678,11 +1689,13 @@ function makeStyles(t: typeof Colors.light) {
   },
   infoLabel: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppins,
     color: t.textMuted,
   },
   infoValue: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
     marginTop: 2,
@@ -1704,11 +1717,13 @@ function makeStyles(t: typeof Colors.light) {
   },
   historyTitle: {
     fontSize: 15,
+    lineHeight: 21,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
   historySubtitle: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppins,
     color: t.textMuted,
     marginTop: 2,
@@ -1720,6 +1735,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   statusText: {
     fontSize: 10,
+    lineHeight: 16,
     fontFamily: Fonts.poppinsBold,
   },
   ratingSection: {
@@ -1735,17 +1751,20 @@ function makeStyles(t: typeof Colors.light) {
   },
   ratingValue: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
     marginLeft: 4,
   },
   priceText: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
   commentText: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppins,
     fontStyle: 'italic',
     color: t.textSecondary,
@@ -1765,6 +1784,7 @@ function makeStyles(t: typeof Colors.light) {
   metricLabel: {
     width: 80,
     fontSize: 11,
+    lineHeight: 17,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
   },
@@ -1798,6 +1818,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   settingLabel: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
   },
@@ -1818,6 +1839,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   gaugeLabelText: {
     fontSize: 10,
+    lineHeight: 16,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
@@ -1841,6 +1863,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   modalTitle: {
     fontSize: 20,
+    lineHeight: 26,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
@@ -1854,6 +1877,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   closeModalButtonText: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: t.textSecondary,
   },
@@ -1898,6 +1922,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   suggestionMainText: {
     fontSize: 14,
+    lineHeight: 20,
     color: t.textPrimary,
     fontFamily: Fonts.poppinsSemiBold,
   },
@@ -1909,6 +1934,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   suggestionDistance: {
     fontSize: 10,
+    lineHeight: 16,
     color: t.textSecondary,
     fontFamily: Fonts.poppins,
     borderRightWidth: 1,
@@ -1917,6 +1943,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   suggestionSecondaryText: {
     fontSize: 11,
+    lineHeight: 17,
     color: t.textSecondary,
     fontFamily: Fonts.poppins,
     flex: 1,
@@ -1932,6 +1959,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   locateOnMapText: {
     fontSize: 12,
+    lineHeight: 18,
     color: t.textSecondary,
     fontFamily: Fonts.poppinsBold,
   },
@@ -1942,6 +1970,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   errorText: {
     fontSize: 13,
+    lineHeight: 19,
     color: t.textSecondary,
     fontFamily: Fonts.poppins,
     textAlign: 'center',
@@ -1949,6 +1978,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   manualText: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppinsBold,
   },
   currentLocationBtn: {
@@ -1960,6 +1990,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   currentLocationText: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppinsBold,
     color: '#FFCE48',
   },
@@ -1975,6 +2006,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   searchingText: {
     fontSize: 12,
+    lineHeight: 18,
     color: t.textSecondary,
     fontFamily: Fonts.poppins,
   },
@@ -2008,6 +2040,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   previewTitle: {
     fontSize: 10,
+    lineHeight: 16,
     fontFamily: Fonts.poppinsBold,
     color: t.textSecondary,
     textTransform: 'uppercase',
@@ -2026,6 +2059,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   photoSheetTitle: {
     fontSize: 18,
+    lineHeight: 24,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
@@ -2044,6 +2078,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   photoOptionText: {
     fontSize: 15,
+    lineHeight: 21,
     fontFamily: Fonts.poppinsSemiBold,
     color: '#344054',
   },
@@ -2070,11 +2105,13 @@ function makeStyles(t: typeof Colors.light) {
   },
   addAddressText: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsSemiBold,
     color: '#92400E',
   },
   inputLabel: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
     marginBottom: 8,
@@ -2107,6 +2144,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   alertTitle: {
     fontSize: 20,
+    lineHeight: 26,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
     marginBottom: 8,
@@ -2129,6 +2167,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   alertButtonText: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: '#fff',
   },
@@ -2139,6 +2178,7 @@ function makeStyles(t: typeof Colors.light) {
   },
   initialsText: {
     fontSize: 32,
+    lineHeight: 38,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },

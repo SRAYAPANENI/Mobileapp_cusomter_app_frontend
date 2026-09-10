@@ -597,6 +597,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   headerTitle: {
     fontSize: 20,
+    lineHeight: 26,
     fontFamily: Fonts.poppinsBold,
     color: '#000',
   },
@@ -640,6 +641,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   nameText: {
     fontSize: 18,
+    lineHeight: 24,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
@@ -651,10 +653,12 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   expertiseText: {
     color: '#fff',
     fontSize: 11,
+    lineHeight: 17,
     fontFamily: Fonts.poppinsBold,
   },
   professionText: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppins,
     color: t.textSecondary,
     marginTop: 2,
@@ -667,11 +671,13 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   ratingText: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppinsSemiBold,
     color: '#F59E0B',
   },
   jobsText: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppins,
     color: '#9CA3AF',
   },
@@ -686,11 +692,13 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   skillLabel: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textPrimary,
   },
   skillValue: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
   },
@@ -723,6 +731,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   meterTagText: {
     fontSize: 11,
+    lineHeight: 17,
     fontFamily: Fonts.poppinsSemiBold,
   },
   detailsGrid: {
@@ -740,6 +749,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   detailText: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
   },
@@ -753,6 +763,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   highlightedScoreText: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppinsBold,
     color: '#D97706',
   },
@@ -761,11 +772,13 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   priceValue: {
     fontSize: 20,
+    lineHeight: 26,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
   priceLabel: {
     fontSize: 11,
+    lineHeight: 17,
     fontFamily: Fonts.poppins,
     color: t.textSecondary,
   },
@@ -783,6 +796,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   hireButtonText: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: '#000',
   },
@@ -798,6 +812,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   rejectButtonText: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
@@ -815,6 +830,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   chatButtonText: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: '#000',
   },
@@ -830,6 +846,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   callButtonText: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: '#fff',
   },
@@ -863,6 +880,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   aiButtonText: {
     fontSize: 18,
+    lineHeight: 24,
     fontFamily: Fonts.poppinsBold,
     color: '#000',
   },
@@ -896,6 +914,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   successTitle: {
     fontSize: 22,
+    lineHeight: 28,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
     textAlign: 'center',
@@ -919,6 +938,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   successButtonText: {
     color: '#fff',
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     textAlign: 'center',
   },

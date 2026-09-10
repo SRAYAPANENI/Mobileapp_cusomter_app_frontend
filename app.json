@@ -87,7 +87,9 @@
         }
       ],
       "./plugins/with-real-device-architecture.js",
-      "./plugins/with-jetifier.js"
+      "./plugins/with-jetifier.js",
+      "./plugins/with-modular-headers.js",
+      "./plugins/with-ios-google-maps.js"
     ],
     "experiments": {
       "typedRoutes": true,

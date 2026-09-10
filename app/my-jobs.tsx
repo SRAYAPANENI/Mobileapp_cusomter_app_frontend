@@ -431,6 +431,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   headerTitle: {
     fontSize: 20,
+    lineHeight: 26,
     fontFamily: Fonts.poppinsBold,
     color: '#000',
   },
@@ -457,6 +458,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   tabBtnText: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
   },
@@ -491,6 +493,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   jobTitle: {
     fontSize: 18,
+    lineHeight: 24,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
@@ -503,10 +506,12 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   newBadgeText: {
     color: '#fff',
     fontSize: 9,
+    lineHeight: 15,
     fontFamily: Fonts.poppinsBold,
   },
   jobDescription: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppins,
     color: t.textSecondary,
     marginTop: 4,
@@ -521,6 +526,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   statusTagText: {
     fontSize: 11,
+    lineHeight: 17,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
   },
@@ -537,6 +543,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   typeBadgeText: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppinsSemiBold,
   },
   statusBadge: {
@@ -546,6 +553,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   statusBadgeText: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppinsSemiBold,
     color: '#fff',
   },
@@ -572,6 +580,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   postedText: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppins,
     color: t.textMuted,
   },
@@ -586,6 +595,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   applicantText: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
   },
@@ -598,6 +608,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   actionButtonText: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppinsBold,
     color: '#000',
   },
@@ -612,6 +623,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   editButtonText: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppinsSemiBold,
     color: '#6B7280',
   },
@@ -626,6 +638,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   cancelButtonSmallText: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppinsSemiBold,
     color: '#EF4444',
   }

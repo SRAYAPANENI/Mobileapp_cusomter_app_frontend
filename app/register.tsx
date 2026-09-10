@@ -383,7 +383,7 @@ export default function RegisterScreen() {
               <View style={[...getInputStyle('email'), { flexDirection: 'row', alignItems: 'center' }]}>
                 <Mail size={18} color={themeColors.icon} style={{ marginRight: 8 }} />
                 <TextInput
-                  style={{ flex: 1, color: themeColors.text, fontFamily: Fonts.poppins, fontSize: 15 }}
+                  style={{ flex: 1, color: themeColors.text, fontFamily: Fonts.poppins, fontSize: 15, lineHeight: 21 }}
                   placeholder="you@example.com"
                   placeholderTextColor={themeColors.icon}
                   value={formData.email}
@@ -396,7 +396,7 @@ export default function RegisterScreen() {
                 />
               </View>
               {!!formData.email && !formData.email.includes('@') && (
-                <ThemedText style={{ fontSize: 12, color: '#EF4444', marginTop: 4, fontFamily: Fonts.poppins }}>
+                <ThemedText style={{ fontSize: 12, lineHeight: 18, color: '#EF4444', marginTop: 4, fontFamily: Fonts.poppins }}>
                   Please enter a valid email address.
                 </ThemedText>
               )}
@@ -468,7 +468,7 @@ export default function RegisterScreen() {
                   <CheckCircle2 size={16} color="#4CAF50" />
                   <ThemedText style={styles.verifiedText}>Mobile Number Verified</ThemedText>
                   <TouchableOpacity onPress={() => setIsOtpVerified(false)} style={{ marginLeft: 'auto' }}>
-                    <ThemedText style={{ color: themeColors.brand, fontSize: 12, fontFamily: Fonts.poppinsBold }}>Edit</ThemedText>
+                    <ThemedText style={{ color: themeColors.brand, fontSize: 12, lineHeight: 18, fontFamily: Fonts.poppinsBold }}>Edit</ThemedText>
                   </TouchableOpacity>
                 </View>
               )}
@@ -861,10 +861,10 @@ export default function RegisterScreen() {
                           onLongPress={() => pickImage('document', idx, true)}
                         >
                           <Camera size={18} color={themeColors.brand} />
-                          <ThemedText style={{ fontSize: 10, fontFamily: Fonts.poppins, color: themeColors.brand }}>Tap / Hold</ThemedText>
+                          <ThemedText style={{ fontSize: 10, lineHeight: 16, fontFamily: Fonts.poppins, color: themeColors.brand }}>Tap / Hold</ThemedText>
                         </TouchableOpacity>
                       )}
-                      <ThemedText style={{ fontSize: 11, fontFamily: Fonts.poppinsBold, color: themeColors.text, opacity: 0.6 }}>{label}</ThemedText>
+                      <ThemedText style={{ fontSize: 11, lineHeight: 17, fontFamily: Fonts.poppinsBold, color: themeColors.text, opacity: 0.6 }}>{label}</ThemedText>
                     </View>
                   );
                 })}
@@ -1038,6 +1038,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   title: {
     fontSize: 24,
+    lineHeight: 30,
     textAlign: 'center',
     marginBottom: 4,
     fontFamily: Fonts.poppinsBold,
@@ -1045,6 +1046,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   subtitle: {
     fontSize: 14,
+    lineHeight: 20,
     textAlign: 'center',
     opacity: 0.5,
     paddingHorizontal: 20,
@@ -1075,27 +1077,32 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   sectionLabel: {
     fontSize: 18,
+    lineHeight: 24,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
   sectionLabelSmall: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
   sectionSubLabel: {
     fontSize: 11,
+    lineHeight: 17,
     opacity: 0.5,
     fontFamily: Fonts.poppins,
   },
   fieldLabel: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
     marginBottom: 8,
   },
   requiredMark: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsBold,
     color: '#EF4444',
   },
@@ -1132,6 +1139,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   photoLabel: {
     fontSize: 11,
+    lineHeight: 17,
     opacity: 0.6,
     fontFamily: Fonts.poppinsBold,
   },
@@ -1163,6 +1171,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 16,
     fontSize: 15,
+    lineHeight: 21,
     fontFamily: Fonts.poppins,
   },
   verifyButtonAction: {
@@ -1195,6 +1204,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   verifiedText: {
     color: '#166534',
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppinsBold,
   },
   otpSection: {
@@ -1241,6 +1251,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   locationButtonText: {
     fontSize: 11,
+    lineHeight: 17,
     fontFamily: Fonts.poppinsBold,
     color: '#FFB800',
   },
@@ -1265,6 +1276,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   typeChipText: {
     fontSize: 13,
+    lineHeight: 19,
     color: t.textSecondary,
     fontFamily: Fonts.poppinsSemiBold,
   },
@@ -1327,6 +1339,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   suggestionMainText: {
     fontSize: 15,
+    lineHeight: 21,
     color: t.textPrimary,
     fontFamily: Fonts.poppinsSemiBold,
   },
@@ -1338,6 +1351,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   suggestionDistance: {
     fontSize: 11,
+    lineHeight: 17,
     color: t.textSecondary,
     fontFamily: Fonts.poppins,
     borderRightWidth: 1,
@@ -1346,6 +1360,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   suggestionSecondaryText: {
     fontSize: 12,
+    lineHeight: 18,
     color: t.textSecondary,
     fontFamily: Fonts.poppins,
     flex: 1,
@@ -1361,6 +1376,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   locateOnMapText: {
     fontSize: 13,
+    lineHeight: 19,
     color: '#344054',
     fontFamily: Fonts.poppinsBold,
   },
@@ -1376,6 +1392,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   searchingText: {
     fontSize: 13,
+    lineHeight: 19,
     color: t.textSecondary,
     fontFamily: Fonts.poppins,
   },
@@ -1386,6 +1403,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   errorText: {
     fontSize: 14,
+    lineHeight: 20,
     color: t.textSecondary,
     fontFamily: Fonts.poppins,
     textAlign: 'center',
@@ -1393,6 +1411,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   manualText: {
     fontSize: 13,
+    lineHeight: 19,
     color: '#FFCE48',
     fontFamily: Fonts.poppinsBold,
   },
@@ -1414,6 +1433,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   previewTitle: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppinsBold,
     color: t.textSecondary,
     textTransform: 'uppercase',
@@ -1435,6 +1455,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   coordsText: {
     fontSize: 10,
+    lineHeight: 16,
     color: t.textMuted,
     fontFamily: Fonts.poppins,
   },
@@ -1449,6 +1470,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   validText: {
     fontSize: 10,
+    lineHeight: 16,
     color: '#059669',
     fontFamily: Fonts.poppinsBold,
   },
@@ -1460,6 +1482,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   checkboxLabel: {
     fontSize: 14,
+    lineHeight: 20,
     color: t.textSecondary,
     fontFamily: Fonts.poppinsSemiBold,
     flex: 1,
@@ -1477,6 +1500,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   uploadBoxText: {
     fontSize: 12,
+    lineHeight: 18,
     color: t.textSecondary,
     fontFamily: Fonts.poppinsSemiBold,
   },
@@ -1504,6 +1528,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   statusLabel: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppinsSemiBold,
     marginTop: 16,
     color: t.textSecondary,
@@ -1553,12 +1578,14 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   strengthText: {
     fontSize: 11,
+    lineHeight: 17,
     fontFamily: Fonts.poppinsBold,
     minWidth: 60,
   },
   passwordErrorText: {
     color: '#FF4B4B',
     fontSize: 11,
+    lineHeight: 17,
     fontFamily: Fonts.poppins,
     marginTop: 4,
   },
@@ -1571,6 +1598,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   passwordMatchText: {
     color: '#4CAF50',
     fontSize: 11,
+    lineHeight: 17,
     fontFamily: Fonts.poppins,
   },
 }); }

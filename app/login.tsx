@@ -493,6 +493,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   label: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsSemiBold,
     marginBottom: 8,
     opacity: 0.8,
@@ -544,6 +545,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 20,
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppins,
   },
   eyeIcon: {
@@ -568,6 +570,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   resendRowText: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppins,
     opacity: 0.7,
   },
@@ -613,6 +616,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   errorText: {
     color: '#FF4B4B',
     fontSize: 12,
+    lineHeight: 18,
     marginTop: 4,
     marginLeft: 4,
     fontFamily: Fonts.poppins,
@@ -653,6 +657,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   exitTitle: {
     fontSize: 22,
+    lineHeight: 28,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
     marginBottom: 8,
@@ -684,6 +689,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   exitCancelText: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
@@ -692,6 +698,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   exitConfirmText: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: '#fff',
   },

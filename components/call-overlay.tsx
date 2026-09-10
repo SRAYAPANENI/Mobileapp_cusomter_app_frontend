@@ -251,11 +251,13 @@ const styles = StyleSheet.create({
   },
   name: {
     fontSize: 24,
+    lineHeight: 30,
     fontFamily: Fonts.poppinsBold,
     color: '#fff',
   },
   status: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppins,
     color: 'rgba(255,255,255,0.65)',
     marginTop: 8,
@@ -291,11 +293,13 @@ const styles = StyleSheet.create({
   },
   actionLabel: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppins,
     color: '#fff',
   },
   actionLabelSmall: {
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: Fonts.poppins,
     color: 'rgba(255,255,255,0.65)',
   },

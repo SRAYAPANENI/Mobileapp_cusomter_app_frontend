@@ -348,6 +348,7 @@ const styles = StyleSheet.create({
   },
   nudgeBannerText: {
     fontSize: 11,
+    lineHeight: 17,
     fontFamily: Fonts.poppinsSemiBold,
     color: '#FFFFFF',
   },
@@ -431,6 +432,7 @@ const styles = StyleSheet.create({
   },
   centerOrbLabel: {
     fontSize: 9.5,
+    lineHeight: 15.5,
     fontFamily: Fonts.poppinsBold,
     color: '#111827',
     marginTop: 3,

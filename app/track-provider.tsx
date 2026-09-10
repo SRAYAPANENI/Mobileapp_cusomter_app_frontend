@@ -1276,6 +1276,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   statusText: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
@@ -1306,11 +1307,13 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   arrivingLabel: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppins,
     color: t.textSecondary,
   },
   etaText: {
     fontSize: 24,
+    lineHeight: 30,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
@@ -1322,6 +1325,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   distanceText: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
@@ -1347,6 +1351,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   providerName: {
     fontSize: 18,
+    lineHeight: 24,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
@@ -1358,6 +1363,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   roleText: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppins,
     color: t.textSecondary,
   },
@@ -1369,6 +1375,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   ratingText: {
     fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
@@ -1404,6 +1411,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   actionBtnText: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: '#000',
   },
@@ -1476,12 +1484,14 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   invoiceSecondaryBtnText: {
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsBold,
     color: '#111827',
   },
   completeJobBtnText: {
     color: '#fff',
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsBold,
   },
   inspectionCard: {
@@ -1492,6 +1502,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   inspectionCardTitle: {
     fontSize: 15,
+    lineHeight: 21,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
     marginBottom: 4,
@@ -1525,6 +1536,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   invoiceAmount: {
     fontSize: 28,
+    lineHeight: 34,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
     marginBottom: 8,
