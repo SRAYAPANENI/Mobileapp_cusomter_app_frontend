@@ -97,6 +97,17 @@ export interface ApiError {
 let isRefreshing = false;
 let refreshPromise: Promise<string | null> | null = null;
 let _onSessionExpired: (() => void) | null = null;
+// A screen that fires several parallel fetches on mount can 401 all of them
+// at once — _refreshAccessToken() itself is deduped (isRefreshing/
+// refreshPromise), but every one of those callers still independently hits
+// this same fallback once the shared refresh comes back empty, each firing
+// _onSessionExpired?.() again. Harmless when that was just a silent
+// router.replace(), but it now also shows an Alert — and Alert.alert() calls
+// stack instead of no-op, so a burst of these could show the "Signed Out"
+// message 2-3 times in a row. Reset the moment any request next succeeds
+// (the user logged back in and is making happy-path calls again), so a
+// later, genuinely new session-death still surfaces the alert.
+let sessionExpiredNotified = false;
 
 export function setSessionExpiredHandler(fn: () => void): void {
   _onSessionExpired = fn;
@@ -142,8 +153,15 @@ async function request<T = any>(
     }
     // Refresh failed → clear tokens and force back to login
     await TokenStore.clear();
-    _onSessionExpired?.();
+    if (!sessionExpiredNotified) {
+      sessionExpiredNotified = true;
+      _onSessionExpired?.();
+    }
     throw { success: false, error_code: 'SESSION_EXPIRED', message: 'Please log in again.' } as ApiError;
+  }
+
+  if (response.ok) {
+    sessionExpiredNotified = false;
   }
 
   return _parseResponse<T>(response);
@@ -325,9 +343,17 @@ export const SkoFyApi = {
         body: JSON.stringify({ token, platform }),
       }),
 
-    logout: async () => {
+    /** fcmToken/voipToken: this device's own push token(s), so the backend
+     * can delete exactly the rows this app instance registered — a
+     * logged-out device that keeps its token registered keeps receiving
+     * calls/notifications for the account indefinitely. Best-effort: if
+     * fetching them fails, logout still proceeds. */
+    logout: async (fcmToken?: string, voipToken?: string) => {
       try {
-        await request('/auth/logout', { method: 'POST' });
+        await request('/auth/logout', {
+          method: 'POST',
+          body: JSON.stringify({ fcm_token: fcmToken, voip_token: voipToken }),
+        });
       } finally {
         await TokenStore.clear();
       }
@@ -600,10 +626,10 @@ export const SkoFyApi = {
 
   // ── Push notifications ──────────────────────────────────────────────────
   fcm: {
-    registerToken: async (token: string, platform: 'IOS' | 'ANDROID') =>
+    registerToken: async (token: string, platform: 'IOS' | 'ANDROID', tokenType: 'FCM' | 'VOIP' = 'FCM') =>
       request('/auth/fcm-token', {
         method: 'POST',
-        body: JSON.stringify({ token, platform }),
+        body: JSON.stringify({ token, platform, token_type: tokenType }),
       }),
   },
 

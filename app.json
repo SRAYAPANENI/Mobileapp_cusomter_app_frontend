@@ -15,7 +15,10 @@
         "NSLocationWhenInUseUsageDescription": "This app needs access to your location to show nearby service providers.",
         "NSLocationAlwaysUsageDescription": "This app needs access to your location to show nearby service providers.",
         "NSMicrophoneUsageDescription": "This app needs access to your microphone for voice calls with your service provider.",
-        "UIBackgroundModes": ["voip", "audio"]
+        "UIBackgroundModes": ["voip", "audio", "remote-notification"]
+      },
+      "entitlements": {
+        "aps-environment": "development"
       }
     },
     "android": {
@@ -89,7 +92,9 @@
       "./plugins/with-real-device-architecture.js",
       "./plugins/with-jetifier.js",
       "./plugins/with-modular-headers.js",
-      "./plugins/with-ios-google-maps.js"
+      "./plugins/with-ios-google-maps.js",
+      "./plugins/with-pushkit-voip.js",
+      "./plugins/with-notification-sounds.js"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -3,6 +3,7 @@ import messaging from '@react-native-firebase/messaging';
 import { router } from 'expo-router';
 import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import RNCallKeep from 'react-native-callkeep';
+import VoipPushNotification from 'react-native-voip-push-notification';
 import { SkoFyApi, TokenStore } from './api';
 
 // Android-only native module (see CallStyleModule.kt/CallActionModule.kt) that
@@ -566,6 +567,15 @@ export async function stopOngoingCallNotification(jobId: string) {
 
 let callKeepReady = false;
 
+// Cached so logout can send it back to the backend for precise deletion —
+// react-native-voip-push-notification has no synchronous getToken(), only
+// the async 'register' event below, so this is the only way to have it on
+// hand at logout time without re-triggering registration.
+let currentVoipToken: string | null = null;
+export function getCurrentVoipToken(): string | null {
+  return currentVoipToken;
+}
+
 function setupCallKeepForIOS() {
   if (callKeepReady || Platform.OS !== 'ios') return;
   callKeepReady = true;
@@ -597,6 +607,21 @@ function setupCallKeepForIOS() {
     if (call) sendDecline(call.jobId);
     activeCalls.delete(callUUID);
   });
+
+  // PKPushRegistry lives natively (AppDelegate.swift, plugins/with-pushkit-voip.js)
+  // — Apple requires the app to report every VoIP push to CallKit from
+  // inside that native delegate callback, before JS can possibly react, so
+  // the actual incoming-call reporting already happened by the time this
+  // event fires. This listener's only job is getting the VoIP device token
+  // (distinct from the regular FCM token registered below in
+  // registerFcmToken — see notification_tasks.py for why the backend keeps
+  // them as separate rows) to the backend so send_call_push can reach this
+  // device at all.
+  VoipPushNotification.addEventListener('register', (token: string) => {
+    currentVoipToken = token;
+    SkoFyApi.fcm.registerToken(token, 'IOS', 'VOIP').catch((err) => console.warn('registerVoipToken failed', err));
+  });
+  VoipPushNotification.registerVoipToken();
 }
 
 /** Must be called as early as possible (before the app's component tree even
@@ -855,5 +880,21 @@ export async function registerFcmToken() {
   } catch (e) {
     // Non-fatal — calling still works in foreground via the WebSocket either way.
     console.warn('registerFcmToken failed', e);
+  }
+
+  // Also re-arm VoIP token registration. setupCallKeepForIOS() (called once
+  // from initCallManager() at app mount, unconditionally, before auth state
+  // is known) already calls VoipPushNotification.registerVoipToken() once —
+  // but on a cold launch to the logged-out state, PushKit typically already
+  // has a cached token and fires 'register' almost immediately, well before
+  // the user finishes logging in, so that first registration call 401s
+  // against the backend and is silently dropped (see its own catch). This
+  // function is the one already called right after every successful login
+  // (see login.tsx) with a real access token now in place — registerVoipToken()
+  // is documented as safe to call repeatedly and just re-fires the same
+  // cached token to the 'register' listener, which re-sends it here with
+  // valid auth this time.
+  if (Platform.OS === 'ios') {
+    VoipPushNotification.registerVoipToken();
   }
 }

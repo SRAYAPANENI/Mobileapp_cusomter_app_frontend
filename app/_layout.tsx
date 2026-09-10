@@ -5,7 +5,7 @@ import { Stack, router, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef } from 'react';
-import { View } from 'react-native';
+import { Alert, View } from 'react-native';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import 'react-native-reanimated';
 
@@ -76,6 +76,15 @@ export default function RootLayout() {
       // they'd already typed (a half-entered phone number) — so skip the
       // redirect entirely when we're already there.
       if (pathnameRef.current !== '/login') {
+        // Previously a silent, unexplained router.replace() — most jarring
+        // when it fires because the user tapped a notification (a call
+        // invite, a chat message) and got dumped onto the login screen
+        // mid-transition with zero context, looking exactly like a crash.
+        // This is the one place that redirect can originate from, so a
+        // generic explanation here covers every trigger (a genuinely
+        // expired session, or this account's refresh token having been
+        // revoked by a newer login elsewhere for the same role).
+        Alert.alert('Signed Out', 'Your session has ended. Please log in again.');
         router.replace('/login' as any);
       }
     });
