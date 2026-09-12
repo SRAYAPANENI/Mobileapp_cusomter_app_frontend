@@ -9,6 +9,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useIsOnline } from '@/hooks/use-is-online';
 import { GooglePlacesService, GooglePlaceSuggestion } from '@/services/google-places';
 import { SkoFyApi } from '@/services/api';
+import { AppLock } from '@/services/appLock';
 import { getCurrentVoipToken } from '@/services/callManager';
 import messaging from '@react-native-firebase/messaging';
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
@@ -26,6 +27,7 @@ import {
   ChevronRight,
   CreditCard,
   FileText,
+  Fingerprint,
   Image as ImageIcon,
   Lock,
   LogOut,
@@ -90,6 +92,8 @@ export default function ProfileScreen() {
   const modalBottomPad = { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 16 };
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [appLockEnabled, setAppLockEnabled] = useState(false);
+  const [appLockAvailable, setAppLockAvailable] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isTermsOpen, setIsTermsOpen] = useState(false);
   const [isPasswordOpen, setIsPasswordOpen] = useState(false);
@@ -227,6 +231,30 @@ export default function ProfileScreen() {
   useEffect(() => {
     loadProfile();
   }, [loadProfile]);
+
+  useEffect(() => {
+    (async () => {
+      const [available, enabled] = await Promise.all([AppLock.isAvailable(), AppLock.isEnabled()]);
+      setAppLockAvailable(available);
+      setAppLockEnabled(enabled);
+    })();
+  }, []);
+
+  const handleToggleAppLock = async (next: boolean) => {
+    if (next) {
+      if (!appLockAvailable) {
+        showAlert('error', 'Not Available', 'Set up a fingerprint or face unlock on your device first, then turn this on.');
+        return;
+      }
+      // Verify biometrics actually work on this device before turning the
+      // lock on — otherwise a misconfigured sensor could lock the user out
+      // of their own app with no way back in.
+      const verified = await AppLock.authenticate('Confirm to enable App Lock');
+      if (!verified) return;
+    }
+    await AppLock.setEnabled(next);
+    setAppLockEnabled(next);
+  };
 
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
   const [addressHeights, setAddressHeights] = useState<Record<number, number>>({});
@@ -1086,6 +1114,19 @@ export default function ProfileScreen() {
                 <Switch
                   value={notificationsEnabled}
                   onValueChange={setNotificationsEnabled}
+                  trackColor={{ false: '#D1D5DB', true: '#FFCE48' }}
+                  thumbColor="#fff"
+                />
+              </View>
+
+              <View style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}>
+                <View style={styles.settingInfo}>
+                  <Fingerprint size={20} color="#6B7280" />
+                  <ThemedText style={styles.settingLabel}>App Lock</ThemedText>
+                </View>
+                <Switch
+                  value={appLockEnabled}
+                  onValueChange={handleToggleAppLock}
                   trackColor={{ false: '#D1D5DB', true: '#FFCE48' }}
                   thumbColor="#fff"
                 />

@@ -94,7 +94,13 @@
       "./plugins/with-modular-headers.js",
       "./plugins/with-ios-google-maps.js",
       "./plugins/with-pushkit-voip.js",
-      "./plugins/with-notification-sounds.js"
+      "./plugins/with-notification-sounds.js",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow Dodorez to use Face ID to unlock the app."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
