@@ -52,6 +52,18 @@ function safeNavigate(fn: () => void, attempt = 0) {
 }
 
 function navigateToCall(call: IncomingCallData, autoAnswer: boolean) {
+  // Must happen before the push — see isCallScreenActive's comment (further
+  // down this file) for why AppLockGate needs this signal immediately,
+  // synchronously, rather than waiting for chat.tsx to actually mount:
+  // every caller of navigateToCall is "the user is being taken to the call
+  // screen right now" (Android's notification Accept tap, iOS's CallKit
+  // answerCall, a cold-start call notification tap), and re-locking at
+  // exactly that moment would unmount the Stack this push targets, silently
+  // dropping the navigation once safeNavigate's retries run out.
+  isAnsweringCall = true;
+  onCallBecameActive?.();
+  setTimeout(() => { isAnsweringCall = false; }, 8000);
+
   safeNavigate(() => router.push({
     pathname: '/chat',
     params: {
@@ -161,6 +173,54 @@ export function cancelIncomingCallNotification(jobId: string) {
 // UI for that exact call is already covering it — otherwise both showed up
 // at once, and answering in-app never told the notification to go away.
 let activeChatJobId: string | null = null;
+
+// Set the instant an incoming call is answered (before the navigation to
+// chat.tsx even happens), cleared once chat.tsx mounts and takes over via
+// setActiveChatJob — see the 'answerCall' listener below for why this can't
+// just wait for activeChatJobId: AppLockGate needs to know a call is
+// becoming active in the same tick the app comes to foreground, not a few
+// hundred ms later once the pushed route has actually mounted.
+let isAnsweringCall = false;
+
+// True only while chat.tsx's own callState is not 'idle' (ringing,
+// connecting, or connected) — deliberately NOT tied to activeChatJobId
+// above, which is set for EVERY chat screen open (a plain text
+// conversation, not just a call) and exists purely to suppress duplicate
+// incoming-call notifications. Conflating the two would mean opening any
+// ordinary chat and backgrounding the app skips re-locking entirely — a
+// real App Lock security regression, not just a call-handling nicety.
+let chatCallActive = false;
+
+/** True while a call/chat screen has an actual call in progress, or an
+ * incoming call is in the process of being answered (see isAnsweringCall
+ * above). AppLockGate checks this before re-locking on foreground —
+ * re-locking mid-call would unmount the active call screen entirely (see
+ * app-lock-gate.tsx's own comment on why it unmounts rather than
+ * overlays), and if it fires exactly when an incoming call is answered,
+ * the pending navigation to the call screen would be pushed against an
+ * unmounted Stack and silently dropped once safeNavigate's retry budget
+ * runs out. */
+export function isCallScreenActive(): boolean {
+  return chatCallActive || isAnsweringCall;
+}
+
+// AppLockGate registers itself here on mount so a call that becomes active
+// while the app is ALREADY showing the lock screen (not just about to) can
+// force it to dismiss immediately — otherwise the user would be stuck
+// staring at "App Locked" with a connected call underneath it until they
+// happened to unlock on their own.
+let onCallBecameActive: (() => void) | null = null;
+export function setCallActiveHandler(fn: (() => void) | null) {
+  onCallBecameActive = fn;
+}
+
+/** Call from chat.tsx whenever its own callState changes (see the CallState
+ * type there) — true for anything but 'idle'. This, not setActiveChatJob
+ * below, is what AppLockGate's isCallScreenActive() actually reads. */
+export function setChatCallActive(active: boolean) {
+  chatCallActive = active;
+  if (active) onCallBecameActive?.();
+}
 
 /** Call from chat.tsx on mount/unmount (with the screen's jobId, or null on
  * unmount) — see activeChatJobId above. */

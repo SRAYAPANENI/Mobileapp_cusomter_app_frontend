@@ -4,6 +4,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AppLock } from '@/services/appLock';
+import { isCallScreenActive, setCallActiveHandler } from '@/services/callManager';
 import { Fingerprint } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import { AppState, AppStateStatus, InteractionManager, StyleSheet, TouchableOpacity } from 'react-native';
@@ -36,6 +37,16 @@ export default function AppLockGate({ children }: { children: React.ReactNode })
   }, []);
 
   useEffect(() => {
+    // A call answered while this gate is ALREADY showing the lock screen
+    // (not just about to) needs to force it away immediately — the
+    // AppState-driven check below only prevents a NEW lock, it can't undo
+    // one already on screen. Without this, the user would be stuck staring
+    // at "App Locked" with a connected call underneath it.
+    setCallActiveHandler(() => setLocked(false));
+    return () => setCallActiveHandler(null);
+  }, []);
+
+  useEffect(() => {
     // Reads AppLock.isEnabled() fresh on every transition rather than
     // capturing it once — the Settings toggle lives in a separate mounted
     // component (profile.tsx) with no way to reach this gate, so relying on
@@ -54,7 +65,12 @@ export default function AppLockGate({ children }: { children: React.ReactNode })
       } else if (next === 'active' && prev !== 'active') {
         const awayMs = backgroundedAt.current ? Date.now() - backgroundedAt.current : Infinity;
         backgroundedAt.current = null;
-        if (awayMs > BACKGROUND_GRACE_MS) setLocked(true);
+        // A call/chat screen being open (or an incoming call in the process
+        // of being answered — see isCallScreenActive's own comment) means
+        // re-locking now would unmount that screen entirely rather than
+        // just overlay it, silently ending the user's view of an active or
+        // about-to-connect call.
+        if (awayMs > BACKGROUND_GRACE_MS && !isCallScreenActive()) setLocked(true);
       }
     });
     return () => sub.remove();

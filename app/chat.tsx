@@ -44,7 +44,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SkoFyApi, TokenStore } from '@/services/api';
 import { CallOverlay } from '@/components/call-overlay';
 import InCallManager from 'react-native-incall-manager';
-import { cancelIncomingCallNotification, registerHangupHandler, registerMuteHandler, registerSpeakerHandler, setActiveChatJob, startOngoingCallNotification, stopOngoingCallNotification, updateOngoingCallControls } from '@/services/callManager';
+import { cancelIncomingCallNotification, registerHangupHandler, registerMuteHandler, registerSpeakerHandler, setActiveChatJob, setChatCallActive, startOngoingCallNotification, stopOngoingCallNotification, updateOngoingCallControls } from '@/services/callManager';
 
 // No-answer cutoff — like a real phone call, ringing/calling shouldn't go on forever.
 const CALL_TIMEOUT_MS = 45000;
@@ -220,6 +220,15 @@ export default function ChatScreen() {
     if (jobId) setActiveChatJob(jobId);
     return () => setActiveChatJob(null);
   }, [jobId]);
+
+  // AppLockGate must only skip re-locking (or force-dismiss an existing
+  // lock) while an actual call is ringing/connecting/connected here — not
+  // for every ordinary chat screen open, which is what activeChatJobId
+  // above tracks. See setChatCallActive's own comment in callManager.ts.
+  useEffect(() => {
+    setChatCallActive(callState !== 'idle');
+    return () => setChatCallActive(false);
+  }, [callState]);
 
   // Pressing back while a call is ringing/connecting/active doesn't actually
   // unmount this screen — React Navigation just parks it in the stack — so
