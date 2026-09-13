@@ -261,6 +261,13 @@ export default function ProviderDetailsScreen() {
     // "quoted price" anymore (bidding is retired); the actual job cost is
     // only ever set by their invoice after they inspect the job in person.
     inspectionFee: jobInspectionFee ?? 0,
+    isIdentityVerified: !!profile.is_identity_verified,
+    // Below this HCI confidence, the score doesn't have enough signal behind
+    // it to mean much yet — label the provider honestly as new rather than
+    // let a low, noisy score read as "bad" (VISION.md's confidence-band idea).
+    // Gated on isIdentityVerified below — "new" and "verified" are two
+    // separate claims, and this field only ever describes the first.
+    isNewProvider: (profile.hci_confidence ?? 0) < 40,
   };
 
   return (
@@ -321,10 +328,14 @@ export default function ProviderDetailsScreen() {
             <View style={styles.ratingRow}>
               <Star size={16} color="#FFCE48" fill="#FFCE48" />
               <ThemedText style={styles.ratingText}>{PROVIDER_DATA.rating} ({PROVIDER_DATA.jobsCompleted} Jobs)</ThemedText>
-              <View style={styles.verifiedBadge}>
-                <ShieldCheck size={14} color="#34D399" />
-                <ThemedText style={styles.verifiedText}>Verified</ThemedText>
-              </View>
+              {PROVIDER_DATA.isIdentityVerified && (
+                <View style={[styles.verifiedBadge, PROVIDER_DATA.isNewProvider && styles.newProviderBadge]}>
+                  <ShieldCheck size={14} color={PROVIDER_DATA.isNewProvider ? '#0891B2' : '#34D399'} />
+                  <ThemedText style={[styles.verifiedText, PROVIDER_DATA.isNewProvider && styles.newProviderText]}>
+                    {PROVIDER_DATA.isNewProvider ? 'New Verified Provider' : 'Verified'}
+                  </ThemedText>
+                </View>
+              )}
             </View>
           </Animated.View>
         </View>
@@ -690,6 +701,12 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     fontSize: 10, lineHeight: 14,
     fontFamily: Fonts.poppinsBold,
     color: '#34D399',
+  },
+  newProviderBadge: {
+    backgroundColor: 'rgba(8, 145, 178, 0.2)',
+  },
+  newProviderText: {
+    color: '#0891B2',
   },
   scrollContent: {
     paddingTop: 20,

@@ -37,6 +37,8 @@ type NearbyProvider = {
   avg_rating: number;
   jobs_completed: number;
   hci_score: number;
+  hci_confidence: number;
+  is_identity_verified: boolean;
   distance_km: number;
   is_available: boolean;
   profile_image_url?: string | null;
@@ -45,6 +47,19 @@ type NearbyProvider = {
   last_seen: number;
   skills?: string[];
 };
+
+// Below this HCI confidence, a provider hasn't built up enough signal yet
+// for their score to mean much — label them honestly as new rather than
+// letting a low, noisy score read as "bad". Mirrors VISION.md's confidence-band
+// concept (a Day-1 provider scores low-confidence, not low-quality).
+const NEW_PROVIDER_CONFIDENCE_THRESHOLD = 40;
+// Gated on is_identity_verified, not just confidence — "New Verified
+// Provider" asserts BOTH "new" and "verified"; showing it for a provider who
+// hasn't actually passed ID verification would be a false claim, not just
+// an imprecise one.
+function isNewVerifiedProvider(p: Pick<NearbyProvider, 'hci_confidence' | 'is_identity_verified'>): boolean {
+  return !!p.is_identity_verified && (p.hci_confidence ?? 0) < NEW_PROVIDER_CONFIDENCE_THRESHOLD;
+}
 
 type MapRegion = {
   latitude: number;
@@ -90,35 +105,35 @@ function makeDummyProviders(lat: number, lng: number): NearbyProvider[] {
   return [
     {
       provider_id: 'dummy-1', name: 'Marcus Johnson', profession: 'Plumber',
-      avg_rating: 4.8, jobs_completed: 127, hci_score: 0.9, distance_km: 2.1,
+      avg_rating: 4.8, jobs_completed: 127, hci_score: 0.9, hci_confidence: 95, is_identity_verified: true, distance_km: 2.1,
       is_available: true, profile_image_url: null,
       lat: lat + 0.012, lng: lng + 0.008,
       last_seen: now - 120_000, skills: ['Plumbing', 'Pipe Repair', 'Leak Fix'],
     },
     {
       provider_id: 'dummy-2', name: 'Sarah Chen', profession: 'Electrician',
-      avg_rating: 4.9, jobs_completed: 89, hci_score: 0.95, distance_km: 3.4,
+      avg_rating: 4.9, jobs_completed: 89, hci_score: 0.95, hci_confidence: 90, is_identity_verified: true, distance_km: 3.4,
       is_available: true, profile_image_url: null,
       lat: lat - 0.008, lng: lng + 0.015,
       last_seen: now - 45_000, skills: ['Wiring', 'Panel Upgrade', 'Smart Home'],
     },
     {
       provider_id: 'dummy-3', name: 'David Park', profession: 'Handyman',
-      avg_rating: 4.6, jobs_completed: 203, hci_score: 0.82, distance_km: 1.8,
+      avg_rating: 4.6, jobs_completed: 203, hci_score: 0.82, hci_confidence: 100, is_identity_verified: true, distance_km: 1.8,
       is_available: false, profile_image_url: null,
       lat: lat + 0.005, lng: lng - 0.012,
       last_seen: now - 300_000, skills: ['General Repairs', 'Assembly', 'Painting'],
     },
     {
       provider_id: 'dummy-4', name: 'Priya Sharma', profession: 'House Cleaner',
-      avg_rating: 5.0, jobs_completed: 56, hci_score: 0.98, distance_km: 4.2,
+      avg_rating: 5.0, jobs_completed: 2, hci_score: 0.98, hci_confidence: 22, is_identity_verified: true, distance_km: 4.2,
       is_available: true, profile_image_url: null,
       lat: lat - 0.015, lng: lng - 0.009,
       last_seen: now - 20_000, skills: ['Deep Clean', 'Move-in/out', 'Laundry'],
     },
     {
       provider_id: 'dummy-5', name: 'James Rivera', profession: 'HVAC Tech',
-      avg_rating: 4.7, jobs_completed: 74, hci_score: 0.88, distance_km: 5.1,
+      avg_rating: 4.7, jobs_completed: 74, hci_score: 0.88, hci_confidence: 78, is_identity_verified: true, distance_km: 5.1,
       is_available: false, profile_image_url: null,
       lat: lat + 0.018, lng: lng - 0.004,
       last_seen: now - 480_000, skills: ['AC Repair', 'Furnace', 'Duct Work'],
@@ -583,6 +598,11 @@ export default function ProviderMapScreen() {
                   </Text>
                   <Text style={s.seenText}> · {timeAgo(selected.last_seen)}</Text>
                 </View>
+                {isNewVerifiedProvider(selected) && (
+                  <View style={s.newBadge}>
+                    <Text style={s.newBadgeText}>🌱 New Verified Provider</Text>
+                  </View>
+                )}
               </View>
             </View>
 
@@ -928,6 +948,12 @@ const s = StyleSheet.create({
   statusDot: { width: 8, height: 8, borderRadius: 4 },
   statusText: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsSemiBold },
   seenText: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppins, color: '#9CA3AF' },
+  newBadge: {
+    alignSelf: 'flex-start', marginTop: 6,
+    backgroundColor: '#ECFDF5', borderRadius: 20,
+    paddingHorizontal: 10, paddingVertical: 4,
+  },
+  newBadgeText: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppinsSemiBold, color: '#059669' },
 
   // Stats 3-box row
   sheetStatsRow: {

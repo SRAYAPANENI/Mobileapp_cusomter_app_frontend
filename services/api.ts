@@ -390,6 +390,8 @@ export const SkoFyApi = {
       avg_rating: number;
       jobs_completed: number;
       hci_score: number;
+      hci_confidence: number;
+      is_identity_verified: boolean;
       is_available: boolean;
       profile_image_url?: string;
       profession?: string | null;
