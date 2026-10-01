@@ -1,13 +1,16 @@
-﻿import { AppAlert, useAppAlert } from '@/components/app-alert';
-import { ThemedText } from '@/components/themed-text';
+﻿import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { SkoFyApi } from '@/services/api';
+import type { OfferResponse } from '@/types/offer';
+import { discountText, expiryText, isExpiryUrgent, OFFER_CARD_COLORS } from '@/utils/offer-format';
+import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { ChevronLeft, Copy, Tag, TicketPercent } from 'lucide-react-native';
-import React from 'react';
+import { ChevronLeft, Tag, TicketPercent } from 'lucide-react-native';
+import React, { useEffect, useState } from 'react';
 import {
-  Clipboard,
+  ActivityIndicator,
   FlatList,
   Platform,
   StatusBar,
@@ -22,56 +25,52 @@ interface Offer {
   code: string;
   title: string;
   description: string;
+  imageUrl: string | null;
   expiry: string;
+  expiryUrgent: boolean;
   discount: string;
   color: string;
 }
-
-const OFFERS: Offer[] = [
-  {
-    id: '1',
-    code: 'CLEAN20',
-    title: '20% Off on Cleaning',
-    description: 'Get 20% off up to $100 on your next home cleaning service. Valid for new users only.',
-    expiry: 'Expires in 2 days',
-    discount: '20%',
-    color: '#EC4899',
-  },
-  {
-    id: '2',
-    code: 'FIRST50',
-    title: 'Flat $50 Off',
-    description: 'Flat $50 off on any service above $299. Use this code at checkout.',
-    expiry: 'Expires in 5 days',
-    discount: '$50',
-    color: '#8B5CF6',
-  },
-  {
-    id: '3',
-    code: 'SUMMER25',
-    title: 'Summer Special',
-    description: '25% off on AC Repair and Servicing. Beat the heat with Skofy!',
-    expiry: 'Expires Jun 30',
-    discount: '25%',
-    color: '#F59E0B',
-  },
-];
 
 export default function OffersScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
-  const alert = useAppAlert();
+  const [offers, setOffers] = useState<Offer[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const handleCopy = (code: string) => {
-    Clipboard.setString(code);
-    alert.show('copied', 'Copied!', `Coupon code "${code}" is ready to use.`, undefined, 2000);
+  useEffect(() => {
+    SkoFyApi.offers.list()
+      .then((data: unknown) => {
+        const list = Array.isArray(data) ? (data as OfferResponse[]) : [];
+        setOffers(list.map((o, index) => ({
+          id: o.id,
+          code: o.code,
+          title: o.title,
+          description: o.description,
+          imageUrl: o.image_url,
+          expiry: expiryText(o.expires_at),
+          expiryUrgent: isExpiryUrgent(o.expires_at),
+          discount: discountText(o),
+          color: OFFER_CARD_COLORS[index % OFFER_CARD_COLORS.length],
+        })));
+      })
+      .catch((err: unknown) => console.warn('Failed to load offers:', err))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const openOffer = (offerId: string) => {
+    router.push({ pathname: '/offer-detail', params: { offerId } } as any);
   };
 
   const renderOffer = ({ item, index }: { item: Offer; index: number }) => (
     <Animated.View entering={FadeInUp.delay(index * 100).duration(400)}>
-      <View style={styles.offerCard}>
-        <View style={[styles.leftStrip, { backgroundColor: item.color }]} />
+      <TouchableOpacity style={styles.offerCard} activeOpacity={0.85} onPress={() => openOffer(item.id)}>
+        {item.imageUrl ? (
+          <Image source={{ uri: item.imageUrl }} style={styles.offerImage} contentFit="cover" />
+        ) : (
+          <View style={[styles.leftStrip, { backgroundColor: item.color }]} />
+        )}
         <View style={styles.content}>
           <View style={styles.headerRow}>
             <View style={[styles.iconBox, { backgroundColor: `${item.color}20` }]}>
@@ -86,18 +85,19 @@ export default function OffersScreen() {
           <ThemedText style={styles.offerDesc}>{item.description}</ThemedText>
 
           <View style={styles.footerRow}>
-            <ThemedText style={styles.expiryText}>{item.expiry}</ThemedText>
-            <TouchableOpacity style={styles.copyButton} onPress={() => handleCopy(item.code)}>
-              <ThemedText style={styles.codeText}>{item.code}</ThemedText>
-              <Copy size={14} color="#6B7280" />
-            </TouchableOpacity>
+            <ThemedText style={[styles.expiryText, !item.expiryUrgent && styles.expiryTextMuted]}>
+              {item.expiry}
+            </ThemedText>
+            <View style={styles.claimPill}>
+              <ThemedText style={styles.claimPillText}>Claim</ThemedText>
+            </View>
           </View>
         </View>
 
         {/* Decorative Circles for "Ticket" look */}
         <View style={styles.circleTop} />
         <View style={styles.circleBottom} />
-      </View>
+      </TouchableOpacity>
     </Animated.View>
   );
 
@@ -112,14 +112,23 @@ export default function OffersScreen() {
         <TicketPercent size={24} color={themeColors.textPrimary} />
       </View>
 
-      <FlatList
-        data={OFFERS}
-        renderItem={renderOffer}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      />
-      {alert.element}
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator color={themeColors.textPrimary} />
+        </View>
+      ) : offers.length === 0 ? (
+        <View style={styles.loadingContainer}>
+          <ThemedText style={styles.emptyText}>No offers available right now.</ThemedText>
+        </View>
+      ) : (
+        <FlatList
+          data={offers}
+          renderItem={renderOffer}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
     </ThemedView>
   );
 }
@@ -144,6 +153,8 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: { fontSize: 20, lineHeight: 25, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  emptyText: { fontSize: 14, fontFamily: Fonts.poppins, color: t.textMuted },
   listContent: { padding: 20 },
   offerCard: {
     backgroundColor: t.card,
@@ -159,6 +170,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     position: 'relative',
   },
   leftStrip: { width: 6, height: '100%' },
+  offerImage: { width: 96, height: '100%' },
   content: { flex: 1, padding: 16, paddingLeft: 20 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   iconBox: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
@@ -167,9 +179,12 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   offerTitle: { fontSize: 16, lineHeight: 20, fontFamily: Fonts.poppinsBold, color: t.textPrimary, marginBottom: 4 },
   offerDesc: { fontSize: 13, fontFamily: Fonts.poppins, color: t.textSecondary, marginBottom: 16, lineHeight: 20 },
   footerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: t.borderSubtle, paddingTop: 12 },
+  // Red is reserved for genuinely urgent ("Expired"/"Expires tomorrow") —
+  // muted for anything with real runway left, like "Expires in 4 days".
   expiryText: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppins, color: '#EF4444' },
-  copyButton: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: t.inputFilled, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderStyle: 'dashed', borderWidth: 1, borderColor: t.border },
-  codeText: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsBold, color: t.textPrimary, letterSpacing: 1 },
+  expiryTextMuted: { color: t.textMuted },
+  claimPill: { backgroundColor: '#FFCE48', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8 },
+  claimPillText: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsBold, color: '#111827' },
   circleTop: { position: 'absolute', top: -10, left: -6, width: 20, height: 20, borderRadius: 10, backgroundColor: t.surface },
   circleBottom: { position: 'absolute', bottom: -10, left: -6, width: 20, height: 20, borderRadius: 10, backgroundColor: t.surface },
 }); }

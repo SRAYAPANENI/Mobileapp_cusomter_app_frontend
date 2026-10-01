@@ -4,8 +4,6 @@ import { Colors, Fonts } from '@/constants/theme';
 import { usePostRequirement } from '@/context/PostRequirementContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SkoFyApi } from '@/services/api';
-import { milesToKm } from '@/services/units';
-import Slider from '@react-native-community/slider';
 import { router } from 'expo-router';
 import {
   ArrowLeft,
@@ -16,23 +14,20 @@ import {
   CreditCard,
   MapPin,
   Sparkles,
-  X,
   Zap
 } from 'lucide-react-native';
 import { useAppAlert } from '@/components/app-alert';
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
   View
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import Animated, { FadeInUp, SlideInUp, ZoomIn } from 'react-native-reanimated';
+import Animated, { FadeInUp, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function JobSummaryScreen() {
@@ -40,49 +35,27 @@ export default function JobSummaryScreen() {
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const insets = useSafeAreaInsets();
-  const { data, resetData } = usePostRequirement();
-  // This screen had no keyboard handling at all — the inspection fee input
-  // near the bottom of the form got covered outright with no way to see
-  // what was typed. Scrolling straight to the focused input on its own
-  // focus event is the same reliable approach used for the Service Room
-  // and track-provider inputs, which don't depend on KeyboardAvoidingView
-  // (unreliable inside RN <Modal>, and inconsistent even outside one).
-  const scrollRef = useRef<ScrollView>(null);
-  const scrollToFocusedInput = () => {
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150);
-  };
-
+  const { data, updateData, resetData } = usePostRequirement();
   const alert = useAppAlert();
-  const [selectedRange, setSelectedRange] = useState('1-5km');
-  const [showManualRangeModal, setShowManualRangeModal] = useState(false);
-  // There was no way anywhere in the customer app to actually set this to
-  // anything but 0 — hire() would then always skip the PaymentSheet (0 =
-  // "Free Inspection" is an intentional, legitimate choice server-side, so
-  // this can't just default to some nonzero value instead) and the whole
-  // inspection-fee escrow feature was silently unreachable.
-  const [inspectionFeeInput, setInspectionFeeInput] = useState('');
-  // In miles for the UI (US launch) — converted to km only when actually
-  // sent to the backend, via getSearchRadiusKm below.
-  const [manualRadius, setManualRadius] = useState(15);
   const [isPosting, setIsPosting] = useState(false);
 
-  const handleConfirmManualRange = () => {
-    setSelectedRange(`manual-${manualRadius}mi`);
-    setShowManualRangeModal(false);
+  // On-site vs Remote is decided here, as the LAST thing before posting —
+  // not up front — same reasoning as CreateJobRequest.service_mode: a
+  // REMOTE job (e.g. hiring a remote consultant) needs no location at all,
+  // and On-site vs Remote is a decision, not information the customer had
+  // to already have when they started describing the problem.
+  const handleServiceModeChange = (mode: 'ON_SITE' | 'REMOTE') => {
+    if (mode === data.serviceMode) return;
+    updateData({ serviceMode: mode });
   };
 
-  // This used to be purely decorative — the customer could pick a radius
-  // and see it reflected in the UI (with a claim about pricing being tied to
-  // it), but it was never actually sent to the backend at all. Distribution
-  // ran on the backend's fixed default (5km, expanding to 25km) regardless
-  // of what was selected here.
-  const getSearchRadiusKm = (): number => {
-    if (selectedRange.startsWith('manual-')) return milesToKm(manualRadius);
-    if (selectedRange === '1-5km') return 5;
-    if (selectedRange === '6-15km') return 15;
-    if (selectedRange === '16-25km') return 25;
-    return 5;
-  };
+  // A REMOTE job never needs a location; an ON_SITE one does. Since the
+  // choice now happens on this screen, the "is a location required" gate
+  // moves here too (previously enforced on step1, before the customer had
+  // even said which mode they wanted).
+  const hasLocation = data.serviceMode === 'REMOTE'
+    ? true
+    : (data.lat != null && data.lng != null);
 
   const urgencyMap: Record<string, string> = {
     Urgent: 'HIGH',
@@ -105,6 +78,10 @@ export default function JobSummaryScreen() {
   };
 
   const handleProceedToPayment = async () => {
+    if (!hasLocation) {
+      alert.show('error', 'No Location Selected', "Go back to Home and choose a location before posting, or this job won't reach any providers.");
+      return;
+    }
     setIsPosting(true);
     try {
       // Use the full set of skills selected in step2 (real backend skill IDs)
@@ -142,14 +119,8 @@ export default function JobSummaryScreen() {
         description: data.description || `${data.profession} service required.`,
         skill_ids: skillIds,
         urgency: (urgencyMap[data.jobType] || 'MEDIUM') as any,
-        // A bare `|| 0` fallback only guards against NaN (empty/non-numeric
-        // input) — a typed negative like "-50" is a valid finite number, so
-        // it would sail through as-is and only fail later as a confusing
-        // Stripe error at hire time instead of being caught here.
-        inspection_fee: Math.max(0, parseFloat(inspectionFeeInput) || 0),
         lat: data.lat ?? undefined,
         lng: data.lng ?? undefined,
-        search_radius_km: getSearchRadiusKm(),
         scheduled_at: computeScheduledAt(),
         images: imageUrls,
         posted_via: 'MANUAL',
@@ -182,10 +153,8 @@ export default function JobSummaryScreen() {
     <ThemedView style={styles.container}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <ScrollView
-          ref={scrollRef}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
         >
         {/* Header */}
         <View style={styles.header}>
@@ -287,152 +256,54 @@ export default function JobSummaryScreen() {
           </Animated.View>
         </View>
 
-        {/* --- Choose Service Range Section --- */}
+        {/* --- On-site / Remote — the last decision before posting --- */}
         <Animated.View entering={FadeInUp.delay(900)} style={styles.rangeSection}>
-          <ThemedText style={styles.sectionTitle}>Choose Service Range</ThemedText>
+          <ThemedText style={styles.sectionTitle}>How should this be done?</ThemedText>
 
-          <View style={styles.rangeList}>
-            {[
-              // IDs stay km-based internally (matching what getSearchRadiusKm
-              // sends to the backend) — only the displayed label is in miles.
-              { id: '1-5km', label: 'Range: 1–3 mi', price: '$15' },
-              { id: '6-15km', label: 'Range: 4–9 mi', price: '$20' },
-              { id: '16-25km', label: 'Range: 10–16 mi', price: '$25' },
-            ].map((range) => {
-              const isSelected = selectedRange === range.id;
-              return (
-                <TouchableOpacity
-                  key={range.id}
-                  onPress={() => setSelectedRange(range.id)}
-                  style={[
-                    styles.rangeCard,
-                    isSelected && { borderColor: themeColors.brand, borderWidth: 2, backgroundColor: '#FFFBEB' }
-                  ]}
-                >
-                  <ThemedText style={[styles.rangeLabel, isSelected && { fontFamily: Fonts.poppinsBold }]}>
-                    {range.label}
-                  </ThemedText>
-
-                  <View style={styles.priceRow}>
-                    <ThemedText style={[styles.rangePrice, isSelected && { fontFamily: Fonts.poppinsBold }]}>
-                      {range.price}
-                    </ThemedText>
-                    {isSelected && (
-                      <CheckCircle2 size={18} color={themeColors.brand} fill={themeColors.brand} style={{ marginLeft: 8 }} />
-                    )}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-
-            {selectedRange.startsWith('manual-') && (
-              <TouchableOpacity
-                style={[
-                  styles.rangeCard,
-                  { borderColor: themeColors.brand, borderWidth: 2, backgroundColor: '#FFFBEB' }
-                ]}
-                onPress={() => setShowManualRangeModal(true)}
-              >
-                <ThemedText style={[styles.rangeLabel, { fontFamily: Fonts.poppinsBold }]}>
-                  Custom Range: {selectedRange.replace('manual-', '').replace('mi', '')} mi
-                </ThemedText>
-
-                <View style={styles.priceRow}>
-                  <ThemedText style={[styles.rangePrice, { fontFamily: Fonts.poppinsBold }]}>
-                    Calculated
-                  </ThemedText>
-                  <CheckCircle2 size={18} color={themeColors.brand} fill={themeColors.brand} style={{ marginLeft: 8 }} />
-                </View>
-              </TouchableOpacity>
-            )}
+          <View style={styles.jobKindRow}>
+            <TouchableOpacity
+              style={[styles.jobKindChip, data.serviceMode === 'ON_SITE' && styles.jobKindChipActive]}
+              onPress={() => handleServiceModeChange('ON_SITE')}
+            >
+              <MapPin size={16} color={data.serviceMode === 'ON_SITE' ? '#111827' : themeColors.textSecondary} />
+              <ThemedText style={[styles.jobKindChipText, data.serviceMode === 'ON_SITE' && styles.jobKindChipTextActive]}>
+                On-site
+              </ThemedText>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.jobKindChip, data.serviceMode === 'REMOTE' && styles.jobKindChipActive]}
+              onPress={() => handleServiceModeChange('REMOTE')}
+            >
+              <Sparkles size={16} color={data.serviceMode === 'REMOTE' ? '#111827' : themeColors.textSecondary} />
+              <ThemedText style={[styles.jobKindChipText, data.serviceMode === 'REMOTE' && styles.jobKindChipTextActive]}>
+                Remote
+              </ThemedText>
+            </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={styles.adjustLink}
-            onPress={() => setShowManualRangeModal(true)}
-          >
-            <ThemedText style={styles.adjustText}>
-              Adjust Radius Manually
-            </ThemedText>
-          </TouchableOpacity>
-        </Animated.View>
-
-        {/* --- Inspection Fee Section --- */}
-        <Animated.View entering={FadeInUp.delay(1000)} style={styles.rangeSection}>
-          <ThemedText style={styles.sectionTitle}>Inspection Fee</ThemedText>
-          <ThemedText style={[styles.summarySubtitle, { textAlign: 'left', marginBottom: 16 }]}>
-            Held in escrow the moment you hire, and paid out to your provider once they've inspected the job on-site — before any invoice is raised. Leave at $0 for a free inspection.
-          </ThemedText>
-          <View style={styles.feeInputWrapper}>
-            <ThemedText style={styles.feeInputPrefix}>$</ThemedText>
-            <TextInput
-              style={styles.feeInput}
-              placeholder="0"
-              placeholderTextColor={themeColors.textMuted}
-              keyboardType="decimal-pad"
-              value={inspectionFeeInput}
-              onChangeText={setInspectionFeeInput}
-              onFocus={scrollToFocusedInput}
-            />
-          </View>
+          {data.serviceMode === 'REMOTE' ? (
+            <View style={styles.remoteNoticeBox}>
+              <ThemedText style={styles.remoteNoticeText}>
+                No location needed — this job will be matched to skilled providers by skill and availability, wherever they are.
+              </ThemedText>
+            </View>
+          ) : !hasLocation ? (
+            <View style={styles.locationWarningBox}>
+              <MapPin size={14} color="#EF4444" />
+              <ThemedText style={styles.locationWarningText}>
+                No location selected — go back to Home and choose one before posting.
+              </ThemedText>
+            </View>
+          ) : null}
         </Animated.View>
       </ScrollView>
-
-      {/* --- Manual Range Picker Modal --- */}
-      <Modal visible={showManualRangeModal} animationType="fade" transparent>
-        <View style={styles.modalOverlay}>
-          <Animated.View entering={SlideInUp} style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12 }]}>
-            <View style={styles.modalHeader}>
-              <ThemedText style={styles.modalTitle}>Set Custom Radius</ThemedText>
-              <TouchableOpacity onPress={() => setShowManualRangeModal(false)}>
-                <X size={24} color={themeColors.textPrimary} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.manualRangeContainer}>
-              <ThemedText style={styles.radiusValue}>{manualRadius} mi</ThemedText>
-              <ThemedText style={styles.radiusSubtext}>Choose a radius up to 47 mi</ThemedText>
-
-              <Slider
-                style={{ width: '100%', height: 40, marginTop: 20 }}
-                minimumValue={1}
-                maximumValue={47}
-                step={1}
-                value={manualRadius}
-                onValueChange={setManualRadius}
-                minimumTrackTintColor={themeColors.brand}
-                maximumTrackTintColor={themeColors.border}
-                thumbTintColor={themeColors.brand}
-              />
-
-              <View style={styles.sliderLabels}>
-                <ThemedText style={styles.sliderLabelText}>1 mi</ThemedText>
-                <ThemedText style={styles.sliderLabelText}>47 mi</ThemedText>
-              </View>
-
-              <View style={styles.infoBox}>
-                <ThemedText style={styles.infoBoxText}>
-                  The service price will be calculated automatically based on the selected radius.
-                </ThemedText>
-              </View>
-
-              <TouchableOpacity
-                style={[styles.doneButton, { backgroundColor: themeColors.brand, marginTop: 32 }]}
-                onPress={handleConfirmManualRange}
-              >
-                <ThemedText style={styles.doneButtonText}>Apply Radius</ThemedText>
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-        </View>
-      </Modal>
 
       {/* Footer Button */}
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12 }]}>
         <TouchableOpacity
-          style={[styles.postButton, { backgroundColor: themeColors.brand, opacity: isPosting ? 0.7 : 1 }]}
+          style={[styles.postButton, { backgroundColor: themeColors.brand, opacity: (isPosting || !hasLocation) ? 0.5 : 1 }]}
           onPress={handleProceedToPayment}
-          disabled={isPosting}
+          disabled={isPosting || !hasLocation}
         >
           {isPosting
             ? <ActivityIndicator size="small" color="#111827" style={{ marginRight: 8 }} />
@@ -591,150 +462,25 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     color: t.textPrimary,
     marginBottom: 16,
   },
-  rangeList: {
-    gap: 12,
+  jobKindRow: { flexDirection: 'row', gap: 10 },
+  jobKindChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12,
+    borderWidth: 1, borderColor: t.border, backgroundColor: t.card,
   },
-  rangeCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: t.card,
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: t.border,
+  jobKindChipActive: { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
+  jobKindChipText: { fontSize: 13, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary },
+  jobKindChipTextActive: { color: '#111827', fontFamily: Fonts.poppinsBold },
+  remoteNoticeBox: {
+    backgroundColor: '#F5F3FF', borderRadius: 12, borderWidth: 1, borderColor: '#DDD6FE',
+    paddingHorizontal: 14, paddingVertical: 12, marginTop: 16,
   },
-  rangeLabel: {
-    fontSize: 15, lineHeight: 19,
-    fontFamily: Fonts.poppinsSemiBold,
-    color: t.textPrimary,
+  remoteNoticeText: { fontSize: 12.5, fontFamily: Fonts.poppinsSemiBold, color: '#5B21B6', lineHeight: 18 },
+  locationWarningBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: 16,
   },
-  priceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  feeInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: t.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: t.border,
-    paddingHorizontal: 20,
-    height: 56,
-  },
-  feeInputPrefix: {
-    fontSize: 18, lineHeight: 22,
-    fontFamily: Fonts.poppinsBold,
-    color: t.textPrimary,
-    marginRight: 6,
-  },
-  feeInput: {
-    flex: 1,
-    fontSize: 18, lineHeight: 22,
-    fontFamily: Fonts.poppinsBold,
-    color: t.textPrimary,
-    height: '100%',
-    // Android's default font-padding metrics can make a TextInput's text
-    // render larger/lower than a plain Text sibling at the same fontSize
-    // sharing a row — this is what made "$" and the typed number look
-    // misaligned even with alignItems:'center' on the wrapper.
-    textAlignVertical: 'center',
-    paddingVertical: 0,
-    includeFontPadding: false,
-  },
-  rangePrice: {
-    fontSize: 16, lineHeight: 20,
-    fontFamily: Fonts.poppinsBold,
-    color: t.textPrimary,
-  },
-  adjustLink: {
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  adjustText: {
-    fontSize: 14, lineHeight: 18,
-    fontFamily: Fonts.poppinsSemiBold,
-    color: '#3B82F6',
-    textDecorationLine: 'underline',
-  },
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: t.modalBackground,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    padding: 24,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  modalTitle: {
-    fontSize: 20, lineHeight: 25,
-    fontFamily: Fonts.poppinsBold,
-    color: t.textPrimary,
-  },
-  manualRangeContainer: {
-    alignItems: 'center',
-  },
-  radiusValue: {
-    fontSize: 40,
-    fontFamily: Fonts.poppinsBold,
-    color: t.textPrimary,
-    lineHeight: 50,
-    includeFontPadding: false,
-  },
-  radiusSubtext: {
-    fontSize: 14, lineHeight: 18,
-    fontFamily: Fonts.poppins,
-    color: t.textSecondary,
-    marginTop: 4,
-  },
-  sliderLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    paddingHorizontal: 4,
-  },
-  sliderLabelText: {
-    fontSize: 12, lineHeight: 16,
-    fontFamily: Fonts.poppinsSemiBold,
-    color: t.textMuted,
-  },
-  infoBox: {
-    backgroundColor: '#EFF6FF',
-    padding: 16,
-    borderRadius: 16,
-    marginTop: 24,
-    width: '100%',
-  },
-  infoBoxText: {
-    fontSize: 13,
-    fontFamily: Fonts.poppinsSemiBold,
-    color: '#1D4ED8',
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  doneButton: {
-    height: 56,
-    width: '100%',
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  doneButtonText: {
-    fontSize: 16, lineHeight: 20,
-    fontFamily: Fonts.poppinsBold,
-    color: '#000',
-  },
+  locationWarningText: { fontSize: 12, color: '#EF4444', flex: 1, fontFamily: Fonts.poppins },
   footer: {
     position: 'absolute',
     bottom: 0,

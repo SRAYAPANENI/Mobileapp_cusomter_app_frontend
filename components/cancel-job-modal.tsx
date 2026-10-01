@@ -26,10 +26,22 @@ const AFTER_HIRE_REASONS = [
   'Other',
 ];
 
+// Distinct from AFTER_HIRE_REASONS: the provider isn't just "on the way"
+// anymore, they're physically on-site actively inspecting the job —
+// "found someone else" or "provider taking too long" don't make sense once
+// someone's already standing in front of you doing the work.
+const INSPECTING_REASONS = [
+  'Emergency came up',
+  'Problem has been resolved',
+  'Not comfortable continuing',
+  'Safety concern',
+  'Other',
+];
+
 interface CancelJobModalProps {
   visible: boolean;
   jobId: string;
-  scenario?: 'pre-hire' | 'after-hire';
+  scenario?: 'pre-hire' | 'after-hire' | 'inspecting';
   onClose: () => void;
   // Passed the server's outcome message — distinct wording depending on
   // whether the job reopened to other applicants or died outright, so the
@@ -43,7 +55,7 @@ export function CancelJobModal({ visible, jobId, scenario = 'pre-hire', onClose,
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const insets = useSafeAreaInsets();
-  const reasons = scenario === 'after-hire' ? AFTER_HIRE_REASONS : PRE_HIRE_REASONS;
+  const reasons = scenario === 'inspecting' ? INSPECTING_REASONS : scenario === 'after-hire' ? AFTER_HIRE_REASONS : PRE_HIRE_REASONS;
   const [selectedReason, setSelectedReason] = useState<string | null>(null);
   const [otherReason, setOtherReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
@@ -72,10 +84,19 @@ export function CancelJobModal({ visible, jobId, scenario = 'pre-hire', onClose,
         <View style={[styles.reasonModalContainer, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12 }]}>
           <View style={styles.modalIndicator} />
           <ThemedText style={styles.modalTitle}>
-            {scenario === 'after-hire' ? 'Cancel Booking' : 'Cancel Job Posting'}
+            {scenario === 'pre-hire' ? 'Cancel Job Posting' : 'Cancel Booking'}
           </ThemedText>
           <ThemedText style={styles.modalSubtitle}>Please select a reason for cancelling</ThemedText>
 
+          {scenario === 'inspecting' && (
+            <View style={[styles.warningBanner, styles.warningBannerStrong]}>
+              <AlertTriangle size={16} color="#DC2626" />
+              <ThemedText style={[styles.warningText, styles.warningTextStrong]}>
+                The provider is on-site inspecting your job right now. Cancelling now means they've made the
+                trip for nothing — any visiting fee you already paid will still be refunded.
+              </ThemedText>
+            </View>
+          )}
           {scenario === 'after-hire' && (
             <View style={styles.warningBanner}>
               <AlertTriangle size={16} color="#D97706" />
@@ -189,6 +210,13 @@ function makeStyles(t: typeof Colors.light) {
       fontFamily: Fonts.poppins,
       color: '#92400E',
       lineHeight: 18,
+    },
+    warningBannerStrong: {
+      backgroundColor: '#FEF2F2',
+      borderColor: '#FECACA',
+    },
+    warningTextStrong: {
+      color: '#991B1B',
     },
     reasonsList: {
       gap: 12,

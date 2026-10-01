@@ -1,5 +1,6 @@
 import { useAppAlert } from '@/components/app-alert';
 import { CancelJobModal } from '@/components/cancel-job-modal';
+import { DisputeModal } from '@/components/dispute-modal';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -518,6 +519,8 @@ export default function TrackProviderScreen() {
       const result = await payInspectionFee(jobId);
       if (result.status === 'success') {
         setInspectionFeeStatus('HELD');
+      } else if (result.status === 'pending') {
+        appAlert.show('warning', 'Still Processing', result.message);
       } else if (result.status === 'error') {
         appAlert.show('error', 'Payment Failed', result.message);
       }
@@ -538,6 +541,8 @@ export default function TrackProviderScreen() {
       const payResult = await payInvoice(jobId);
       if (payResult.status === 'success') {
         setJobStatus('IN_PROGRESS');
+      } else if (payResult.status === 'pending') {
+        appAlert.show('warning', 'Still Processing', payResult.message);
       } else if (payResult.status === 'error') {
         appAlert.show('error', 'Payment Failed', payResult.message);
       }
@@ -581,6 +586,8 @@ export default function TrackProviderScreen() {
       const payResult = await payInvoice(jobId);
       if (payResult.status === 'success') {
         setJobStatus('IN_PROGRESS');
+      } else if (payResult.status === 'pending') {
+        appAlert.show('warning', 'Still Processing', payResult.message);
       } else if (payResult.status === 'error') {
         appAlert.show('error', 'Payment Failed', payResult.message);
       }
@@ -729,6 +736,13 @@ export default function TrackProviderScreen() {
       message,
       [{ text: 'OK', onPress: () => router.back() }],
     );
+  };
+
+  const [isDisputeModalVisible, setIsDisputeModalVisible] = useState(false);
+
+  const handleJobDisputed = (message: string) => {
+    setIsDisputeModalVisible(false);
+    appAlert.show('success', 'Dispute Filed', message, [{ text: 'OK', onPress: () => router.back() }]);
   };
 
   const handleRatingSubmit = async (ratings: RatingDimensions, comment: string) => {
@@ -989,9 +1003,9 @@ export default function TrackProviderScreen() {
               can request the on-site inspection OTP. */}
           {jobStatus === 'ACCEPTED' && inspectionFeeStatus !== 'HELD' && (
             <View style={styles.inspectionCard}>
-              <ThemedText style={styles.inspectionCardTitle}>Pay Inspection Fee</ThemedText>
+              <ThemedText style={styles.inspectionCardTitle}>Pay Visiting Fee</ThemedText>
               <ThemedText style={styles.inspectionCardBody}>
-                Pay the inspection fee so your provider can start inspecting the job once they arrive.
+                Pay the visiting fee so your provider can start inspecting the job once they arrive.
               </ThemedText>
               <TouchableOpacity
                 style={styles.completeJobBtn}
@@ -1010,9 +1024,20 @@ export default function TrackProviderScreen() {
               Pickup & Drop — the customer isn't at the pickup point to hand
               over a code, see the pickup-photo card below instead. */}
           {jobStatus === 'ACCEPTED' && jobKind !== 'PICKUP_DROPOFF' && inspectionFeeStatus === 'HELD' && inspectionOtp.otp && (
-            <View style={styles.inspectionCard}>
-              <ThemedText style={styles.inspectionCardTitle}>Give this code to your provider</ThemedText>
-              <ThemedText style={styles.otpText}>{inspectionOtp.otp}</ThemedText>
+            <View style={styles.otpCard}>
+              <View style={styles.otpCardHeader}>
+                <View style={styles.otpIconBadge}>
+                  <ShieldCheck size={16} color="#111827" />
+                </View>
+                <ThemedText style={styles.otpCardTitle}>Give this code to your provider</ThemedText>
+              </View>
+              <View style={styles.otpDigitsRow}>
+                {inspectionOtp.otp.split('').map((digit, idx) => (
+                  <View key={idx} style={styles.otpDigitBox}>
+                    <ThemedText style={styles.otpDigitText}>{digit}</ThemedText>
+                  </View>
+                ))}
+              </View>
               <ThemedText style={styles.inspectionCardBody}>
                 Your provider needs this code to start inspecting the job.
               </ThemedText>
@@ -1214,6 +1239,18 @@ export default function TrackProviderScreen() {
               <ThemedText style={styles.completeJobBtnText}>Mark as Completed</ThemedText>
             </TouchableOpacity>
           )}
+
+          {/* Backend only accepts a dispute for IN_PROGRESS or COMPLETED —
+              a job still Open/Accepted/Inspecting has nothing to dispute yet
+              (cancel is the right action there instead). */}
+          {(jobStatus === 'IN_PROGRESS' || isCompleted) && (
+            <TouchableOpacity
+              style={styles.reportIssueBtn}
+              onPress={() => setIsDisputeModalVisible(true)}
+            >
+              <ThemedText style={styles.reportIssueBtnText}>Report an Issue</ThemedText>
+            </TouchableOpacity>
+          )}
         </ScrollView>
       </Animated.View>
       </KeyboardAvoidingView>
@@ -1229,9 +1266,23 @@ export default function TrackProviderScreen() {
         <CancelJobModal
           visible={isCancelModalVisible}
           jobId={jobId}
-          scenario="after-hire"
+          // The provider being physically on-site actively inspecting is a
+          // materially different situation from just having been hired and
+          // being en route — "already on their way" read as flatly wrong
+          // once they'd actually arrived and started working, and gave no
+          // indication that cancelling now means an in-person trip for
+          // nothing rather than just a turn-around.
+          scenario={jobStatus === 'INSPECTING' || jobStatus === 'INVOICE_PENDING' ? 'inspecting' : 'after-hire'}
           onClose={() => setIsCancelModalVisible(false)}
           onCancelled={handleJobCancelled}
+        />
+      )}
+      {jobId && (
+        <DisputeModal
+          visible={isDisputeModalVisible}
+          jobId={jobId}
+          onClose={() => setIsDisputeModalVisible(false)}
+          onDisputed={handleJobDisputed}
         />
       )}
       {appAlert.element}
@@ -1494,6 +1545,18 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     lineHeight: 20,
     fontFamily: Fonts.poppinsBold,
   },
+  reportIssueBtn: {
+    marginTop: 10,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reportIssueBtnText: {
+    color: '#EF4444',
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: Fonts.poppinsSemiBold,
+  },
   inspectionCard: {
     marginTop: 16,
     padding: 16,
@@ -1519,19 +1582,56 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     marginBottom: 10,
     backgroundColor: t.inputFilled,
   },
-  otpText: {
-    fontSize: 40,
+  otpCard: {
+    marginTop: 16,
+    padding: 20,
+    borderRadius: 20,
+    backgroundColor: t.card,
+    borderWidth: 1,
+    borderColor: t.border,
+  },
+  otpCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  otpIconBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: t.brand,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  otpCardTitle: {
+    flex: 1,
+    fontSize: 15,
+    lineHeight: 20,
     fontFamily: Fonts.poppinsBold,
-    letterSpacing: 12,
-    color: t.brand,
-    textAlign: 'center',
-    marginVertical: 8,
-    // React Native/Android adds letterSpacing AFTER each character, including
-    // the last one, but doesn't always include that trailing space in the
-    // Text element's own measured width — with a value this large, the last
-    // digit visually clips against the card edge without this to give it room.
-    paddingHorizontal: 12,
-    lineHeight: 52,
+    color: t.textPrimary,
+  },
+  otpDigitsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  otpDigitBox: {
+    width: 52,
+    height: 60,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#FDE68A',
+    backgroundColor: '#FFFBEB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  otpDigitText: {
+    fontSize: 26,
+    lineHeight: 32,
+    fontFamily: Fonts.poppinsBold,
+    color: t.textPrimary,
     includeFontPadding: false,
   },
   invoiceAmount: {

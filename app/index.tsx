@@ -7,6 +7,7 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { TokenStore } from '@/services/api';
 import { handleInitialCallAction, handleInitialNotification } from '@/services/callManager';
+import { prefetchHomeEssentials } from '@/services/homeCache';
 
 export default function SplashScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -28,13 +29,26 @@ export default function SplashScreen() {
       handled = a || b;
     });
 
+    // Resolved once, immediately, and reused below — both to kick off a
+    // prefetch of the home screen's data the instant a session is
+    // confirmed, and for the actual navigation decision once the branding
+    // animation finishes. This used to be nothing but a 2.5s wait with no
+    // work happening behind it; now the wait is the SAME duration but the
+    // home screen's profile/notifications/addresses calls have that whole
+    // window to resolve in the background instead of starting from zero
+    // the moment the user actually lands there.
+    const tokenPromise = TokenStore.getAccessToken();
+    tokenPromise.then(token => {
+      if (token) prefetchHomeEssentials();
+    });
+
     const timer = setTimeout(() => {
       if (handled) return;
       // A previous bug here always sent the user to /login on every cold start,
       // even with a perfectly valid stored session — meaning killing the app and
       // reopening it (or tapping a notification, before the fix above) always
       // demanded a fresh login. Now it actually checks for one first.
-      TokenStore.getAccessToken().then(token => {
+      tokenPromise.then(token => {
         router.replace(token ? '/home' : '/login');
       });
     }, 2500);

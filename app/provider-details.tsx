@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   Star,
   Trophy,
+  Wallet,
   X,
   Maximize2,
   CheckCircle2
@@ -71,8 +72,8 @@ function formatMemberSince(iso?: string): string {
 }
 
 export default function ProviderDetailsScreen() {
-  const { id, providerId, jobId, skillMatch, distance, inspectionFee, viewOnly } = useLocalSearchParams<{
-    id: string; providerId?: string; jobId?: string; skillMatch?: string; distance?: string; inspectionFee?: string; viewOnly?: string;
+  const { id, providerId, jobId, skillMatch, distance, viewOnly } = useLocalSearchParams<{
+    id: string; providerId?: string; jobId?: string; skillMatch?: string; distance?: string; viewOnly?: string;
   }>();
   const isViewOnly = viewOnly === 'true';
   const appAlert = useAppAlert();
@@ -97,7 +98,6 @@ export default function ProviderDetailsScreen() {
   // "quoted price" from this provider anymore, only the (often $0)
   // inspection fee set when the job was posted. Fetched from the job
   // itself rather than trusted from a nav param.
-  const [jobInspectionFee, setJobInspectionFee] = useState<number | null>(null);
   // A stale notification/cached list can land here for a job that's already
   // moved on elsewhere (hired someone else, cancelled, completed) — jobData
   // was already being fetched just for inspection_fee below, but its status
@@ -126,7 +126,6 @@ export default function ProviderDetailsScreen() {
           jobId ? SkoFyApi.jobs.get(jobId).catch(() => null) : Promise.resolve(null),
         ]);
         setProfile(profileData);
-        setJobInspectionFee((jobData as any)?.inspection_fee ?? null);
         setJobStatus((jobData as any)?.status ?? null);
         setWorkProof((Array.isArray(docsData) ? docsData : []).map((d: any) => ({
           id: d.id,
@@ -207,16 +206,20 @@ export default function ProviderDetailsScreen() {
       // succeeding with zero feedback looked indistinguishable from nothing
       // having happened at all.
       const feeResult = await payInspectionFee(jobId);
-      if (feeResult.status === 'error') {
-        setFeeStatusMessage(`Inspection fee payment failed: ${feeResult.message}`);
+      if (feeResult.status === 'pending') {
+        // Charged, just slow to confirm — "failed" would be actively wrong
+        // here and could push the customer into an unnecessary retry.
+        setFeeStatusMessage(feeResult.message);
+      } else if (feeResult.status === 'error') {
+        setFeeStatusMessage(`Visiting fee payment failed: ${feeResult.message}`);
         // Hire already succeeded — don't leave the customer thinking it
         // didn't happen just because the fee payment needs a retry.
       } else if (feeResult.status === 'cancelled') {
-        setFeeStatusMessage("You'll need to pay the inspection fee from the Track Provider screen before the provider can start inspecting.");
+        setFeeStatusMessage("You'll need to pay the visiting fee from the Track Provider screen before the provider can start inspecting.");
       } else if (feeResult.charged) {
-        setFeeStatusMessage(`$${feeResult.amount.toFixed(2)} inspection fee charged and held in escrow.`);
+        setFeeStatusMessage(`$${feeResult.amount.toFixed(2)} visiting fee charged and held in escrow.`);
       } else {
-        setFeeStatusMessage('This job has no inspection fee.');
+        setFeeStatusMessage('This provider has no visiting fee.');
       }
       setShowSuccessModal(true);
     } finally {
@@ -257,10 +260,13 @@ export default function ProviderDetailsScreen() {
     distance: distance ?? 'Nearby',
     about: profile.bio ?? 'No bio provided yet.',
     skills: profile.skills ?? [],
-    // Real inspection_fee from the job itself — there's no per-provider
-    // "quoted price" anymore (bidding is retired); the actual job cost is
-    // only ever set by their invoice after they inspect the job in person.
-    inspectionFee: jobInspectionFee ?? 0,
+    // The provider's own set (or AI-suggested) rates — not a distance-tier
+    // price picked by the customer anymore. null means they haven't set one
+    // yet. The actual job cost is still only ever finalized by their
+    // invoice after they inspect the job in person; this is just what
+    // they'll charge to come out and look.
+    visitingFee: profile.visiting_fee ?? null,
+    hourlyRate: profile.hourly_rate ?? null,
     isIdentityVerified: !!profile.is_identity_verified,
     // Below this HCI confidence, the score doesn't have enough signal behind
     // it to mean much yet — label the provider honestly as new rather than
@@ -396,12 +402,25 @@ export default function ProviderDetailsScreen() {
               </View>
 
               <ThemedText style={[styles.sectionTitle, { marginTop: 20 }]}>Pricing</ThemedText>
-              <View style={styles.priceCard}>
-                <View>
-                  <ThemedText style={styles.priceValue}>$ {PROVIDER_DATA.inspectionFee}</ThemedText>
-                  <ThemedText style={styles.priceLabel}>Inspection Fee</ThemedText>
+              <View style={styles.priceRow}>
+                <View style={[styles.priceCard, { flex: 1 }]}>
+                  <View>
+                    <ThemedText style={styles.priceValue}>
+                      {PROVIDER_DATA.visitingFee != null ? `$${PROVIDER_DATA.visitingFee}` : '—'}
+                    </ThemedText>
+                    <ThemedText style={styles.priceLabel}>Visiting Fee</ThemedText>
+                  </View>
+                  <Wallet size={22} color="#9CA3AF" />
                 </View>
-                <Clock size={24} color="#9CA3AF" />
+                <View style={[styles.priceCard, { flex: 1 }]}>
+                  <View>
+                    <ThemedText style={styles.priceValue}>
+                      {PROVIDER_DATA.hourlyRate != null ? `$${PROVIDER_DATA.hourlyRate}/hr` : '—'}
+                    </ThemedText>
+                    <ThemedText style={styles.priceLabel}>Hourly Rate</ThemedText>
+                  </View>
+                  <Clock size={22} color="#9CA3AF" />
+                </View>
               </View>
             </Animated.View>
           )}
@@ -802,6 +821,10 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textPrimary,
   },
+  priceRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
   priceCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -813,7 +836,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     borderColor: t.border,
   },
   priceValue: {
-    fontSize: 20, lineHeight: 25,
+    fontSize: 18, lineHeight: 23,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },

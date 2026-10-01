@@ -1,4 +1,5 @@
 import { CancelJobModal } from '@/components/cancel-job-modal';
+import { DisputeModal } from '@/components/dispute-modal';
 import { SkoFyBottomBar } from '@/components/skofy-bottom-bar';
 import { EmptyJobsState } from '@/components/empty-jobs-state';
 import { NoInternetState } from '@/components/no-internet-state';
@@ -54,7 +55,11 @@ interface Job {
 }
 
 
-function JobCard({ item, index, onCancelPress }: { item: Job; index: number; onCancelPress: (jobId: string) => void }) {
+function JobCard({
+  item, index, onCancelPress, onReportIssue,
+}: {
+  item: Job; index: number; onCancelPress: (jobId: string) => void; onReportIssue: (jobId: string) => void;
+}) {
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -160,6 +165,25 @@ function JobCard({ item, index, onCancelPress }: { item: Job; index: number; onC
         ) : null}
       </View>
 
+      {item.status === 'Completed' && (
+        <View style={styles.footerActionsRow}>
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={() => router.push({ pathname: '/support-chat', params: { jobId: item.id } } as any)}
+          >
+            <Info size={14} color="#6B7280" />
+            <ThemedText style={styles.editButtonText}>Get Help</ThemedText>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.cancelButtonSmall}
+            onPress={() => onReportIssue(item.id)}
+          >
+            <XCircle size={14} color="#EF4444" />
+            <ThemedText style={styles.cancelButtonSmallText}>Report an Issue</ThemedText>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {(item.status === 'Open' || item.status === 'Expired' || item.actionLabel) && (
         <View style={styles.footerActionsRow}>
           {item.status === 'Open' ? (
@@ -261,9 +285,13 @@ export default function MyJobsScreen() {
   const [loading, setLoading] = useState(true);
   const isOnline = useIsOnline();
   const [refreshing, setRefreshing] = useState(false);
-  const TABS = ['Waiting for Bids', 'Ongoing', 'Cancelled'] as const;
+  // "Completed" was previously missing entirely — a job fell out of every
+  // tab's filter the moment it finished, with no way to ever come back and
+  // see it again (no history view at all for a completed job).
+  const TABS = ['Waiting for Bids', 'Ongoing', 'Completed', 'Cancelled'] as const;
   const [activeTab, setActiveTab] = useState<typeof TABS[number]>('Waiting for Bids');
   const [cancelJobId, setCancelJobId] = useState<string | null>(null);
+  const [disputeJobId, setDisputeJobId] = useState<string | null>(null);
 
   const loadJobs = async () => {
     try {
@@ -290,6 +318,7 @@ export default function MyJobsScreen() {
   const filteredJobs = jobs.filter(j => {
     if (activeTab === 'Waiting for Bids') return j.status === 'Open';
     if (activeTab === 'Ongoing') return j.status === 'Ongoing';
+    if (activeTab === 'Completed') return j.status === 'Completed';
     return j.status === 'Cancelled' || j.status === 'Expired';
   });
 
@@ -314,7 +343,12 @@ export default function MyJobsScreen() {
             style={[styles.tabBtn, activeTab === tab && styles.tabBtnActive]}
             onPress={() => setActiveTab(tab)}
           >
-            <ThemedText style={[styles.tabBtnText, activeTab === tab && styles.tabBtnTextActive]}>
+            <ThemedText
+              style={[styles.tabBtnText, activeTab === tab && styles.tabBtnTextActive]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
+            >
               {tab}
             </ThemedText>
           </TouchableOpacity>
@@ -339,7 +373,7 @@ export default function MyJobsScreen() {
         <FlatList
           data={filteredJobs}
           renderItem={({ item, index }) => (
-            <JobCard item={item} index={index} onCancelPress={setCancelJobId} />
+            <JobCard item={item} index={index} onCancelPress={setCancelJobId} onReportIssue={setDisputeJobId} />
           )}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.listContent}
@@ -356,7 +390,11 @@ export default function MyJobsScreen() {
             activeTab === 'Ongoing' ? (
               <EmptyJobsState title="No ongoing jobs" subtitle="Once you hire a provider, they'll show up here." />
             ) : activeTab === 'Cancelled' ? (
-              <EmptyJobsState title="No cancelled jobs" subtitle="Cancelled jobs will show up here." />
+              // This tab also holds jobs whose deadline passed unhired
+              // (status 'Expired', see line 255's "Deadline Passed" label) —
+              // the empty state used to only mention "cancelled," which
+              // undersold what this tab is actually for.
+              <EmptyJobsState title="No cancelled jobs" subtitle="Cancelled and expired jobs will show up here." />
             ) : (
               <EmptyJobsState
                 title="Nothing here yet"
@@ -395,6 +433,18 @@ export default function MyJobsScreen() {
               reopened ? 'Other Applicants Available' : 'Job Cancelled',
               message,
             );
+          }}
+        />
+      )}
+      {disputeJobId && (
+        <DisputeModal
+          visible={!!disputeJobId}
+          jobId={disputeJobId}
+          onClose={() => setDisputeJobId(null)}
+          onDisputed={(message) => {
+            setDisputeJobId(null);
+            loadJobs();
+            appAlert.show('success', 'Dispute Filed', message);
           }}
         />
       )}
@@ -443,12 +493,14 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: 16,
     paddingTop: 12,
+    paddingBottom: 12,
     gap: 8,
     backgroundColor: t.card,
   },
   tabBtn: {
     flex: 1,
     paddingVertical: 10,
+    paddingHorizontal: 4,
     borderRadius: 12,
     backgroundColor: t.inputFilled,
     alignItems: 'center',

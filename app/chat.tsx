@@ -850,15 +850,21 @@ export default function ChatScreen() {
                 disabled={ratingSubmitting}
                 onPress={async () => {
                   if (Object.values(ratings).some(v => v === 0)) {
-                    appAlert.show({ title: 'Incomplete', message: 'Please rate all dimensions before submitting.' });
+                    appAlert.show('info', 'Incomplete', 'Please rate all dimensions before submitting.');
                     return;
                   }
                   setRatingSubmitting(true);
                   try {
-                    await SkoFyApi.jobs.submitReview(jobId, { ...ratings, comment: ratingComment });
+                    await SkoFyApi.jobs.submitReview(jobId, {
+                      behaviour_rating: ratings.behaviour,
+                      skill_rating: ratings.skill,
+                      punctuality_rating: ratings.punctuality,
+                      communication_rating: ratings.communication,
+                      comment: ratingComment,
+                    });
                     setRatingVisible(false);
                   } catch {
-                    appAlert.show({ title: 'Error', message: 'Failed to submit rating. Please try again.' });
+                    appAlert.show('error', 'Error', 'Failed to submit rating. Please try again.');
                   } finally {
                     setRatingSubmitting(false);
                   }

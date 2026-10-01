@@ -108,6 +108,29 @@ export default function VerifyProblemScreen() {
     return () => { cancelled = true; };
   }, [data.profession]);
 
+  // AI analysis (step1) pre-fills data.skills with plain skill NAMES — it has
+  // no way to know the backend's skill UUIDs, and backendSkills above isn't
+  // loaded yet at that point. The chips below render these names as already-
+  // checked (CheckCircle2), but without a matching entry in skill_ids that's
+  // purely cosmetic — leaving them untouched and continuing used to submit
+  // the job against an arbitrary skillList[0] fallback in summary.tsx
+  // instead of whatever the user actually saw selected here. Backfills
+  // skill_ids/skill_id for any AI-suggested name that matches a real backend
+  // skill; never touches a name the user has since manually deselected,
+  // since toggleSkill already removes those from data.skills itself.
+  useEffect(() => {
+    if (backendSkills.length === 0 || data.skills.length === 0) return;
+    const unresolved = data.skills
+      .map(name => backendSkills.find(s => s.name === name))
+      .filter((s): s is { id: string; name: string } => !!s && !data.skill_ids.includes(s.id));
+    if (unresolved.length === 0) return;
+    const newSkillIds = [...data.skill_ids, ...unresolved.map(s => s.id)];
+    updateData({
+      skill_ids: newSkillIds,
+      skill_id: data.skill_id ?? newSkillIds[0] ?? null,
+    });
+  }, [backendSkills]);
+
   // Merged skill list — backend skills take priority, fallback to local names with empty id
   const displaySkills = useMemo(() =>
     backendSkills.length > 0

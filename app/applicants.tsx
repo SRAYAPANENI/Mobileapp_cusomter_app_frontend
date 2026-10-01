@@ -82,7 +82,6 @@ function ApplicantCard({
                 jobId: jobId ?? '',
                 skillMatch: String(item.skillMatch ?? ''),
                 distance: item.distance ?? '',
-                inspectionFee: String(item.inspectionFee ?? ''),
               }
             })}
       >
@@ -221,11 +220,6 @@ function mapApiApplicant(a: any): Applicant & { applicationId: string; providerI
     expertise: hci >= 80 ? 'Expert' : hci >= 50 ? 'Intermediate' : 'Beginner',
     distance: a.distance_km ? `${kmToMiles(Number(a.distance_km)).toFixed(1)} mi away` : 'Nearby',
     skillMatch: Math.min(100, Math.round(hci)),
-    // No quoted price at applicant-review time anymore — bidding is
-    // retired, price is only ever set by the provider's post-inspection
-    // invoice. Kept as 0 rather than removed: the Applicant type/downstream
-    // nav params still reference this field.
-    inspectionFee: 0,
     rating: a.avg_rating ?? 0,
     jobsCompleted: a.jobs_completed ?? 0,
     about: a.bio ?? 'Experienced professional ready to help.',
@@ -340,9 +334,13 @@ export default function ApplicantsScreen() {
 
   const handleHire = async (applicationId: string, name: string) => {
     if (!jobId || !applicationId) {
-      setHiredIds(prev => [...prev, applicationId]);
-      setLastHiredName(name);
-      setShowSuccessModal(true);
+      // A missing param here means a stale/malformed deep link or notification
+      // landed on this screen without what it needs to actually hire — not a
+      // real success. Showing the success modal anyway (as this used to)
+      // told the customer they'd hired and paid when neither API call ever
+      // ran, and the resulting "hired" card linked to Track Provider with an
+      // empty job id.
+      appAlert.show('error', 'Something Went Wrong', "Couldn't hire this applicant — please go back and try again.");
       return;
     }
     setHiringId(applicationId);
@@ -359,16 +357,20 @@ export default function ApplicantsScreen() {
       // silently succeeding with zero feedback looked indistinguishable from
       // nothing having happened at all.
       const feeResult = await payInspectionFee(jobId);
-      if (feeResult.status === 'error') {
-        setFeeStatusMessage(`Inspection fee payment failed: ${feeResult.message}`);
+      if (feeResult.status === 'pending') {
+        // Charged, just slow to confirm — "failed" would be actively wrong
+        // here and could push the customer into an unnecessary retry.
+        setFeeStatusMessage(feeResult.message);
+      } else if (feeResult.status === 'error') {
+        setFeeStatusMessage(`Visiting fee payment failed: ${feeResult.message}`);
         // Hire already succeeded — don't leave the customer thinking it
         // didn't happen just because the fee payment needs a retry.
       } else if (feeResult.status === 'cancelled') {
-        setFeeStatusMessage("You'll need to pay the inspection fee from the Track Provider screen before the provider can start inspecting.");
+        setFeeStatusMessage("You'll need to pay the visiting fee from the Track Provider screen before the provider can start inspecting.");
       } else if (feeResult.charged) {
-        setFeeStatusMessage(`$${feeResult.amount.toFixed(2)} inspection fee charged and held in escrow.`);
+        setFeeStatusMessage(`$${feeResult.amount.toFixed(2)} visiting fee charged and held in escrow.`);
       } else {
-        setFeeStatusMessage('This job has no inspection fee.');
+        setFeeStatusMessage('This provider has no visiting fee.');
       }
       setHiredIds(prev => [...prev, applicationId]);
       setLastHiredName(name);

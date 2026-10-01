@@ -11,11 +11,19 @@ const STRIPE_TEST_MODE = STRIPE_PUBLISHABLE_KEY.startsWith('pk_test_');
 type PaymentResult =
   | { status: 'success' }
   | { status: 'cancelled' }
+  // The card was charged (PaymentSheet reported success) but the backend
+  // hadn't confirmed HELD after 5s of polling — usually just a slow
+  // webhook, not a decline. Distinct from 'error' specifically so callers
+  // don't tell the customer "Payment Failed" for a charge that most likely
+  // went through, and don't invite an immediate retry that could create a
+  // second payment intent for the same job.
+  | { status: 'pending'; message: string }
   | { status: 'error'; message: string };
 
 type FeePaymentResult =
   | { status: 'success'; charged: boolean; amount: number }
   | { status: 'cancelled' }
+  | { status: 'pending'; message: string }
   | { status: 'error'; message: string };
 
 const PAYMENT_ELIGIBILITY_CODES = new Set([
@@ -127,9 +135,9 @@ export function useHirePayment() {
         }
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
-      return { status: 'error', message: 'Payment is still processing — please try again in a moment.' };
+      return { status: 'pending', message: 'Your payment is still processing — this usually clears within a minute. Check back shortly before trying again.' };
     } catch (err: any) {
-      return { status: 'error', message: err?.message ?? 'Failed to pay the inspection fee. Please try again.' };
+      return { status: 'error', message: err?.message ?? 'Failed to pay the visiting fee. Please try again.' };
     }
   };
 
@@ -153,7 +161,7 @@ export function useHirePayment() {
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
-      return { status: 'error', message: 'Payment is still processing — please try again in a moment.' };
+      return { status: 'pending', message: 'Your payment is still processing — this usually clears within a minute. Check back shortly before trying again.' };
     } catch (err: any) {
       return { status: 'error', message: err?.message ?? 'Failed to process payment. Please try again.' };
     }

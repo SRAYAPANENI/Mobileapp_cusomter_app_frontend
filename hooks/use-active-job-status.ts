@@ -21,7 +21,7 @@ async function describeJob(job: any): Promise<ActiveJobBanner | null> {
   if (job.status === 'ACCEPTED') {
     const feeStatus = await SkoFyApi.payments.getStatus(job.id, 'INSPECTION_FEE').catch(() => null);
     if (feeStatus?.status !== 'HELD') {
-      message = 'Pay the inspection fee to continue';
+      message = 'Pay the visiting fee to continue';
     } else {
       const otpResult = await SkoFyApi.jobs.getInspectionOtp(job.id).catch(() => null);
       message = otpResult?.otp

@@ -1,5 +1,6 @@
 import notifee from '@notifee/react-native';
 import AnimatedBrandMark from '@/components/animated-brand-mark';
+import { Skeleton } from '@/components/skeleton';
 import { VoicePostModal } from '@/components/voice-post-modal';
 import { QuickNeedModal } from '@/components/quick-need-modal';
 import { PickupDropoffModal } from '@/components/pickup-dropoff-modal';
@@ -13,6 +14,9 @@ import { QUICK_NEEDS, QuickNeed } from '@/constants/quick-needs';
 import { useIsOnline } from '@/hooks/use-is-online';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { BASE_URL, SkoFyApi } from '@/services/api';
+import { readHomeCache, writeHomeCache } from '@/services/homeCache';
+import type { OfferResponse } from '@/types/offer';
+import { discountText, OFFER_CARD_COLORS } from '@/utils/offer-format';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
@@ -164,19 +168,6 @@ const TOP_SERVICES: Array<{
   { id: 'gardener',    label: 'Gardener',     Icon: Leaf,          type: 'home' },
 ];
 
-
-const DEALS_DATA: Array<{
-  id: string;
-  headline: string; sub: string; cta: string;
-  Icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
-  iconBg: string; iconColor: string; ctaBg: string;
-}> = [
-  { id: 'deal_20off',  headline: '20% OFF',       sub: 'Your first booking',       cta: 'Claim',      Icon: TicketPercent, iconBg: '#F5F3FF', iconColor: '#7C3AED', ctaBg: '#7C3AED' },
-  { id: 'deal_refer',  headline: 'Refer & Earn',  sub: '$25 per friend you refer',  cta: 'Invite',     Icon: Users,         iconBg: '#EEF2FF', iconColor: '#6366F1', ctaBg: '#6366F1' },
-  { id: 'ad_voice',    headline: 'AI Voice',      sub: 'Just talk — we book',       cta: 'Try Now',    Icon: Mic,           iconBg: '#E0F2FE', iconColor: '#0EA5E9', ctaBg: '#0EA5E9' },
-  { id: 'ad_trust',    headline: 'Verified Pros', sub: 'Background-checked & insured', cta: 'Learn More', Icon: Sparkles,   iconBg: '#F0FDF4', iconColor: '#10B981', ctaBg: '#10B981' },
-  { id: 'ad_sameday',  headline: 'Same Day',      sub: 'Book by 2PM, done today',   cta: 'Book Now',   Icon: Zap,           iconBg: '#FFF7ED', iconColor: '#F97316', ctaBg: '#F97316' },
-];
 
 // expo-location's getCurrentPositionAsync has no built-in timeout — on a
 // device that can't get a fresh GPS fix quickly (WiFi-only, weak signal
@@ -428,6 +419,13 @@ export default function HomeScreen() {
     }).catch(() => setDismissedIdsReady(true));
   }, []);
 
+  const [offers, setOffers] = useState<OfferResponse[]>([]);
+  useEffect(() => {
+    SkoFyApi.offers.list()
+      .then((data: unknown) => setOffers(Array.isArray(data) ? (data as OfferResponse[]) : []))
+      .catch(() => { /* dashboard still works without offers */ });
+  }, []);
+
   const dismissJob = (jobId: string) => {
     // Optimistic local update so card disappears instantly
     setDismissedJobIds(prev => {
@@ -514,12 +512,19 @@ export default function HomeScreen() {
   const mapRef = useRef<any>(null);
 
   const fetchAddress = async (lat: number, lon: number) => {
+    // Cached alongside the coordinates that produced it — next cold start
+    // can prime both `address` and `location` together from one read,
+    // skipping the "Finding your location..." gate for a reopen even
+    // before this reverse-geocode call (or the GPS fix itself) resolves.
+    writeHomeCache({ location: { latitude: lat, longitude: lon } });
     try {
       const response = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
       if (response.length > 0) {
         const item = response[0];
         const readableAddress = `${item.name || ''}, ${item.district || item.city || item.region || ''}`.trim();
-        setAddress(readableAddress || 'Your Location');
+        const resolved = readableAddress || 'Your Location';
+        setAddress(resolved);
+        writeHomeCache({ address: resolved });
       }
     } catch (error) {
       setAddress('Your Location');
@@ -542,43 +547,63 @@ export default function HomeScreen() {
     return providers;
   };
 
-  // Real-time Data Provisions
+  // Real-time Data Provisions — the two fetches below are independent of
+  // each other, so they run concurrently (each with its own try/catch, so
+  // one failing doesn't block or cancel the other) instead of the nearby-
+  // providers call finishing before the active-jobs call even started.
   const refreshDashboard = async (lat: number, lon: number) => {
-    try {
-      // 1. Fetch live providers (Uber style)
-      const providers = await SkoFyApi.dashboard.getNearbyProviders(lat, lon);
-      const mapped = providers
-        .filter(p => p.lat != null && p.lng != null)
-        .map(p => ({ id: p.provider_id, latitude: p.lat!, longitude: p.lng!, name: p.name }));
-      setServiceProviders(mapped.length > 0 ? mapped : generateMockProviders(lat, lon, 15));
-    } catch (err) {
-      console.error('Failed to fetch nearby providers, falling back to mock pins:', err);
-      setServiceProviders(generateMockProviders(lat, lon, 15));
-    }
-
-    try {
-      // 2. Fetch Active Jobs — map backend field names to ActiveJob shape
-      const jobData = await SkoFyApi.dashboard.getActiveJobs();
-      if (Array.isArray(jobData)) {
-        const mapped = jobData.map(mapApiJob);
-        setJobs(mapped);
-        // Reverse-geocode jobs that were created via map-tap (no address_id → no full_address)
-        mapped.forEach(async (j) => {
-          if (!j.location && j.lat != null && j.lng != null) {
-            try {
-              const geo = await Location.reverseGeocodeAsync({ latitude: j.lat, longitude: j.lng });
-              if (geo.length > 0) {
-                const g = geo[0];
-                const addr = [g.name, g.street, g.city, g.region].filter(Boolean).join(', ');
-                if (addr) setJobs(prev => prev.map(p => p.id === j.id ? { ...p, location: addr } : p));
-              }
-            } catch { /* leave blank */ }
-          }
-        });
+    const fetchNearbyProviders = async () => {
+      try {
+        const providers = await SkoFyApi.dashboard.getNearbyProviders(lat, lon);
+        const mapped = providers
+          .filter(p => p.lat != null && p.lng != null)
+          .map(p => ({ id: p.provider_id, latitude: p.lat!, longitude: p.lng!, name: p.name }));
+        const finalProviders = mapped.length > 0 ? mapped : generateMockProviders(lat, lon, 15);
+        setServiceProviders(finalProviders);
+        // Only real (non-mock) results count as "live data arrived" for the
+        // cache-priming race guard — if this came back empty and fell back
+        // to randomized mock dots, letting a still-in-flight cache read
+        // override those with real last-known providers later is strictly
+        // better than leaving the guard up and keeping the mock ones.
+        if (mapped.length > 0) {
+          liveDataArrivedRef.current = true;
+          writeHomeCache({ serviceProviders: finalProviders });
+        }
+      } catch (err) {
+        console.error('Failed to fetch nearby providers, falling back to mock pins:', err);
+        setServiceProviders(generateMockProviders(lat, lon, 15));
       }
-    } catch (err) {
-      console.error('Failed to fetch active jobs:', err);
-    }
+    };
+
+    const fetchActiveJobs = async () => {
+      try {
+        // Map backend field names to ActiveJob shape
+        const jobData = await SkoFyApi.dashboard.getActiveJobs();
+        if (Array.isArray(jobData)) {
+          const mapped = jobData.map(mapApiJob);
+          liveDataArrivedRef.current = true;
+          setJobs(mapped);
+          writeHomeCache({ jobs: mapped });
+          // Reverse-geocode jobs that were created via map-tap (no address_id → no full_address)
+          mapped.forEach(async (j) => {
+            if (!j.location && j.lat != null && j.lng != null) {
+              try {
+                const geo = await Location.reverseGeocodeAsync({ latitude: j.lat, longitude: j.lng });
+                if (geo.length > 0) {
+                  const g = geo[0];
+                  const addr = [g.name, g.street, g.city, g.region].filter(Boolean).join(', ');
+                  if (addr) setJobs(prev => prev.map(p => p.id === j.id ? { ...p, location: addr } : p));
+                }
+              } catch { /* leave blank */ }
+            }
+          });
+        }
+      } catch (err) {
+        console.error('Failed to fetch active jobs:', err);
+      }
+    };
+
+    await Promise.all([fetchNearbyProviders(), fetchActiveJobs()]);
   };
 
   const handleRefresh = async () => {
@@ -594,23 +619,76 @@ export default function HomeScreen() {
       .catch(() => {});
   }, []);
 
+  // Set the instant any of this mount's live fetches (profile, unread
+  // count, saved addresses) actually lands — guards the cache-priming
+  // read right below against overwriting fresh data if it happened to
+  // resolve after a live response already did.
+  const liveDataArrivedRef = useRef(false);
+
   useEffect(() => {
+    // Cache-first paint: prime whatever was last successfully shown,
+    // before any network call resolves, so a reopen renders the real
+    // dashboard immediately instead of sitting on the "Finding your
+    // location..." gate below while this run's fetches are still in
+    // flight (the splash screen's prefetchHomeEssentials() already had a
+    // head start on three of them too). Every fetch below still runs
+    // exactly as it always did and overwrites this with fresh data the
+    // moment it lands — this is a bridge to that, not a replacement for it.
+    //
+    // liveDataArrivedRef guards the (unlikely but real) inverse race: a
+    // local file read is effectively always faster than a network round
+    // trip, but isn't GUARANTEED to be — without this, a cache read that
+    // happened to resolve after a live response already landed would
+    // overwrite fresh data with stale cached data, with nothing left to
+    // correct it until the next manual refresh.
+    readHomeCache().then(cached => {
+      if (!cached || liveDataArrivedRef.current) return;
+      if (cached.userName) setUserName(cached.userName);
+      if (cached.profileImageUrl) setProfileImageUrl(cached.profileImageUrl);
+      if (cached.address) setAddress(cached.address);
+      if (cached.unreadNotifCount != null) setUnreadNotifCount(cached.unreadNotifCount);
+      if (Array.isArray(cached.jobs)) setJobs(cached.jobs as ActiveJob[]);
+      if (Array.isArray(cached.serviceProviders)) setServiceProviders(cached.serviceProviders as ServiceProvider[]);
+      if (Array.isArray(cached.savedAddresses)) setSavedAddresses(cached.savedAddresses as any);
+      if (cached.location) {
+        setLocation({
+          coords: {
+            latitude: cached.location.latitude,
+            longitude: cached.location.longitude,
+            altitude: null, accuracy: null, altitudeAccuracy: null, heading: null, speed: null,
+          },
+          timestamp: Date.now(),
+        });
+      }
+    });
+
     // Load user name + profile image on mount
     SkoFyApi.customers.getProfile()
       .then(p => {
-        if (p?.name) setUserName(p.name);
-        if ((p as any)?.profile_image_url) setProfileImageUrl((p as any).profile_image_url);
+        liveDataArrivedRef.current = true;
+        if (p?.name) { setUserName(p.name); writeHomeCache({ userName: p.name }); }
+        if ((p as any)?.profile_image_url) {
+          setProfileImageUrl((p as any).profile_image_url);
+          writeHomeCache({ profileImageUrl: (p as any).profile_image_url });
+        }
       })
       .catch((err) => {
         console.error('Failed to fetch profile:', err);
       });
-    SkoFyApi.notifications.unreadCount().then(setUnreadNotifCount).catch(() => {});
+    SkoFyApi.notifications.unreadCount()
+      .then(c => { liveDataArrivedRef.current = true; setUnreadNotifCount(c); writeHomeCache({ unreadNotifCount: c }); })
+      .catch(() => {});
 
     (SkoFyApi.addresses.list() as Promise<any[]>)
-      .then(list => setSavedAddresses((list ?? []).map((a: any) => ({
-        id: a.id, label: a.label, full_address: a.full_address,
-        lat: a.lat ?? undefined, lng: a.lng ?? undefined,
-      }))))
+      .then(list => {
+        liveDataArrivedRef.current = true;
+        const mapped = (list ?? []).map((a: any) => ({
+          id: a.id, label: a.label, full_address: a.full_address,
+          lat: a.lat ?? undefined, lng: a.lng ?? undefined,
+        }));
+        setSavedAddresses(mapped);
+        writeHomeCache({ savedAddresses: mapped });
+      })
       .catch((err) => {
         console.error('Failed to fetch saved addresses:', err);
       });
@@ -1302,15 +1380,38 @@ export default function HomeScreen() {
   }
 
   if (loading && !location) {
+    // Only reachable on a genuine first-ever open (or an unreadable cache) —
+    // the mount effect above primes `location` from cache otherwise, which
+    // already skips past this gate with real content. Shaped like the real
+    // header + hero card + quick-needs row below (see the return() JSX)
+    // rather than a bare spinner, so the real layout doesn't "pop in" once
+    // data arrives — it just fills in.
     return (
-      <View style={styles.onboardingContainer}>
+      <View style={styles.container}>
         <StatusBar barStyle="dark-content" />
-        <View style={styles.loaderLogoContainer}>
-          <AnimatedBrandMark size={64} nameSize={32} offsetX={20} />
+        <View style={[styles.headerSection, { paddingTop: Platform.OS === 'ios' ? insets.top + 8 : 36 }]}>
+          <View style={styles.headerBrandRow}>
+            <View style={styles.headerBrandLeft}>
+              <AnimatedBrandMark size={28} nameSize={20} centered={false} />
+            </View>
+            <Skeleton width={22} height={22} borderRadius={11} />
+          </View>
+          <Skeleton width="60%" height={22} style={{ marginTop: 14 }} />
+          <Skeleton width="45%" height={16} style={{ marginTop: 10 }} />
         </View>
-        <View style={styles.loaderContent}>
-          <ActivityIndicator size="small" color="#FFCE48" />
-          <ThemedText style={styles.loaderText}>Finding your location...</ThemedText>
+        <View style={{ paddingHorizontal: 20, marginTop: 20, gap: 16 }}>
+          <Skeleton width="100%" height={140} borderRadius={20} />
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <Skeleton width="48%" height={90} borderRadius={16} />
+            <Skeleton width="48%" height={90} borderRadius={16} />
+          </View>
+          <Skeleton width="40%" height={18} />
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <Skeleton width={72} height={72} borderRadius={16} />
+            <Skeleton width={72} height={72} borderRadius={16} />
+            <Skeleton width={72} height={72} borderRadius={16} />
+            <Skeleton width={72} height={72} borderRadius={16} />
+          </View>
         </View>
       </View>
     );
@@ -1465,38 +1566,48 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
-        {/* ── Deals for You ── */}
-        <View style={styles.dealsSection}>
-          <ThemedText style={styles.sectionLabel}>Deals for You</ThemedText>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dealsList}>
-            {DEALS_DATA.map(d => (
-              <TouchableOpacity
-                key={d.id}
-                style={styles.dealCardShadow}
-                onPress={() => {
-                  if (d.id === 'ad_voice') { handleVoiceTrigger(); return; }
-                  if (d.id === 'ad_sameday') { handlePostRequestTrigger(); return; }
-                  router.push('/offers');
-                }}
-                activeOpacity={0.82}
-              >
-                <View style={styles.dealCard}>
-                  <View style={[styles.dealAccentBar, { backgroundColor: d.ctaBg }]} />
-                  <View style={[styles.dealIconBox, { backgroundColor: d.iconBg }]}>
-                    <d.Icon size={19} color={d.iconColor} strokeWidth={1.8} />
-                  </View>
-                  <View style={styles.dealCardContent}>
-                    <ThemedText style={styles.dealHeadline} numberOfLines={1}>{d.headline}</ThemedText>
-                    <ThemedText style={styles.dealSub} numberOfLines={2}>{d.sub}</ThemedText>
-                  </View>
-                  <View style={[styles.dealCta, { backgroundColor: d.ctaBg }]}>
-                    <ThemedText style={styles.dealCtaText}>{d.cta}</ThemedText>
-                  </View>
-                </View>
+        {/* ── Deals for You — real offers only, nothing hardcoded/decorative
+             mixed in here anymore (that used to include app-feature ads
+             like "Same Day" that aren't offers at all, and two fake
+             "20% OFF"/"Refer & Earn" cards with no backing data). Hidden
+             entirely rather than shown empty when there's nothing live. */}
+        {offers.length > 0 && (
+          <View style={styles.dealsSection}>
+            <View style={styles.dealsSectionHeader}>
+              <ThemedText style={[styles.sectionLabel, { marginBottom: 0 }]}>Deals for You</ThemedText>
+              <TouchableOpacity onPress={() => router.push('/offers')} activeOpacity={0.7}>
+                <ThemedText style={styles.viewAllLink}>View All</ThemedText>
               </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dealsList}>
+              {offers.map((o, index) => {
+                const color = OFFER_CARD_COLORS[index % OFFER_CARD_COLORS.length];
+                return (
+                  <TouchableOpacity
+                    key={o.id}
+                    style={styles.dealCardShadow}
+                    onPress={() => router.push({ pathname: '/offer-detail', params: { offerId: o.id } } as any)}
+                    activeOpacity={0.82}
+                  >
+                    <View style={styles.dealCard}>
+                      <View style={[styles.dealAccentBar, { backgroundColor: color }]} />
+                      <View style={[styles.dealIconBox, { backgroundColor: `${color}20` }]}>
+                        <TicketPercent size={19} color={color} strokeWidth={1.8} />
+                      </View>
+                      <View style={styles.dealCardContent}>
+                        <ThemedText style={styles.dealHeadline} numberOfLines={1}>{discountText(o)} OFF</ThemedText>
+                        <ThemedText style={styles.dealSub} numberOfLines={2}>{o.title}</ThemedText>
+                      </View>
+                      <View style={[styles.dealCta, { backgroundColor: color }]}>
+                        <ThemedText style={styles.dealCtaText}>Claim</ThemedText>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
 
         {/* ── Map Box (commented out — re-enable when map feature is ready) ──
         <View style={styles.mapBox}>
@@ -1917,6 +2028,10 @@ function makeStyles(t: typeof Colors.light) {
   skillTileCtaText: { fontSize: 11.5, fontFamily: Fonts.poppinsBold },
   // ── Deals for You strip ───────────────────────────────────────────────────
   dealsSection: { paddingHorizontal: 16, marginBottom: 20 },
+  dealsSectionHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10,
+  },
+  viewAllLink: { fontSize: 13, fontFamily: Fonts.poppinsSemiBold, color: '#F59E0B' },
   dealsList: { gap: 12, paddingRight: 8, paddingVertical: 8 },
   dealCardShadow: {
     width: 240,

@@ -388,8 +388,6 @@ export default function ProviderMapScreen() {
     return result;
   }, [filteredProviders, region, mapSize]);
 
-  const radiusMiForModal = region ? ((region.latitudeDelta * 111) / 2) / 1.60934 : 25;
-
   if (!MapView) {
     return (
       <View style={s.fallback}>
@@ -719,7 +717,6 @@ export default function ProviderMapScreen() {
         onJobPosted={() => { setVoiceVisible(false); setTargetProvider(undefined); setQueuedProviders(undefined); }}
         targetProvider={targetProvider}
         queuedProviders={queuedProviders}
-        initialRadiusMi={radiusMiForModal}
       />
     </View>
   );

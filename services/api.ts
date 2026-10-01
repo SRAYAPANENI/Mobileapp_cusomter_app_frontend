@@ -28,9 +28,10 @@ const DEV_LAN_IP = '192.168.1.6'; // Your machine's LAN IP for physical device t
 // crash, etc.) this changes and both apps need a fresh release build with the
 // new URL pasted in here. Switch to a real deployed backend domain (and the
 // __DEV__ check, see git history) once one exists.
-// Previous account's URL — hit its monthly bandwidth cap (ERR_NGROK_725):
+// Previous accounts' URLs — each hit its monthly bandwidth cap (ERR_NGROK_725):
+// const NGROK_URL = 'https://underrate-snowfield-chemist.ngrok-free.dev/v1';
 // const NGROK_URL = 'https://lavender-strife-monopoly.ngrok-free.dev/v1';
-const NGROK_URL = 'https://underrate-snowfield-chemist.ngrok-free.dev/v1';
+const NGROK_URL = 'https://dill-unstirred-amply.ngrok-free.dev/v1';
 export const BASE_URL = NGROK_URL;
 if (__DEV__) console.log('[SkoFyApi] BASE_URL:', BASE_URL, '__DEV__:', __DEV__);
 
@@ -191,8 +192,17 @@ async function _refreshAccessToken(): Promise<string | null> {
       if (!response.ok) return null;
       const json = await response.json();
       const newToken: string = json.data?.access_token;
+      // The backend now rotates the refresh token on every use (consumes
+      // the one just presented, issues a fresh one) — this MUST be stored
+      // in place of the old one, or the next refresh attempt replays an
+      // already-rotated-away token, which the backend now treats as a
+      // stolen-token signal and revokes every session for this role.
+      const newRefreshToken: string | undefined = json.data?.refresh_token;
       if (newToken) {
         await SecureStore.setItemAsync(TOKEN_KEY, newToken);
+      }
+      if (newRefreshToken) {
+        await SecureStore.setItemAsync(REFRESH_KEY, newRefreshToken);
       }
       return newToken ?? null;
     } catch {
@@ -418,11 +428,9 @@ export const SkoFyApi = {
       budget_min?: number;
       budget_max?: number;
       scheduled_at?: string;
-      inspection_fee?: number;
       notes?: string;
       lat?: number;
       lng?: number;
-      search_radius_km?: number;
       images?: string[];
       target_provider_id?: string;
       // Backup providers asked in order if target_provider_id declines or
@@ -526,6 +534,14 @@ export const SkoFyApi = {
         body: JSON.stringify({ reason }),
       }),
 
+    // Backend only accepts this for a job that's IN_PROGRESS or COMPLETED —
+    // either the customer or the assigned provider may file one.
+    disputeJob: async (jobId: string, reason: string) =>
+      request(`/jobs/${jobId}/dispute`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      }),
+
     complete: async (jobId: string) =>
       request(`/jobs/${jobId}/complete`, { method: 'POST' }),
 
@@ -624,6 +640,42 @@ export const SkoFyApi = {
       const wsBase = BASE_URL.replace(/^http/, 'ws');
       return `${wsBase}/ws/jobs/${jobId}`;
     },
+  },
+
+  // ── Support tickets ──────────────────────────────────────────────────────
+  // No WebSocket for this one (unlike job chat above) — screens polling for
+  // new admin replies do so on a plain interval.
+  supportTickets: {
+    create: async (subject: string, message: string, jobId?: string) =>
+      request('/support-tickets', {
+        method: 'POST',
+        body: JSON.stringify({ subject, message, job_id: jobId }),
+      }),
+    list: async () => request('/support-tickets'),
+    get: async (ticketId: string) => request(`/support-tickets/${ticketId}`),
+    addMessage: async (ticketId: string, message: string) =>
+      request(`/support-tickets/${ticketId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+      }),
+    // Records the canned self-help answer shown before any human is
+    // involved, so it's part of the ticket's real conversation history —
+    // an admin (or a self-resolved ticket nobody ever opens) still has a
+    // full record of what was actually shown.
+    addSystemMessage: async (ticketId: string, message: string) =>
+      request(`/support-tickets/${ticketId}/system-message`, {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+      }),
+    selfResolve: async (ticketId: string) =>
+      request(`/support-tickets/${ticketId}/self-resolve`, { method: 'PATCH' }),
+  },
+
+  // ── Promotional offers ───────────────────────────────────────────────────
+  offers: {
+    list: async () => request('/offers'),
+    get: async (offerId: string) => request(`/offers/${offerId}`),
+    claim: async (offerId: string) => request(`/offers/${offerId}/claim`, { method: 'POST' }),
   },
 
   // ── Push notifications ──────────────────────────────────────────────────
@@ -758,6 +810,7 @@ export const SkoFyApi = {
       job_id: string | null;
       is_read: boolean;
       created_at: string;
+      image_url: string | null;
     }>> => request('/notifications'),
     unreadCount: async (): Promise<number> => {
       const data: any = await request('/notifications/unread-count');

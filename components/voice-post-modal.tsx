@@ -79,7 +79,6 @@ interface Props {
   // Backup providers asked in order if targetProvider declines or doesn't
   // respond in time — the sequential shortlist dispatch.
   queuedProviders?: { id: string; name: string; profession: string | null }[];
-  initialRadiusMi?: number;
 }
 
 const CHAR_SIZE = 104;
@@ -152,7 +151,7 @@ const KNOWN_PROFESSIONS = new Set([
 export function VoicePostModal({
   visible, onClose, lat, lng, address,
   onJobPosted, onFallbackToManual, onPickupDropoffDetected,
-  initialProfession, targetProvider, queuedProviders, initialRadiusMi,
+  initialProfession, targetProvider, queuedProviders,
 }: Props) {
   // Locked to light mode app-wide (see hooks/use-color-scheme.ts) — this
   // file imports useColorScheme directly from react-native rather than that
@@ -173,13 +172,6 @@ export function VoicePostModal({
   // rather than depending purely on parsing a spoken yes/no.
   const [showDiagnosisConfirm, setShowDiagnosisConfirm] = useState(false);
   const [showPhotoPrompt, setShowPhotoPrompt] = useState(false);
-  const [radiusMi, setRadiusMi] = useState(250);
-  // Nothing in this voice flow ever asked for this — SkoFyApi.jobs.create()
-  // was called with no inspection_fee field at all, which the backend
-  // defaults to 0.0, so hiring from a voice-posted job always skipped the
-  // PaymentSheet exactly like the (also-just-fixed) manual post-requirement
-  // wizard did.
-  const [inspectionFeeInput, setInspectionFeeInput] = useState('');
   const [photos, setPhotos] = useState<{ uri: string; type: 'image' | 'video' }[]>([]);
   const violationCountRef = useRef(0);
 
@@ -198,12 +190,8 @@ export function VoicePostModal({
   const scrollRef = useRef<ScrollView>(null);
   // Separate from scrollRef (the chat conversation's own scroll view) — the
   // confirm-details screen is a different ScrollView, mutually exclusive
-  // with the chat one, so it needs its own ref to scroll the inspection fee
-  // input clear of the keyboard on focus.
+  // with the chat one, so it needs its own ref.
   const confirmScrollRef = useRef<ScrollView>(null);
-  const scrollConfirmToFocusedInput = () => {
-    setTimeout(() => confirmScrollRef.current?.scrollToEnd({ animated: true }), 150);
-  };
   const messagesRef = useRef<ChatMessage[]>([]);
   // Counts real customer utterances only — distinct from messagesRef's
   // user-role count, which the "service chip mic tap" open-reset effect
@@ -213,6 +201,15 @@ export function VoicePostModal({
   // which entry point opened this modal.
   const customerUtteranceCountRef = useRef(0);
   const phaseRef = useRef<Phase>('idle');
+  // True only while the modal is actually visible. This component is never
+  // unmounted (always rendered in the tabs home screen, just hidden), so
+  // closing it doesn't cancel any in-flight recording/transcription/AI-reply
+  // work by itself — those continuations only ever checked phaseRef, which
+  // stayed at whatever phase it was in when closed and didn't stop anything.
+  // Checked at the top of every async continuation that could otherwise
+  // reactivate the mic or post a stale conversation turn after the user
+  // believes the modal is closed.
+  const isOpenRef = useRef(false);
   const recordingRef = useRef<Audio.Recording | null>(null);
   const silenceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const silenceCountRef = useRef(0);
@@ -306,6 +303,7 @@ export function VoicePostModal({
 
   // ── Open / close reset ─────────────────────────────────────────────────────
   useEffect(() => {
+    isOpenRef.current = visible;
     if (visible) {
       // Pre-fetch permission so the system popup never interrupts a conversation
       Audio.getPermissionsAsync().then(({ status }) => {
@@ -317,7 +315,6 @@ export function VoicePostModal({
       setShowDiagnosisConfirm(false);
       setShowPhotoPrompt(false);
       setPhotos([]);
-      setRadiusMi(initialRadiusMi ?? 250);
       setServiceMode('ON_SITE');
       violationCountRef.current = 0;
       customerUtteranceCountRef.current = 0;
@@ -401,6 +398,7 @@ export function VoicePostModal({
 
   // ── Start listening (uses phaseRef so it's safe to call from any closure) ──
   const startListening = async () => {
+    if (!isOpenRef.current) return;
     if (phaseRef.current !== 'idle' && phaseRef.current !== 'error') return;
 
     if (!micPermGrantedRef.current) {
@@ -510,6 +508,11 @@ export function VoicePostModal({
       if (!uri) { setPhase('idle'); return; }
 
       const { text, language } = await SkoFyApi.ai.transcribe(uri, detectedLanguageRef.current);
+      // The modal was closed while transcription was in flight — this used
+      // to fall straight through to handleUserSpoke() below with no guard
+      // at all, posting a stale conversation turn and potentially
+      // restarting the mic for a modal the user believes is closed.
+      if (!isOpenRef.current) return;
       if (language && !detectedLanguageRef.current) detectedLanguageRef.current = language;
       if (!text?.trim()) {
         if (phaseRef.current === 'processing') setPhase('idle');
@@ -640,6 +643,11 @@ export function VoicePostModal({
     setPhase('processing');
     try {
       const res = await SkoFyApi.ai.voiceChat(history);
+      // The modal was closed while this request was in flight — everything
+      // below speaks the AI's reply out loud, mutates chat state, and can
+      // restart the mic, all for a conversation the user believes they
+      // already left.
+      if (!isOpenRef.current) return;
       if (res.is_complete && res.job_data && KNOWN_PROFESSIONS.has(res.job_data.profession ?? '')) {
         setJobData(res.job_data);
         const closing = getClosingLine(history);
@@ -720,14 +728,9 @@ export function VoicePostModal({
         skill_ids: jobData.skill_ids?.length ? jobData.skill_ids : undefined,
         urgency: jobData.urgency as any,
         scheduled_at: jobData.scheduled_at ?? undefined,
-        // See summary.tsx's identical guard — `|| 0` alone only catches NaN,
-        // not a typed negative value like "-50", which would otherwise sail
-        // through and only fail later as a confusing Stripe error at hire time.
-        inspection_fee: Math.max(0, parseFloat(inspectionFeeInput) || 0),
         // REMOTE: no location at all. Otherwise, the customer's current lat/lng.
         lat: serviceMode === 'REMOTE' ? undefined : (lat ?? undefined),
         lng: serviceMode === 'REMOTE' ? undefined : (lng ?? undefined),
-        search_radius_km: Math.round(radiusMi * 1.60934),
         images: imageUrls,
         target_provider_id: targetProvider?.id,
         direct_request_queue: queuedProviders?.length ? queuedProviders.map(p => p.id) : undefined,
@@ -1016,48 +1019,6 @@ export function VoicePostModal({
                   </View>
                 </View>
 
-                {/* Inspection fee — held in escrow at hire, paid out once the
-                    provider inspects on-site, before any invoice. Nothing in
-                    this voice flow asked for this before, so every voice-
-                    posted job silently defaulted to $0 and hiring always
-                    skipped the PaymentSheet. */}
-                <View style={s.radiusRow}>
-                  <Text style={s.confirmLabel}>Inspection Fee</Text>
-                  <View style={s.feeInputRow}>
-                    <Text style={s.feeInputPrefix}>$</Text>
-                    <TextInput
-                      style={s.feeInput}
-                      placeholder="0"
-                      placeholderTextColor="#9CA3AF"
-                      keyboardType="decimal-pad"
-                      value={inspectionFeeInput}
-                      onChangeText={setInspectionFeeInput}
-                      editable={phase === 'confirm'}
-                      onFocus={scrollConfirmToFocusedInput}
-                    />
-                  </View>
-                </View>
-
-                {/* Radius — hidden for direct bookings */}
-                {!targetProvider && (
-                  <View style={s.radiusRow}>
-                    <Text style={s.confirmLabel}>Search Radius</Text>
-                    <View style={s.radiusChips}>
-                      {[25, 50, 100, 250].map(mi => (
-                        <TouchableOpacity
-                          key={mi}
-                          style={[s.radiusChip, radiusMi === mi && s.radiusChipActive]}
-                          onPress={() => setRadiusMi(mi)}
-                          disabled={phase !== 'confirm'}
-                        >
-                          <Text style={[s.radiusChipText, radiusMi === mi && s.radiusChipTextActive]}>
-                            {mi} mi
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-                )}
               </View>
 
             </ScrollView>
@@ -1475,18 +1436,6 @@ function makeStyles(C: Colors) {
     photoRemove: { position: 'absolute', top: 2, right: 2, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 10, padding: 2 },
     photoAdd: { width: 64, height: 64, borderRadius: 10, borderWidth: 1.5, borderColor: C.border, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: C.surface2 },
 
-    radiusRow: { gap: 8 },
-    feeInputRow: {
-      flexDirection: 'row', alignItems: 'center',
-      backgroundColor: C.surface2, borderRadius: 12,
-      borderWidth: 1, borderColor: C.border,
-      paddingHorizontal: 14, height: 44,
-    },
-    feeInputPrefix: { fontSize: 15, fontFamily: Fonts.poppinsBold, color: C.text, marginRight: 4 },
-    feeInput: {
-      flex: 1, fontSize: 15, fontFamily: Fonts.poppinsBold, color: C.text, height: '100%',
-      textAlignVertical: 'center', paddingVertical: 0, includeFontPadding: false,
-    },
     radiusChips: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
     radiusChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface2 },
     radiusChipActive: { borderColor: '#FFCE48', backgroundColor: '#FFCE48' },

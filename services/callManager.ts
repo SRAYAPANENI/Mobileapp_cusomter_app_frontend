@@ -1,7 +1,7 @@
-import notifee, { AndroidForegroundServiceType, AndroidImportance, AndroidVisibility, EventType } from '@notifee/react-native';
+import notifee, { AndroidForegroundServiceType, AndroidImportance, AndroidStyle, AndroidVisibility, EventType } from '@notifee/react-native';
 import messaging from '@react-native-firebase/messaging';
 import { router } from 'expo-router';
-import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
+import { Alert, NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import RNCallKeep from 'react-native-callkeep';
 import VoipPushNotification from 'react-native-voip-push-notification';
 import { SkoFyApi, TokenStore } from './api';
@@ -327,6 +327,59 @@ function openJobUpdate(jobId: string, route: string) {
   safeNavigate(() => router.push({ pathname: route, params: { jobId } } as any));
 }
 
+const ADMIN_BROADCAST_CHANNEL_ID = 'admin_broadcasts_v1';
+
+/** Fired on "admin_broadcast" pushes (admin portal's Push Notifications
+ * screen) — this type had no handler at all here, same class of bug as
+ * job_expired/chat_message above: every `if` in both the background and
+ * foreground listener fell through, parseIncomingCall didn't match either,
+ * so admin broadcasts silently never produced a visible notification —
+ * they only ever showed up if the customer happened to open the in-app
+ * Notifications list. No jobId involved (not job-scoped), so this doesn't
+ * reuse showJobUpdateNotification/openJobUpdate — pressing it just opens
+ * the Notifications list instead of deep-linking to a specific job. */
+async function showAdminBroadcastNotification(title: string, body: string, imageUrl?: string) {
+  await notifee.createChannel({
+    id: ADMIN_BROADCAST_CHANNEL_ID,
+    name: 'Announcements',
+    importance: AndroidImportance.DEFAULT,
+    visibility: AndroidVisibility.PUBLIC,
+  });
+  // notifee's Android BigPictureStyle accepts a remote HTTP(S) URL directly,
+  // but iOS notification attachments do NOT — UNNotificationAttachment only
+  // takes a local file path, so a raw https:// URL there silently fails to
+  // attach anything. Download it to a temp file first, iOS-only (Android
+  // already handles the remote URL natively, no need to pay for the
+  // download twice). Wrapped so a failed download (bad URL, no network)
+  // just falls back to no image instead of losing the whole notification.
+  let iosImagePath: string | undefined;
+  if (imageUrl && Platform.OS === 'ios') {
+    try {
+      const { File, Paths } = await import('expo-file-system');
+      const file = await File.downloadFileAsync(imageUrl, Paths.cache);
+      iosImagePath = file.uri;
+    } catch (err) {
+      console.warn('Failed to download admin broadcast image for iOS attachment:', err);
+    }
+  }
+  await notifee.displayNotification({
+    title,
+    body,
+    data: { adminBroadcast: true } as any,
+    android: {
+      channelId: ADMIN_BROADCAST_CHANNEL_ID,
+      pressAction: { id: 'default' },
+      autoCancel: true,
+      ...(imageUrl ? { style: { type: AndroidStyle.BIGPICTURE, picture: imageUrl } } : {}),
+    },
+    ios: iosImagePath ? { attachments: [{ url: iosImagePath }] } : undefined,
+  });
+}
+
+function openAdminBroadcast() {
+  safeNavigate(() => router.push('/notifications' as any));
+}
+
 /** Fired on receiving a "call_cancelled" push — the caller hung up (or the
  * no-answer timeout fired) before this device answered. Only shows a missed-
  * call notice if this device was actually the one ringing for that job;
@@ -400,6 +453,12 @@ function handleNotifeeEvent(type: EventType, detail: any) {
   if (jobUpdateJobId && (type === EventType.PRESS || type === EventType.ACTION_PRESS)) {
     const route = (detail.notification?.data?.jobUpdateRoute as string) || '/my-jobs';
     openJobUpdate(jobUpdateJobId, route);
+    if (detail.notification?.id) notifee.cancelNotification(detail.notification.id);
+    return;
+  }
+
+  if (detail.notification?.data?.adminBroadcast && (type === EventType.PRESS || type === EventType.ACTION_PRESS)) {
+    openAdminBroadcast();
     if (detail.notification?.id) notifee.cancelNotification(detail.notification.id);
     return;
   }
@@ -799,6 +858,19 @@ export function registerBackgroundHandler() {
       );
       return;
     }
+    if (remoteMessage.data?.type === 'admin_broadcast') {
+      try {
+        await showAdminBroadcastNotification(
+          (remoteMessage.data.title as string) || 'Announcement',
+          (remoteMessage.data.body as string) || '',
+          remoteMessage.data.image_url as string | undefined,
+        );
+      } catch (err: any) {
+        // TEMP DIAGNOSTIC — see the matching note at the top of onMessage.
+        Alert.alert('DEBUG: showAdminBroadcastNotification threw', String(err?.message ?? err));
+      }
+      return;
+    }
     const call = parseIncomingCall(remoteMessage.data);
     if (call) await showIncomingCallNotification(call);
   });
@@ -820,6 +892,10 @@ export function initCallManager() {
   notifee.requestPermission().catch((err) => console.error('Failed to request notification permission:', err));
 
   messaging().onMessage(async (remoteMessage) => {
+    // TEMP DIAGNOSTIC — remove once admin_broadcast delivery is confirmed
+    // working. Proves whether onMessage fires at all for a given push, and
+    // exactly what shape its data arrives in, without needing adb/logcat.
+    Alert.alert('DEBUG: onMessage fired', JSON.stringify(remoteMessage.data ?? {}));
     if (remoteMessage.data?.type === 'call_cancelled') {
       handleCallCancelled(remoteMessage.data.job_id as string, (remoteMessage.data.caller_name as string) || 'them');
       return;
@@ -917,6 +993,19 @@ export function initCallManager() {
         (remoteMessage.data.body as string) || 'You have a new message.',
         '/chat',
       );
+      return;
+    }
+    if (remoteMessage.data?.type === 'admin_broadcast') {
+      try {
+        await showAdminBroadcastNotification(
+          (remoteMessage.data.title as string) || 'Announcement',
+          (remoteMessage.data.body as string) || '',
+          remoteMessage.data.image_url as string | undefined,
+        );
+      } catch (err: any) {
+        // TEMP DIAGNOSTIC — see the matching note at the top of onMessage.
+        Alert.alert('DEBUG: showAdminBroadcastNotification threw', String(err?.message ?? err));
+      }
       return;
     }
     const call = parseIncomingCall(remoteMessage.data);

@@ -3,6 +3,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SkoFyApi } from '@/services/api';
+import { Image } from 'expo-image';
 import { router, useFocusEffect } from 'expo-router';
 import {
   Bell,
@@ -16,11 +17,13 @@ import {
   Phone,
   Star,
   UserPlus,
+  X,
   XCircle,
 } from 'lucide-react-native';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   Platform,
   RefreshControl,
   SectionList,
@@ -39,6 +42,7 @@ interface NotifItem {
   job_id: string | null;
   is_read: boolean;
   created_at: string;
+  image_url: string | null;
 }
 
 function getIcon(type: string) {
@@ -111,6 +115,7 @@ export default function NotificationsScreen() {
   const [items, setItems] = useState<NotifItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [viewerImage, setViewerImage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -134,6 +139,12 @@ export default function NotificationsScreen() {
   };
 
   const handlePress = (item: NotifItem) => {
+    // admin_broadcast (and anything else not tied to a job) has nowhere to
+    // navigate — opening the attached image if there is one beats a dead tap.
+    if (!item.job_id && item.image_url) {
+      setViewerImage(item.image_url);
+      return;
+    }
     if (item.job_id) {
       switch (item.notif_type) {
         case 'new_applicant':
@@ -182,11 +193,18 @@ export default function NotificationsScreen() {
           <View style={styles.textContainer}>
             <View style={styles.headerRow}>
               <ThemedText style={styles.title} numberOfLines={1}>{item.title}</ThemedText>
-              <ThemedText style={styles.time}>{timeAgo(item.created_at)}</ThemedText>
+              <View style={styles.timeRow}>
+                {!item.is_read && <View style={styles.unreadDot} />}
+                <ThemedText style={styles.time}>{timeAgo(item.created_at)}</ThemedText>
+              </View>
             </View>
             <ThemedText style={styles.message} numberOfLines={2}>{item.body}</ThemedText>
+            {item.image_url && (
+              <TouchableOpacity activeOpacity={0.85} onPress={() => setViewerImage(item.image_url)}>
+                <Image source={{ uri: item.image_url }} style={styles.bannerImage} contentFit="cover" />
+              </TouchableOpacity>
+            )}
           </View>
-          {!item.is_read && <View style={styles.unreadDot} />}
         </TouchableOpacity>
       </Animated.View>
     );
@@ -279,11 +297,17 @@ function makeStyles(t: typeof Colors.light) {
       fontSize: 14, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold,
       color: t.textPrimary, flex: 1, marginRight: 8,
     },
+    timeRow: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 0 },
     time: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppins, color: t.textMuted },
     message: { fontSize: 13, fontFamily: Fonts.poppins, color: t.textSecondary, lineHeight: 19 },
+    bannerImage: {
+      width: '100%', height: 140, borderRadius: 12, marginTop: 10, backgroundColor: t.inputFilled,
+    },
+    // Inline next to the timestamp now (was absolutely positioned in the
+    // card's top-right corner, landing exactly on top of the timestamp text
+    // it was meant to sit beside — same corner, same spot).
     unreadDot: {
       width: 8, height: 8, borderRadius: 4, backgroundColor: '#FFCE48',
-      position: 'absolute', top: 16, right: 16,
     },
     emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingTop: 100 },
     emptyText: { marginTop: 16, fontSize: 15, lineHeight: 19, fontFamily: Fonts.poppinsSemiBold, color: t.textMuted },

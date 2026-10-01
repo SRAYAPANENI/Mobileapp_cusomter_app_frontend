@@ -55,21 +55,6 @@ export default function DescribeProblemScreen() {
   const [aiResult, setAiResult] = useState<AiResult | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
 
-  const handleServiceModeChange = (mode: 'ON_SITE' | 'REMOTE') => {
-    if (mode === data.serviceMode) return;
-    // Deliberately NOT clearing address/lat/lng here — this used to wipe
-    // them on every toggle, which meant switching to Remote and back to
-    // On-site lost the location for good (nothing in this screen can
-    // re-fetch it; the only way back was leaving and re-entering the whole
-    // flow from Home). A REMOTE job just doesn't use these fields — hasLocation
-    // and the location badge below both already ignore them while
-    // serviceMode is REMOTE — and the backend independently nulls them out
-    // server-side for a REMOTE job regardless of what's sent (see
-    // CreateJobRequest._force_remote_has_no_location), so leaving a stale
-    // value in context is harmless and lets it reappear correctly on switch-back.
-    updateData({ serviceMode: mode });
-  };
-
   useEffect(() => {
     const updates: Partial<Parameters<typeof updateData>[0]> = {};
     if (params.selectedAddress) {
@@ -168,15 +153,10 @@ export default function DescribeProblemScreen() {
 
 
   const canAnalyze = data.media.filter(m => m.type === 'image').length > 0 || data.description.trim().length > 0;
-  // A job posted with no location never gets distributed to any provider —
-  // the backend only runs the distribution agent when lat/lng are present,
-  // and silently skips it otherwise. There used to be no check here at all,
-  // so a job could reach "Requirement Posted!" with zero providers ever
-  // notified and no indication anything was wrong.
-  const hasLocation = data.serviceMode === 'REMOTE'
-    ? true // no physical location/distance matching for a remote job at all
-    : (data.lat != null && data.lng != null);
-  const canContinue = (data.description.trim().length > 0 || data.media.length > 0 || aiResult !== null) && hasLocation;
+  // The location-required check moved to the summary screen (the last
+  // step) — it now depends on which service mode gets chosen there
+  // (On-site needs one, Remote doesn't), which isn't decided yet here.
+  const canContinue = data.description.trim().length > 0 || data.media.length > 0 || aiResult !== null;
 
   useFocusEffect(
     useCallback(() => {
@@ -211,46 +191,18 @@ export default function DescribeProblemScreen() {
             <ThemedText style={styles.subtitle}>Upload photos – AI will identify the problem and suggest the right professional.</ThemedText>
           </Animated.View>
 
-          {/* Service mode — On-site (needs a physical location) vs Remote
-              (no location/distance matching at all — e.g. hiring a
-              developer or consultant). */}
-          <Animated.View entering={FadeInUp.delay(260)} style={styles.jobKindRow}>
-            <TouchableOpacity
-              style={[styles.jobKindChip, data.serviceMode === 'ON_SITE' && styles.jobKindChipActive]}
-              onPress={() => handleServiceModeChange('ON_SITE')}
-            >
-              <MapPin size={16} color={data.serviceMode === 'ON_SITE' ? '#111827' : themeColors.textSecondary} />
-              <ThemedText style={[styles.jobKindChipText, data.serviceMode === 'ON_SITE' && styles.jobKindChipTextActive]}>
-                On-site
-              </ThemedText>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.jobKindChip, data.serviceMode === 'REMOTE' && styles.jobKindChipActive]}
-              onPress={() => handleServiceModeChange('REMOTE')}
-            >
-              <Sparkles size={16} color={data.serviceMode === 'REMOTE' ? '#111827' : themeColors.textSecondary} />
-              <ThemedText style={[styles.jobKindChipText, data.serviceMode === 'REMOTE' && styles.jobKindChipTextActive]}>
-                Remote
-              </ThemedText>
-            </TouchableOpacity>
-          </Animated.View>
-
-          {data.serviceMode === 'REMOTE' ? (
-            <Animated.View entering={FadeInUp.delay(300)} style={styles.remoteNoticeBox}>
-              <ThemedText style={styles.remoteNoticeText}>
-                No location needed — this job will be matched to skilled providers by skill and availability, wherever they are.
-              </ThemedText>
+          {/* Whether this is On-site or Remote is decided later, as the
+              last step before posting — not here. If a location was
+              already picked from Home, show it for context; it's just
+              informational at this point. */}
+          {data.address ? (
+            <Animated.View entering={FadeInUp.delay(260)} style={styles.locationBadgeContainer}>
+              <View style={styles.locationBadge}>
+                <MapPin size={14} color="#111827" fill="#FFCE48" />
+                <ThemedText style={styles.locationBadgeText} numberOfLines={1}>{data.address}</ThemedText>
+              </View>
             </Animated.View>
-          ) : (
-            data.address ? (
-              <Animated.View entering={FadeInUp.delay(300)} style={styles.locationBadgeContainer}>
-                <View style={styles.locationBadge}>
-                  <MapPin size={14} color="#111827" fill="#FFCE48" />
-                  <ThemedText style={styles.locationBadgeText} numberOfLines={1}>{data.address}</ThemedText>
-                </View>
-              </Animated.View>
-            ) : null
-          )}
+          ) : null}
 
           {/* Media Upload */}
           <Animated.View entering={FadeInUp.delay(400)} style={styles.mediaContainer}>
@@ -385,14 +337,6 @@ export default function DescribeProblemScreen() {
 
         {/* Footer */}
         <View style={styles.footer}>
-          {!hasLocation && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-              <MapPin size={14} color="#EF4444" />
-              <ThemedText style={{ fontSize: 12, color: '#EF4444', flex: 1 }}>
-                No location selected — go back to Home and choose a location before posting, or this job won't reach any providers.
-              </ThemedText>
-            </View>
-          )}
           <TouchableOpacity
             style={[styles.continueButton, { backgroundColor: themeColors.brand, opacity: canContinue ? 1 : 0.5 }]}
             onPress={() => router.replace('/post-requirement/step2')}
@@ -448,20 +392,6 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     gap: 8,
   },
   locationBadgeText: { fontSize: 13, fontFamily: Fonts.poppinsSemiBold, color: t.textPrimary },
-  jobKindRow: { flexDirection: 'row', gap: 10, marginBottom: 16, justifyContent: 'center' },
-  jobKindChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12,
-    borderWidth: 1, borderColor: t.border, backgroundColor: t.card,
-  },
-  jobKindChipActive: { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
-  jobKindChipText: { fontSize: 13, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary },
-  jobKindChipTextActive: { color: '#111827', fontFamily: Fonts.poppinsBold },
-  remoteNoticeBox: {
-    backgroundColor: '#F5F3FF', borderRadius: 12, borderWidth: 1, borderColor: '#DDD6FE',
-    paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16,
-  },
-  remoteNoticeText: { fontSize: 12.5, fontFamily: Fonts.poppinsSemiBold, color: '#5B21B6', lineHeight: 18 },
   mediaContainer: {
     backgroundColor: t.card,
     borderRadius: 24,

@@ -1229,7 +1229,7 @@ export default function ProfileScreen() {
             </ThemedText>
             <ThemedText style={{ fontSize: 18, lineHeight: 24, fontFamily: Fonts.poppinsBold, marginBottom: 12 }}>3. Payments</ThemedText>
             <ThemedText style={{ color: '#4B5563', lineHeight: 24, marginBottom: 20 }}>
-              Inspection fees are paid directly to providers unless booked via the app wallet...
+              Visiting fees are paid directly to providers unless booked via the app wallet...
             </ThemedText>
           </ScrollView>
         </ThemedView>
