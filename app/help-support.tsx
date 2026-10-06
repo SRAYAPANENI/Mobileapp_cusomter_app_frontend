@@ -28,7 +28,7 @@ const FAQS = [
   {
     id: '1',
     question: 'How do I book a service?',
-    answer: 'Tap the mic and describe what you need in your own words, or choose "Manual" to fill in the details yourself. SkoFy automatically finds and notifies verified providers near you — no need to browse or compare listings.',
+    answer: 'Tap the mic and describe what you need in your own words, or choose "Manual" to fill in the details yourself. Dodorez automatically finds and notifies verified providers near you — no need to browse or compare listings.',
   },
   {
     id: '2',
@@ -43,7 +43,7 @@ const FAQS = [
   {
     id: '4',
     question: 'Is my payment safe?',
-    answer: "Yes. Your payment is held securely by SkoFy the moment you hire a provider, and it's only released to them once the job is marked complete — never paid out upfront.",
+    answer: "Yes. Your payment is held securely by Dodorez the moment you hire a provider, and it's only released to them once the job is marked complete — never paid out upfront.",
   },
 ];
 

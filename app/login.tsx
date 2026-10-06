@@ -5,7 +5,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useAppContext } from '@/context/AppContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { SkoFyApi } from '@/services/api';
+import { SkoFyApi, TokenStore } from '@/services/api';
 import { registerFcmToken } from '@/services/callManager';
 import * as Location from 'expo-location';
 import { router, useFocusEffect } from 'expo-router';
@@ -115,7 +115,45 @@ export default function LoginScreen() {
     }
     try {
       setIsLoading(true);
-      await SkoFyApi.auth.verifyOTP(phoneNumber, otp);
+      const user = await SkoFyApi.auth.verifyOTP(phoneNumber, otp);
+      // is_new_role (not is_new_user) is what actually means "no Customer
+      // profile exists yet for this phone" — mirrors register.tsx's own
+      // guard against the opposite mistake (an already-registered number
+      // trying to register again). Without this, "Login" and "Register"
+      // were functionally the same screen: verify_otp auto-creates an
+      // account for ANY phone number that passes OTP, so typing a brand-new
+      // number here dropped someone straight into the app with a bare,
+      // empty "New User" profile — register.tsx's entire onboarding
+      // (name, address, etc.) silently skipped, not just optional.
+      if (user.is_new_role) {
+        // verifyOTP() above already stored real tokens for the bare account
+        // it just auto-created — SkoFyApi.auth.verifyOTP() always does this
+        // on success, before this screen gets a say in whether to treat the
+        // result as a "login" or not. Left in place, app/index.tsx's splash
+        // check only looks for a token's existence (not profile_complete),
+        // so backing out of Register now instead of finishing it would log
+        // the user straight into the app as this empty "New User" account
+        // on next launch — the exact bug this screen exists to prevent, via
+        // a restart instead of a direct login. Cleared here so no dangling
+        // session survives for an account nobody actually registered yet.
+        TokenStore.clear().catch(() => {});
+        showFeedback(
+          'error',
+          'No Account Found',
+          "We couldn't find an account for this number. Please register first.",
+          // register.tsx re-verifies OTP for the same number — by then the
+          // bare account this call just auto-created means its OWN
+          // is_new_user always reads false, indistinguishable from a
+          // genuine dual-role (existing Provider adding Customer) case.
+          // Passing what THIS call already knows lets register.tsx tell
+          // the two apart correctly instead of guessing.
+          () => router.replace({
+            pathname: '/register',
+            params: { prefillPhone: phoneNumber, resumedIsNewUser: user.is_new_user ? '1' : '0' },
+          }),
+        );
+        return;
+      }
       registerFcmToken();
       router.replace('/home');
     } catch (err: any) {
@@ -423,7 +461,7 @@ export default function LoginScreen() {
             <View style={styles.exitIconContainer}>
               <AlertTriangle size={36} color="#F59E0B" />
             </View>
-            <ThemedText style={styles.exitTitle}>Exit Skofy?</ThemedText>
+            <ThemedText style={styles.exitTitle}>Exit Dodorez?</ThemedText>
             <ThemedText style={styles.exitMessage}>Are you sure you want to close the app?</ThemedText>
 
             <View style={styles.exitActionRow}>

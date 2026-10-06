@@ -191,6 +191,9 @@ export default function OfferDetailScreen() {
                 <Copy size={15} color="#111827" />
                 <ThemedText style={styles.copyButtonText}>Copy Code</ThemedText>
               </TouchableOpacity>
+              <ThemedText style={styles.useHint}>
+                Apply it at checkout when you pay for a job. It can be used once.
+              </ThemedText>
             </View>
           ) : (
             <View style={styles.scratchWrap}>
@@ -269,5 +272,6 @@ function makeStyles(t: typeof Colors.light) {
       paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12,
     },
     copyButtonText: { fontSize: 14, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
+    useHint: { fontSize: 12, lineHeight: 17, fontFamily: Fonts.poppins, color: t.textSecondary, textAlign: 'center', marginTop: 10 },
   });
 }

@@ -9,6 +9,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useIsOnline } from '@/hooks/use-is-online';
 import { GooglePlacesService, GooglePlaceSuggestion } from '@/services/google-places';
 import { SkoFyApi } from '@/services/api';
+import { clearHomeCache } from '@/services/homeCache';
 import { AppLock } from '@/services/appLock';
 import { getCurrentVoipToken } from '@/services/callManager';
 import messaging from '@react-native-firebase/messaging';
@@ -26,6 +27,8 @@ import {
   ChevronLeft,
   ChevronRight,
   CreditCard,
+  Eye,
+  EyeOff,
   FileText,
   Fingerprint,
   Image as ImageIcon,
@@ -66,7 +69,7 @@ interface JobHistory {
   professional: string;
   date: string;
   price: string;
-  status: 'Completed' | 'Cancelled';
+  status: 'Completed' | 'Disputed' | 'Cancelled';
   // What the customer rated the provider
   myReview: { overall: number; comment: string | null } | null;
   // What the provider rated the customer (payment, behaviour, negotiation, environment)
@@ -80,6 +83,12 @@ interface JobHistory {
   } | null;
 }
 
+
+const HISTORY_STATUS_COLORS: Record<JobHistory['status'], { bg: string; fg: string }> = {
+  Completed: { bg: '#ECFDF5', fg: '#10B981' },
+  Disputed: { bg: '#FFFBEB', fg: '#D97706' },
+  Cancelled: { bg: '#FEF2F2', fg: '#EF4444' },
+};
 
 export default function ProfileScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -100,13 +109,31 @@ export default function ProfileScreen() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSavingPassword, setIsSavingPassword] = useState(false);
   const [isPhotoSheetOpen, setIsPhotoSheetOpen] = useState(false);
+  // Which ID document slot (0/1/2) is pending a remove confirmation, or
+  // null when none is. Previously the X button removed immediately with no
+  // confirmation — a single mis-tap deleted a document with no way back.
+  const [confirmRemoveDocIdx, setConfirmRemoveDocIdx] = useState<number | null>(null);
+  // Which ID document slot is open in the full-screen viewer, or null. The
+  // Front/Back/Extra thumbnails are tiny (a 3-up row) — too small to
+  // actually read an ID off of; tapping one opens it full-size instead.
+  const [viewingDocIdx, setViewingDocIdx] = useState<number | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [isAddAddressOpen, setIsAddAddressOpen] = useState(false);
   const [newAddressType, setNewAddressType] = useState('');
   const [newAddressValue, setNewAddressValue] = useState('');
+  // Captured alongside newAddressValue whenever it comes from a Places
+  // suggestion or "Use Current Location" (both give real coordinates, not
+  // just text) — addresses.add() already accepts lat/lng, matching
+  // register.tsx's own address step, but this screen was discarding them
+  // and sending text-only, silently losing accuracy for anything added from
+  // Profile instead of during registration.
+  const [newAddressCoords, setNewAddressCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [customAlert, setCustomAlert] = useState<{
     visible: boolean;
     type: 'success' | 'error';
@@ -158,10 +185,11 @@ export default function ProfileScreen() {
           SkoFyApi.jobs.getSummary().catch(() => ({ total_jobs: 0, history: [] })),
         ]);
 
-        // Already filtered to COMPLETED/CANCELLED and sorted server-side —
-        // see JobRepository.get_profile_summary.
-        const statusMap: Record<string, 'Completed' | 'Cancelled'> = {
+        // Already filtered to COMPLETED/DISPUTED/CANCELLED and sorted
+        // server-side — see JobRepository.get_profile_summary.
+        const statusMap: Record<string, JobHistory['status']> = {
           COMPLETED: 'Completed',
+          DISPUTED: 'Disputed',
           CANCELLED: 'Cancelled',
         };
         const history: JobHistory[] = summary.history.map((j) => ({
@@ -290,7 +318,13 @@ export default function ProfileScreen() {
         } catch (error: any) {
           if (error.name !== 'AbortError') {
             console.error('Profile search error:', error);
-            setSearchError('Could not fetch locations. Check internet.');
+            // The generic "Check internet" wording used to hide whatever
+            // actually failed (DNS, TLS, a non-2xx Google response, a
+            // malformed body) behind one unhelpful string regardless of
+            // cause — surfacing the real error message here so a genuine
+            // network issue is distinguishable from an API/key problem
+            // without needing console access to the device.
+            setSearchError(`Could not fetch locations: ${error?.message || 'check your connection.'}`);
           }
         } finally {
           setIsSearching(false);
@@ -312,6 +346,7 @@ export default function ProfileScreen() {
 
       if (index === 'new') {
         setNewAddressValue(details.formatted_address);
+        setNewAddressCoords({ lat: details.latitude, lng: details.longitude });
       } else {
         handleUpdateAddress(index, details.formatted_address);
       }
@@ -370,6 +405,7 @@ export default function ProfileScreen() {
 
         if (index === -1) {
           setNewAddressValue(readable);
+          setNewAddressCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         } else {
           const newAddresses = [...userData.addresses];
           newAddresses[index].address = readable;
@@ -531,6 +567,8 @@ export default function ProfileScreen() {
       const saved = await SkoFyApi.addresses.add({
         label: newAddressType.trim(),
         full_address: newAddressValue.trim(),
+        lat: newAddressCoords?.lat,
+        lng: newAddressCoords?.lng,
         is_default: userData.addresses.length === 0,
       }) as any;
       const entry = {
@@ -544,6 +582,7 @@ export default function ProfileScreen() {
       setIsAddAddressOpen(false);
       setNewAddressType('');
       setNewAddressValue('');
+      setNewAddressCoords(null);
       setTimeout(() => showAlert('success', 'Success', 'New address added successfully!'), 500);
     } catch {
       showAlert('error', 'Error', 'Failed to add address. Please try again.');
@@ -569,6 +608,9 @@ export default function ProfileScreen() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      setShowCurrentPassword(false);
+      setShowNewPassword(false);
+      setShowConfirmPassword(false);
       setIsPasswordOpen(false);
       showAlert('success', 'Password Updated', 'Your password has been changed successfully. Please log in again on any other device.');
     } catch (e: any) {
@@ -599,8 +641,8 @@ export default function ProfileScreen() {
           <ThemedText style={styles.historyTitle}>{item.title}</ThemedText>
           <ThemedText style={styles.historySubtitle}>By {item.professional} • {item.date}</ThemedText>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: item.status === 'Completed' ? '#ECFDF5' : '#FEF2F2' }]}>
-          <ThemedText style={[styles.statusText, { color: item.status === 'Completed' ? '#10B981' : '#EF4444' }]}>
+        <View style={[styles.statusBadge, { backgroundColor: HISTORY_STATUS_COLORS[item.status].bg }]}>
+          <ThemedText style={[styles.statusText, { color: HISTORY_STATUS_COLORS[item.status].fg }]}>
             {item.status}
           </ThemedText>
         </View>
@@ -813,6 +855,7 @@ export default function ProfileScreen() {
                   value={userData.name}
                   onChangeText={text => setUserData(prev => ({ ...prev, name: text }))}
                   placeholder="Enter your name"
+                  placeholderTextColor={themeColors.icon}
                 />
               ) : (
                 <ThemedText style={styles.infoValue}>{userData.name || '—'}</ThemedText>
@@ -999,6 +1042,7 @@ export default function ProfileScreen() {
                   value={userData.idNumber}
                   onChangeText={text => setUserData(prev => ({ ...prev, idNumber: text }))}
                   placeholder="Enter your ID number"
+                  placeholderTextColor={themeColors.icon}
                 />
               ) : (
                 <ThemedText style={[styles.infoValue, !userData.idNumber && { color: '#9CA3AF' }]}>
@@ -1021,15 +1065,17 @@ export default function ProfileScreen() {
                   <View key={label} style={{ flex: 1, alignItems: 'center', gap: 6 }}>
                     {uri ? (
                       <View style={{ width: '100%', aspectRatio: 3 / 2 }}>
-                        <Image
-                          source={{ uri }}
-                          style={{ width: '100%', height: '100%', borderRadius: 10 }}
-                          contentFit="cover"
-                        />
+                        <TouchableOpacity activeOpacity={0.85} onPress={() => setViewingDocIdx(idx)}>
+                          <Image
+                            source={{ uri }}
+                            style={{ width: '100%', height: '100%', borderRadius: 10 }}
+                            contentFit="cover"
+                          />
+                        </TouchableOpacity>
                         {/* Remove X */}
                         <TouchableOpacity
                           style={{ position: 'absolute', top: 4, right: 4, backgroundColor: '#EF4444', borderRadius: 10, padding: 3 }}
-                          onPress={() => handleRemoveDocSlot(idx)}
+                          onPress={() => setConfirmRemoveDocIdx(idx)}
                         >
                           <XCircle size={14} color="#fff" />
                         </TouchableOpacity>
@@ -1189,6 +1235,11 @@ export default function ProfileScreen() {
                   // the server to invalidate the refresh token server-side.
                   console.error('Server-side logout failed:', err);
                 });
+                // Defense in depth on top of the cache's own per-account
+                // userId check — a different customer logging in on this
+                // same device should never have any chance of seeing
+                // whoever was logged in before.
+                await clearHomeCache().catch(() => {});
                 router.replace('/login');
               }}>
                 <View style={styles.settingInfo}>
@@ -1209,7 +1260,7 @@ export default function ProfileScreen() {
       </Modal>
 
       {/* Terms Modal */}
-      <Modal visible={isTermsOpen} animationType="slide">
+      <Modal visible={isTermsOpen} animationType="slide" onRequestClose={() => setIsTermsOpen(false)}>
         <ThemedView style={{ flex: 1 }}>
           <View style={styles.header}>
             <TouchableOpacity onPress={() => setIsTermsOpen(false)}>
@@ -1221,7 +1272,7 @@ export default function ProfileScreen() {
           <ScrollView contentContainerStyle={{ padding: 20 }}>
             <ThemedText style={{ fontSize: 18, lineHeight: 24, fontFamily: Fonts.poppinsBold, marginBottom: 12 }}>1. Agreement</ThemedText>
             <ThemedText style={{ color: '#4B5563', lineHeight: 24, marginBottom: 20 }}>
-              By using SkoFy, you agree to connect with various service providers. We act as a platform for discovery...
+              By using Dodorez, you agree to connect with various service providers. We act as a platform for discovery...
             </ThemedText>
             <ThemedText style={{ fontSize: 18, lineHeight: 24, fontFamily: Fonts.poppinsBold, marginBottom: 12 }}>2. Privacy</ThemedText>
             <ThemedText style={{ color: '#4B5563', lineHeight: 24, marginBottom: 20 }}>
@@ -1240,7 +1291,7 @@ export default function ProfileScreen() {
         visible={isPasswordOpen}
         animationType="fade"
         transparent
-        onRequestClose={() => { setIsPasswordOpen(false); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); }}
+        onRequestClose={() => { setIsPasswordOpen(false); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setShowCurrentPassword(false); setShowNewPassword(false); setShowConfirmPassword(false); }}
       >
         <KeyboardAvoidingView
           style={[styles.modalOverlay, { justifyContent: 'center', padding: 20 }]}
@@ -1250,33 +1301,72 @@ export default function ProfileScreen() {
           <View style={[styles.modalContent, { borderRadius: 24 }, modalBottomPad]}>
             <ThemedText style={[styles.modalTitle, { marginBottom: 20 }]}>Change Password</ThemedText>
             <ThemedText style={styles.inputLabel}>Current Password</ThemedText>
-            <TextInput
-              placeholder="Enter current password"
-              secureTextEntry
-              value={currentPassword}
-              onChangeText={setCurrentPassword}
-              style={[styles.editableInput, { marginBottom: 16 }]}
-            />
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+              <TextInput
+                placeholder="Enter current password"
+                placeholderTextColor={themeColors.icon}
+                secureTextEntry={!showCurrentPassword}
+                value={currentPassword}
+                onChangeText={setCurrentPassword}
+                style={[styles.editableInput, { flex: 1, paddingRight: 44 }]}
+              />
+              <TouchableOpacity
+                style={{ position: 'absolute', right: 12 }}
+                onPress={() => setShowCurrentPassword(v => !v)}
+              >
+                {showCurrentPassword ? (
+                  <EyeOff size={18} color={themeColors.icon} />
+                ) : (
+                  <Eye size={18} color={themeColors.icon} />
+                )}
+              </TouchableOpacity>
+            </View>
             <ThemedText style={styles.inputLabel}>New Password</ThemedText>
-            <TextInput
-              placeholder="Min 8 characters, 1 letter + 1 number"
-              secureTextEntry
-              value={newPassword}
-              onChangeText={setNewPassword}
-              style={[styles.editableInput, { marginBottom: 16 }]}
-            />
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+              <TextInput
+                placeholder="Min 8 characters, 1 letter + 1 number"
+                placeholderTextColor={themeColors.icon}
+                secureTextEntry={!showNewPassword}
+                value={newPassword}
+                onChangeText={setNewPassword}
+                style={[styles.editableInput, { flex: 1, paddingRight: 44 }]}
+              />
+              <TouchableOpacity
+                style={{ position: 'absolute', right: 12 }}
+                onPress={() => setShowNewPassword(v => !v)}
+              >
+                {showNewPassword ? (
+                  <EyeOff size={18} color={themeColors.icon} />
+                ) : (
+                  <Eye size={18} color={themeColors.icon} />
+                )}
+              </TouchableOpacity>
+            </View>
             <ThemedText style={styles.inputLabel}>Confirm New Password</ThemedText>
-            <TextInput
-              placeholder="Repeat password"
-              secureTextEntry
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              style={[styles.editableInput, { marginBottom: 24 }]}
-            />
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
+              <TextInput
+                placeholder="Repeat password"
+                placeholderTextColor={themeColors.icon}
+                secureTextEntry={!showConfirmPassword}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                style={[styles.editableInput, { flex: 1, paddingRight: 44 }]}
+              />
+              <TouchableOpacity
+                style={{ position: 'absolute', right: 12 }}
+                onPress={() => setShowConfirmPassword(v => !v)}
+              >
+                {showConfirmPassword ? (
+                  <EyeOff size={18} color={themeColors.icon} />
+                ) : (
+                  <Eye size={18} color={themeColors.icon} />
+                )}
+              </TouchableOpacity>
+            </View>
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <TouchableOpacity
                 style={[styles.closeModalButton, { flex: 1, marginTop: 0 }]}
-                onPress={() => { setIsPasswordOpen(false); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); }}
+                onPress={() => { setIsPasswordOpen(false); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setShowCurrentPassword(false); setShowNewPassword(false); setShowConfirmPassword(false); }}
               >
                 <ThemedText>Cancel</ThemedText>
               </TouchableOpacity>
@@ -1293,7 +1383,7 @@ export default function ProfileScreen() {
       </Modal>
 
       {/* Photo Options Modal */}
-      <Modal visible={isPhotoSheetOpen} transparent animationType="fade">
+      <Modal visible={isPhotoSheetOpen} transparent animationType="fade" onRequestClose={() => setIsPhotoSheetOpen(false)}>
         <TouchableOpacity
           style={styles.modalOverlay}
           activeOpacity={1}
@@ -1329,7 +1419,17 @@ export default function ProfileScreen() {
       </Modal>
 
       {/* Add Address Modal */}
-      <Modal visible={isAddAddressOpen} transparent animationType="fade">
+      <Modal
+        visible={isAddAddressOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setIsAddAddressOpen(false);
+          setNewAddressType('');
+          setNewAddressValue('');
+          setNewAddressCoords(null);
+        }}
+      >
         <KeyboardAvoidingView
           style={[styles.modalOverlay, { justifyContent: 'center', padding: 20 }]}
           behavior="padding"
@@ -1343,12 +1443,25 @@ export default function ProfileScreen() {
             <ThemedText style={styles.inputLabel}>Address Label</ThemedText>
             <TextInput
               placeholder="e.g., Home, Work, Gym"
+              placeholderTextColor={themeColors.icon}
               value={newAddressType}
               onChangeText={setNewAddressType}
               style={[styles.editableInput, { marginBottom: 20 }]}
             />
 
-            <ThemedText style={styles.inputLabel}>Address</ThemedText>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <ThemedText style={[styles.inputLabel, { marginBottom: 0 }]}>Address</ThemedText>
+              <TouchableOpacity
+                style={styles.currentLocationBtn}
+                onPress={() => handleUseCurrentLocation(-1)}
+                disabled={isLocating}
+              >
+                <Map size={14} color="#FFCE48" />
+                <ThemedText style={styles.currentLocationText}>
+                  {isLocating ? 'Locating...' : 'Use Current Location'}
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
             <TextInput
               value={newAddressValue}
               onChangeText={(text) => {
@@ -1359,6 +1472,7 @@ export default function ProfileScreen() {
               onContentSizeChange={(e) => setNewAddressHeight(e.nativeEvent.contentSize.height)}
               style={[styles.editableInput, { marginBottom: 12, minHeight: 90, height: Math.max(90, newAddressHeight) }]}
               placeholder="Search or type address..."
+              placeholderTextColor={themeColors.icon}
               textAlignVertical="top"
             />
 
@@ -1411,6 +1525,7 @@ export default function ProfileScreen() {
                   setIsAddAddressOpen(false);
                   setNewAddressType('');
                   setNewAddressValue('');
+                  setNewAddressCoords(null);
                 }}
               >
                 <ThemedText>Cancel</ThemedText>
@@ -1426,8 +1541,93 @@ export default function ProfileScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
+      {/* Remove ID Document Confirmation */}
+      <Modal
+        visible={confirmRemoveDocIdx !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setConfirmRemoveDocIdx(null)}
+      >
+        <View style={[styles.modalOverlay, { justifyContent: 'center', padding: 24 }]}>
+          <Animated.View
+            entering={FadeInUp.duration(400)}
+            style={{
+              backgroundColor: '#fff',
+              borderRadius: 32,
+              padding: 32,
+              alignItems: 'center',
+              shadowColor: '#000',
+              shadowOpacity: 0.1,
+              shadowRadius: 20,
+              elevation: 5,
+            }}
+          >
+            <View style={{
+              width: 72, height: 72, borderRadius: 36,
+              backgroundColor: '#FEF2F2', justifyContent: 'center', alignItems: 'center', marginBottom: 20,
+            }}>
+              <Trash2 size={30} color="#EF4444" />
+            </View>
+            <ThemedText style={{ fontSize: 22, lineHeight: 28, fontFamily: Fonts.poppinsBold, color: '#111827', marginBottom: 8, textAlign: 'center' }}>
+              Remove Document?
+            </ThemedText>
+            <ThemedText style={{ fontSize: 15, fontFamily: Fonts.poppins, color: '#6B7280', textAlign: 'center', marginBottom: 28, lineHeight: 22 }}>
+              {confirmRemoveDocIdx !== null
+                ? `This will delete your ${['Front', 'Back', 'Extra'][confirmRemoveDocIdx]} ID document photo. You can re-upload it anytime.`
+                : ''}
+            </ThemedText>
+            <View style={{ flexDirection: 'row', gap: 16, width: '100%' }}>
+              <TouchableOpacity
+                style={{ flex: 1, height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F3F4F6' }}
+                onPress={() => setConfirmRemoveDocIdx(null)}
+              >
+                <ThemedText style={{ fontSize: 16, lineHeight: 22, fontFamily: Fonts.poppinsBold, color: '#111827' }}>Cancel</ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ flex: 1, height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', backgroundColor: '#EF4444' }}
+                onPress={() => {
+                  if (confirmRemoveDocIdx !== null) handleRemoveDocSlot(confirmRemoveDocIdx);
+                  setConfirmRemoveDocIdx(null);
+                }}
+              >
+                <ThemedText style={{ fontSize: 16, lineHeight: 22, fontFamily: Fonts.poppinsBold, color: '#fff' }}>Remove</ThemedText>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        </View>
+      </Modal>
+
+      {/* ID Document Full-Screen Viewer — the Front/Back/Extra thumbnails
+          are a tiny 3-up row, too small to actually read an ID off of. */}
+      <Modal
+        visible={viewingDocIdx !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setViewingDocIdx(null)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)' }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: insets.top + 10, paddingHorizontal: 20, paddingBottom: 10 }}>
+            <ThemedText style={{ fontSize: 16, lineHeight: 22, fontFamily: Fonts.poppinsBold, color: '#fff' }}>
+              {viewingDocIdx !== null ? `${['Front', 'Back', 'Extra'][viewingDocIdx]} ID Document` : ''}
+            </ThemedText>
+            <TouchableOpacity onPress={() => setViewingDocIdx(null)}>
+              <XCircle size={30} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16 }}>
+            {viewingDocIdx !== null && idDocSlots[viewingDocIdx] && (
+              <Image
+                source={{ uri: idDocSlots[viewingDocIdx] as string }}
+                style={{ width: '100%', height: '100%' }}
+                contentFit="contain"
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
+
       {/* Update Email Modal */}
-      <Modal visible={isEmailModalOpen} transparent animationType="fade">
+      <Modal visible={isEmailModalOpen} transparent animationType="fade" onRequestClose={() => { setIsEmailModalOpen(false); setEmailInput(''); }}>
         <KeyboardAvoidingView
           style={[styles.modalOverlay, { justifyContent: 'center', padding: 20 }]}
           behavior="padding"
@@ -1440,6 +1640,7 @@ export default function ProfileScreen() {
             </ThemedText>
             <TextInput
               placeholder="Enter your email address"
+              placeholderTextColor={themeColors.icon}
               value={emailInput}
               onChangeText={setEmailInput}
               keyboardType="email-address"

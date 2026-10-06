@@ -12,7 +12,7 @@
  * built ahead of a second real use case.
  */
 import { File, Paths } from 'expo-file-system';
-import { SkoFyApi } from './api';
+import { SkoFyApi, TokenStore } from './api';
 
 // This SDK's expo-file-system (v19) is the rewritten File/Directory/Paths
 // class API — the older documentDirectory/readAsStringAsync/EncodingType
@@ -58,8 +58,23 @@ export interface HomeCacheData {
   unreadNotifCount?: number;
 }
 
+// Stamped on every write, checked on every read — this file lives on the
+// DEVICE, not scoped to any one account. Logging out and a different
+// customer logging in on the same device (or, concretely, a dev database
+// getting wiped and the same phone number re-registering as a brand-new
+// account) left a stale file on disk with no idea the underlying account
+// had changed. Without this check, the new account's very first app open
+// rendered the PREVIOUS account's name/address/jobs/providers instantly
+// from cache, correct-looking long enough to be genuinely confusing,
+// before any live fetch had a chance to correct it.
 interface StoredHomeCache extends HomeCacheData {
   cachedAt: number;
+  userId: string;
+}
+
+async function getCurrentUserId(): Promise<string | null> {
+  const user = await TokenStore.getUser();
+  return user?.user_id ?? null;
 }
 
 export async function readHomeCache(): Promise<HomeCacheData | null> {
@@ -69,11 +84,29 @@ export async function readHomeCache(): Promise<HomeCacheData | null> {
     const raw = await file.text();
     const data: StoredHomeCache = JSON.parse(raw);
     if (!data.cachedAt || Date.now() - data.cachedAt > MAX_CACHE_AGE_MS) return null;
+    const currentUserId = await getCurrentUserId();
+    if (!currentUserId || data.userId !== currentUserId) return null;
     return data;
   } catch {
     // A corrupt/unreadable cache file is never worse than no cache — the
     // live fetch this is only ever a bridge to still runs regardless.
     return null;
+  }
+}
+
+// Logout and session-expiry (see services/api.ts's setSessionExpiredHandler)
+// both call this directly too, as defense in depth on top of the userId
+// check above — belt and suspenders, since the check above only protects
+// reads that happen to run after TokenStore already reflects the new
+// account, and a stale pre-expiry access token can briefly still look
+// valid to the app before a live request actually gets rejected.
+export async function clearHomeCache(): Promise<void> {
+  try {
+    const file = getCacheFile();
+    if (file?.exists) file.delete();
+  } catch {
+    // Best-effort — worst case a stale file lingers until the userId
+    // check above catches it on the next read.
   }
 }
 
@@ -98,8 +131,14 @@ export function writeHomeCache(partial: HomeCacheData): Promise<void> {
     try {
       const file = getCacheFile();
       if (!file) return;
+      const currentUserId = await getCurrentUserId();
+      if (!currentUserId) return; // never persist data with no known owner
+      // readHomeCache() already discards anything stamped with a DIFFERENT
+      // userId, so a fresh account's first write correctly starts from
+      // nothing instead of merging its fields on top of whoever used this
+      // device last.
       const existing = await readHomeCache();
-      const merged: StoredHomeCache = { ...existing, ...partial, cachedAt: Date.now() };
+      const merged: StoredHomeCache = { ...existing, ...partial, userId: currentUserId, cachedAt: Date.now() };
       // file.write() is synchronous in this API (no network/async I/O —
       // it's a local write) and creates the file on first write if it
       // doesn't exist yet.

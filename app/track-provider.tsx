@@ -4,7 +4,7 @@ import { DisputeModal } from '@/components/dispute-modal';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { SkoFyApi, BASE_URL, TokenStore } from '@/services/api';
+import { SkoFyApi, BASE_URL, TokenStore, getFreshAccessToken } from '@/services/api';
 import { kmToMiles } from '@/services/units';
 import { GOOGLE_PLACES_API_KEY } from '@/services/google-places';
 import { Image } from 'expo-image';
@@ -35,6 +35,8 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { SlideInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RatingModal, RatingDimensions } from '@/components/ui/rating-modal';
+import { markRatingSkipped } from '@/services/ratingReminders';
+import { CheckoutSheet } from '@/components/checkout-sheet';
 import { useHirePayment } from '@/hooks/use-hire-payment';
 
 // Map imports handled dynamically to prevent crashes and web errors
@@ -252,6 +254,7 @@ export default function TrackProviderScreen() {
   const { payInspectionFee, payInvoice } = useHirePayment();
   const [mapError, setMapError] = useState(!MapView);
   const [showRatingModal, setShowRatingModal] = useState(false);
+  const [showCheckout, setShowCheckout] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   // Set when the job is permanently gone/inaccessible (404/403) — usually a
   // stale notification tap landing here after the job was cancelled/expired.
@@ -331,7 +334,7 @@ export default function TrackProviderScreen() {
 
     const connect = async () => {
       if (closed) return;
-      const token = await TokenStore.getAccessToken();
+      const token = await getFreshAccessToken();
       if (!token || closed) return;
       ws = new WebSocket(`${WS_BASE}/ws/jobs/${jobId}`);
       wsRef.current = ws;
@@ -534,20 +537,24 @@ export default function TrackProviderScreen() {
   // polling) — distinct from the customer tapping "Accept & Pay" directly,
   // which pays inline within handleRespondToInvoice below. Without this, a
   // customer who countered had no way to actually pay once accepted.
-  const handlePayAcceptedInvoice = async () => {
+  const handlePayAcceptedInvoice = () => {
     if (!jobId) return;
-    setRespondingToInvoice(true);
-    try {
-      const payResult = await payInvoice(jobId);
-      if (payResult.status === 'success') {
-        setJobStatus('IN_PROGRESS');
-      } else if (payResult.status === 'pending') {
-        appAlert.show('warning', 'Still Processing', payResult.message);
-      } else if (payResult.status === 'error') {
-        appAlert.show('error', 'Payment Failed', payResult.message);
-      }
-    } finally {
-      setRespondingToInvoice(false);
+    setShowCheckout(true);
+  };
+
+  // Paying always goes through the checkout sheet, where the customer can
+  // apply an offer/promo code first. Errors keep the sheet open to retry.
+  const payFromCheckout = async (offerCode: string | null) => {
+    if (!jobId) return;
+    const payResult = await payInvoice(jobId, offerCode ?? undefined);
+    if (payResult.status === 'success') {
+      setShowCheckout(false);
+      setJobStatus('IN_PROGRESS');
+    } else if (payResult.status === 'pending') {
+      setShowCheckout(false);
+      appAlert.show('warning', 'Still Processing', payResult.message);
+    } else if (payResult.status === 'error') {
+      appAlert.show('error', 'Payment Failed', payResult.message);
     }
   };
 
@@ -582,15 +589,8 @@ export default function TrackProviderScreen() {
         ]);
         return;
       }
-      // ACCEPT — pay right away.
-      const payResult = await payInvoice(jobId);
-      if (payResult.status === 'success') {
-        setJobStatus('IN_PROGRESS');
-      } else if (payResult.status === 'pending') {
-        appAlert.show('warning', 'Still Processing', payResult.message);
-      } else if (payResult.status === 'error') {
-        appAlert.show('error', 'Payment Failed', payResult.message);
-      }
+      // ACCEPT — go to checkout (offers / promo code, then pay).
+      setShowCheckout(true);
     } catch (err: any) {
       appAlert.show('error', 'Failed', err?.message ?? 'Please try again.');
     } finally {
@@ -1255,11 +1255,24 @@ export default function TrackProviderScreen() {
       </Animated.View>
       </KeyboardAvoidingView>
 
+      {jobId && (
+        <CheckoutSheet
+          visible={showCheckout}
+          jobId={jobId}
+          onPay={payFromCheckout}
+          onClose={() => setShowCheckout(false)}
+        />
+      )}
+
       <RatingModal
         visible={showRatingModal}
         providerName={provider?.name ?? 'Provider'}
         onClose={handleRatingModalClose}
         onSubmit={handleRatingSubmit}
+        onSkip={() => {
+          if (jobId) markRatingSkipped(jobId);
+          handleRatingModalClose();
+        }}
       />
 
       {jobId && (

@@ -144,9 +144,9 @@ export function useHirePayment() {
   /** Call once the invoice (or a countered amount) has been accepted —
    * creates the job-cost escrow, presents PaymentSheet, then confirms so the
    * job actually starts. */
-  const payInvoice = async (jobId: string): Promise<PaymentResult> => {
+  const payInvoice = async (jobId: string, offerCode?: string): Promise<PaymentResult> => {
     try {
-      const intentResult = await SkoFyApi.jobs.payInvoice(jobId);
+      const intentResult = await SkoFyApi.jobs.payInvoice(jobId, offerCode);
       if (intentResult.requires_payment) {
         const sheetResult = await runPaymentSheet(intentResult.client_secret!);
         if (sheetResult.status !== 'success') return sheetResult;

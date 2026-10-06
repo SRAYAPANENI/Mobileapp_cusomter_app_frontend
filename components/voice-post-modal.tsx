@@ -14,11 +14,13 @@ import {
   View,
 } from 'react-native';
 import * as Speech from 'expo-speech';
+import * as SecureStore from 'expo-secure-store';
+import * as Location from 'expo-location';
 import { Audio } from 'expo-av';
 import * as ImagePicker from 'expo-image-picker';
 import Svg, { Circle, Defs, RadialGradient, Stop, G, Ellipse } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CheckCircle, TriangleAlert as AlertTriangle, X, Mic, Square, Camera, ImageIcon, Play } from 'lucide-react-native';
+import { CheckCircle, TriangleAlert as AlertTriangle, X, Mic, Square, Camera, ImageIcon, Play, Languages } from 'lucide-react-native';
 import { Fonts } from '@/constants/theme';
 import { SkoFyApi } from '@/services/api';
 
@@ -119,7 +121,46 @@ const SILENCE_THRESHOLD = -38; // dB — below this after speech = silence
 const MIN_SPEECH_FRAMES = 4;   // need ≥4 frames (~0.8s) of speech before listening for silence
 const SILENCE_FRAMES = 10;     // 10 × 200ms = 2s silence after confirmed speech → stop
 
-const GREETING = "Hey! I'm SkoFy. What problem can I help you fix today?";
+// Opening line per voice language (see greetingText() for the English
+// variants that name a chosen provider or service).
+const GREETINGS: Record<string, string> = {
+  en: "Hey! I'm Dodorez. What problem can I help you fix today?",
+  es: '¡Hola! Soy Dodorez. ¿Qué problema puedo ayudarte a resolver hoy?',
+  te: 'నమస్కారం! నేను Dodorez. మీకు ఏ సమస్య ఉంది?',
+  hi: 'नमस्ते! मैं Dodorez हूं। आपकी क्या समस्या है?',
+  ta: 'வணக்கம்! நான் Dodorez. உங்களுக்கு என்ன உதவி தேவை?',
+  kn: 'ನಮಸ್ಕಾರ! ನಾನು Dodorez. ನಿಮಗೆ ಯಾವ ಸಮಸ್ಯೆ ಇದೆ?',
+  ml: 'നമസ്കാരം! ഞാൻ Dodorez. നിങ്ങളുടെ പ്രശ്നം എന്താണ്?',
+  mr: 'नमस्कार! मी Dodorez. तुमची काय समस्या आहे?',
+  bn: 'নমস্কার! আমি Dodorez। আপনার কী সমস্যা?',
+  gu: 'નમસ્તે! હું Dodorez છું. તમારી શું સમસ્યા છે?',
+  pa: 'ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਮੈਂ Dodorez ਹਾਂ। ਤੁਹਾਡੀ ਕੀ ਸਮੱਸਿਆ ਹੈ?',
+  ur: 'السلام علیکم! میں Dodorez ہوں۔ آپ کا کیا مسئلہ ہے؟',
+};
+
+// Languages the customer can pick for voice posting. `code` is sent to the
+// backend (must match SUPPORTED_VOICE_LANGUAGES in ai.py); `tts` is the
+// locale the reply is read aloud in, so a Telugu reply isn't read by an
+// English voice.
+const VOICE_LANGUAGES: { code: string; label: string; short: string; tts?: string }[] = [
+  { code: 'auto', label: 'Auto-detect', short: 'Auto' },
+  { code: 'en', label: 'English', short: 'EN', tts: 'en-US' },
+  { code: 'es', label: 'Español', short: 'ES', tts: 'es-US' },
+  { code: 'te', label: 'తెలుగు (Telugu)', short: 'తె', tts: 'te-IN' },
+  { code: 'hi', label: 'हिन्दी (Hindi)', short: 'हि', tts: 'hi-IN' },
+  { code: 'ta', label: 'தமிழ் (Tamil)', short: 'த', tts: 'ta-IN' },
+  { code: 'kn', label: 'ಕನ್ನಡ (Kannada)', short: 'ಕ', tts: 'kn-IN' },
+  { code: 'ml', label: 'മലയാളം (Malayalam)', short: 'മ', tts: 'ml-IN' },
+  { code: 'mr', label: 'मराठी (Marathi)', short: 'म', tts: 'mr-IN' },
+  { code: 'bn', label: 'বাংলা (Bengali)', short: 'বা', tts: 'bn-IN' },
+  { code: 'gu', label: 'ગુજરાતી (Gujarati)', short: 'ગુ', tts: 'gu-IN' },
+  { code: 'pa', label: 'ਪੰਜਾਬੀ (Punjabi)', short: 'ਪੰ', tts: 'pa-IN' },
+  { code: 'ur', label: 'اردو (Urdu)', short: 'اُ', tts: 'ur-IN' },
+];
+const VOICE_LANGUAGE_KEY = 'voice_language';
+// Auto-detect only locks a language once a clip has at least this many
+// words — a 1–2 word clip ("hello", "yes") is too short to identify reliably.
+const MIN_WORDS_TO_LOCK_LANGUAGE = 3;
 
 // Client-side content gate — blocks transcribed text before it reaches the AI.
 // Two passes: (1) phrase patterns for adult/illegal requests, (2) word-level profanity.
@@ -221,9 +262,109 @@ export function VoicePostModal({
   // Whisper auto-detects language fresh on every clip when this is unset —
   // fine for the first utterance, but independent per-turn detection could
   // (and did) flip languages on later turns, since a few seconds of audio is
-  // often genuinely ambiguous alone. Locked in from the first response and
-  // echoed back on every later transcribe() call for the rest of this session.
+  // often genuinely ambiguous alone. Locked in from the first clip long
+  // enough to identify (MIN_WORDS_TO_LOCK_LANGUAGE) and echoed back on every
+  // later transcribe() call for the rest of this session. Ignored when the
+  // customer has picked a language explicitly (voiceLang below).
   const detectedLanguageRef = useRef<string | undefined>(undefined);
+
+  // Customer's chosen language ('auto' = detect). Remembered across sessions
+  // so they pick it once; mirrored into a ref for the async callbacks.
+  // English until they choose otherwise — auto-detect on a few seconds of
+  // accented English kept landing on Hindi, Telugu or Portuguese.
+  const [voiceLang, setVoiceLangState] = useState('en');
+  const voiceLangRef = useRef('en');
+  const [langMenuOpen, setLangMenuOpen] = useState(false);
+  useEffect(() => {
+    SecureStore.getItemAsync(VOICE_LANGUAGE_KEY)
+      .then(saved => {
+        if (saved && VOICE_LANGUAGES.some(l => l.code === saved)) {
+          voiceLangRef.current = saved;
+          setVoiceLangState(saved);
+        }
+      })
+      .catch(() => {});
+  }, []);
+  const setVoiceLang = (code: string) => {
+    voiceLangRef.current = code;
+    setVoiceLangState(code);
+    detectedLanguageRef.current = undefined; // re-detect fresh if switching back to Auto
+    setLangMenuOpen(false);
+    SecureStore.setItemAsync(VOICE_LANGUAGE_KEY, code).catch(() => {});
+  };
+  // The language actually in use: the customer's pick, else the locked-in detection.
+  const activeLanguage = () =>
+    voiceLangRef.current !== 'auto' ? voiceLangRef.current : detectedLanguageRef.current;
+
+  // The opening line, in the language in use — an English greeting read by
+  // a Telugu text-to-speech voice came out garbled.
+  const greetingText = (): string => {
+    const lang = activeLanguage() ?? 'en';
+    if (lang === 'en') {
+      if (targetProvider) return `Hi! Tell me what you need ${targetProvider.name} to help with.`;
+      if (initialProfession) return `Got it — ${initialProfession}! Describe the issue briefly and I'll match you with the right pro.`;
+    }
+    return GREETINGS[lang] ?? GREETINGS.en;
+  };
+
+  // Where the job is: the opener's location if it passed one (home, map),
+  // otherwise the phone's own — the bottom-bar mic passes none. Shown in the
+  // conversation and on the confirm screen so the customer can see where
+  // providers will be sent, and used when posting.
+  const [jobLocation, setJobLocation] = useState<{ lat: number; lng: number; address: string | null } | null>(null);
+  const [locatingJob, setLocatingJob] = useState(false);
+
+  const getDeviceLocation = async (): Promise<{ lat: number; lng: number } | null> => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return null;
+      // A fresh fix first (the job is where they are now); a last-known fix
+      // only if it's recent — an old one can be from another area.
+      const fresh = await Promise.race([
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+        new Promise<null>(resolve => setTimeout(() => resolve(null), 8000)),
+      ]).catch(() => null);
+      const pos = fresh ?? (await Location.getLastKnownPositionAsync({ maxAge: 10 * 60 * 1000 }));
+      return pos ? { lat: pos.coords.latitude, lng: pos.coords.longitude } : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const describeLocation = async (la: number, ln: number): Promise<string | null> => {
+    try {
+      const [item] = await Location.reverseGeocodeAsync({ latitude: la, longitude: ln });
+      const parts = item ? [item.name, item.district || item.city || item.region].filter(Boolean) : [];
+      return parts.length ? parts.join(', ') : null;
+    } catch {
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    // Clear the previous session's location first, so a reopen never shows
+    // (or posts to) the old address while the new one is being found.
+    setJobLocation(null);
+    (async () => {
+      setLocatingJob(true);
+      const coords = lat != null && lng != null ? { lat, lng } : await getDeviceLocation();
+      if (cancelled) return;
+      setLocatingJob(false);
+      if (!coords) { setJobLocation(null); return; }
+      setJobLocation({ ...coords, address: address ?? null });
+      if (!address) {
+        const described = await describeLocation(coords.lat, coords.lng);
+        if (!cancelled && described) setJobLocation(prev => (prev ? { ...prev, address: described } : prev));
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, lat, lng, address]);
+
+  const jobLocationLabel = jobLocation?.address
+    ?? (jobLocation ? 'Your current location' : locatingJob ? 'Finding your location…' : 'Your saved address');
 
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
@@ -326,14 +467,14 @@ export function VoicePostModal({
         if (initialProfession) {
           // Service chip mic tap — AI already knows the service, skip generic question
           const seed: ChatMessage = { role: 'user', content: `I need a ${initialProfession}` };
-          openText = `Got it — ${initialProfession}! Describe the issue briefly and I'll match you with the right pro.`;
+          openText = greetingText();
           const greetMsg: ChatMessage = { role: 'assistant', content: openText };
           // Show only the targeted greeting; keep seed in ref for backend context
           setMessages([greetMsg]);
           messagesRef.current = [seed, greetMsg];
         } else {
-          openText = GREETING;
-          const greeting: ChatMessage = { role: 'assistant', content: GREETING };
+          openText = greetingText();
+          const greeting: ChatMessage = { role: 'assistant', content: openText };
           setMessages([greeting]); messagesRef.current = [greeting];
         }
         setPhase('speaking');
@@ -507,13 +648,18 @@ export function VoicePostModal({
       const uri = recording.getURI();
       if (!uri) { setPhase('idle'); return; }
 
-      const { text, language } = await SkoFyApi.ai.transcribe(uri, detectedLanguageRef.current);
+      const { text, language } = await SkoFyApi.ai.transcribe(uri, activeLanguage());
       // The modal was closed while transcription was in flight — this used
       // to fall straight through to handleUserSpoke() below with no guard
       // at all, posting a stale conversation turn and potentially
       // restarting the mic for a modal the user believes is closed.
       if (!isOpenRef.current) return;
-      if (language && !detectedLanguageRef.current) detectedLanguageRef.current = language;
+      if (
+        language && !detectedLanguageRef.current && voiceLangRef.current === 'auto'
+        && (text ?? '').trim().split(/\s+/).length >= MIN_WORDS_TO_LOCK_LANGUAGE
+      ) {
+        detectedLanguageRef.current = language;
+      }
       if (!text?.trim()) {
         if (phaseRef.current === 'processing') setPhase('idle');
         setTimeout(() => { if (phaseRef.current === 'idle') startListening(); }, 300);
@@ -642,7 +788,7 @@ export function VoicePostModal({
   const sendToBackend = useCallback(async (history: ChatMessage[]) => {
     setPhase('processing');
     try {
-      const res = await SkoFyApi.ai.voiceChat(history);
+      const res = await SkoFyApi.ai.voiceChat(history, activeLanguage());
       // The modal was closed while this request was in flight — everything
       // below speaks the AI's reply out loud, mutates chat state, and can
       // restart the mic, all for a conversation the user believes they
@@ -659,7 +805,7 @@ export function VoicePostModal({
         const effectiveReply = (res.is_complete && !KNOWN_PROFESSIONS.has(res.job_data?.profession ?? ''))
           ? `We're adding ${res.job_data?.profession ?? 'that service'} to Dodorez soon! Can I help you with something else?`
           : res.reply;
-        const isComingSoon = /we'?re adding .+ to skofy soon|not yet available on skofy/i.test(effectiveReply);
+        const isComingSoon = /we'?re adding .+ to (?:dodorez|skofy) soon|not yet available on (?:dodorez|skofy)/i.test(effectiveReply);
         if (isComingSoon) {
           // Extract which alternative profession the AI offered so the Yes button can name it explicitly
           const mentioned = [...KNOWN_PROFESSIONS].find(p =>
@@ -696,7 +842,13 @@ export function VoicePostModal({
   }, []);
 
   const speakText = (text: string): Promise<void> =>
-    new Promise(resolve => Speech.speak(text, { rate: 0.9, onDone: resolve, onError: () => resolve() }));
+    new Promise(resolve => Speech.speak(text, {
+      rate: 0.9,
+      // Read the reply in its own language's voice; undefined = device default.
+      language: VOICE_LANGUAGES.find(l => l.code === activeLanguage())?.tts,
+      onDone: resolve,
+      onError: () => resolve(),
+    }));
 
   // ── Post job ───────────────────────────────────────────────────────────────
   const doPostJob = async () => {
@@ -721,6 +873,13 @@ export function VoicePostModal({
         } catch { /* non-fatal — job posts without photos */ }
       }
 
+      // The location shown on screen (resolved when the modal opened). If it
+      // couldn't be found then, try once more; if there's still none, the
+      // backend falls back to the customer's default saved address.
+      const coords = jobLocation
+        ? { lat: jobLocation.lat, lng: jobLocation.lng }
+        : serviceMode === 'REMOTE' ? null : await getDeviceLocation();
+
       await SkoFyApi.jobs.create({
         title: jobData.title,
         description: jobData.description,
@@ -729,8 +888,8 @@ export function VoicePostModal({
         urgency: jobData.urgency as any,
         scheduled_at: jobData.scheduled_at ?? undefined,
         // REMOTE: no location at all. Otherwise, the customer's current lat/lng.
-        lat: serviceMode === 'REMOTE' ? undefined : (lat ?? undefined),
-        lng: serviceMode === 'REMOTE' ? undefined : (lng ?? undefined),
+        lat: serviceMode === 'REMOTE' ? undefined : coords?.lat,
+        lng: serviceMode === 'REMOTE' ? undefined : coords?.lng,
         images: imageUrls,
         target_provider_id: targetProvider?.id,
         direct_request_queue: queuedProviders?.length ? queuedProviders.map(p => p.id) : undefined,
@@ -748,10 +907,17 @@ export function VoicePostModal({
       // message for what's actually "you already have one of these open."
       // create_job() has no skill-verification check at all (only bid(), a
       // different screen, does) — error_code is the real signal to branch on.
+      // BAD_REQUEST carries an actionable reason too (e.g. "Please add your
+      // address…" when no location could be found) — show it rather than
+      // blaming the connection.
       const detail = err?.message || err?.detail || '';
-      setErrorMsg(err?.error_code === 'CONFLICT'
-        ? (detail || 'You already have a pending direct request for this skill.')
-        : 'Failed to post the job. Check your connection and try again.');
+      if (err?.error_code === 'CONFLICT') {
+        setErrorMsg(detail || 'You already have a pending direct request for this skill.');
+      } else if (err?.error_code === 'BAD_REQUEST' && detail) {
+        setErrorMsg(detail);
+      } else {
+        setErrorMsg('Failed to post the job. Check your connection and try again.');
+      }
     }
   };
 
@@ -792,13 +958,13 @@ export function VoicePostModal({
       let openText: string;
       if (initialProfession) {
         const seed: ChatMessage = { role: 'user', content: `I need a ${initialProfession}` };
-        openText = `Got it — ${initialProfession}! Describe the issue briefly and I'll match you with the right pro.`;
+        openText = greetingText();
         const greetMsg: ChatMessage = { role: 'assistant', content: openText };
         setMessages([greetMsg]);
         messagesRef.current = [seed, greetMsg];
       } else {
-        openText = GREETING;
-        const greeting: ChatMessage = { role: 'assistant', content: GREETING };
+        openText = greetingText();
+        const greeting: ChatMessage = { role: 'assistant', content: openText };
         setMessages([greeting]);
         messagesRef.current = [greeting];
       }
@@ -849,10 +1015,43 @@ export function VoicePostModal({
                : 'Hey Dodorez'}
             </Text>
           </View>
-          {phase !== 'posting' && phase !== 'success' && (
-            <TouchableOpacity style={s.closeBtn} onPress={phase === 'confirm' ? cancelConfirm : onClose}>
-              <X size={22} color={C.muted} />
-            </TouchableOpacity>
+          <View style={s.headerRight}>
+            {!inConfirmFlow && phase !== 'posting' && phase !== 'success' && (
+              <TouchableOpacity
+                style={s.langChip}
+                onPress={() => setLangMenuOpen(o => !o)}
+                accessibilityLabel="Choose voice language"
+              >
+                <Languages size={15} color={C.text} />
+                <Text style={s.langChipText}>
+                  {VOICE_LANGUAGES.find(l => l.code === voiceLang)?.short ?? 'Auto'}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {phase !== 'posting' && phase !== 'success' && (
+              <TouchableOpacity style={s.closeBtn} onPress={phase === 'confirm' ? cancelConfirm : onClose}>
+                <X size={22} color={C.muted} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {langMenuOpen && !inConfirmFlow && (
+            <View style={s.langMenu}>
+              <Text style={s.langMenuTitle}>I'll speak in</Text>
+              <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps="handled">
+                {VOICE_LANGUAGES.map(l => (
+                  <TouchableOpacity
+                    key={l.code}
+                    style={[s.langOption, l.code === voiceLang && s.langOptionActive]}
+                    onPress={() => setVoiceLang(l.code)}
+                  >
+                    <Text style={[s.langOptionText, l.code === voiceLang && s.langOptionTextActive]}>{l.label}</Text>
+                    {l.code === voiceLang && <CheckCircle size={16} color="#111827" />}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <Text style={s.langMenuHint}>Picking your language makes voice posting much more accurate.</Text>
+            </View>
           )}
         </View>
 
@@ -944,6 +1143,13 @@ export function VoicePostModal({
                   <Text style={s.confirmLabel}>When</Text>
                   <Text style={s.confirmValue}>{formatScheduledAt(jobData!.scheduled_at)}</Text>
                 </View>
+
+                {serviceMode !== 'REMOTE' && (
+                  <View style={s.confirmRow}>
+                    <Text style={s.confirmLabel}>Location</Text>
+                    <Text style={s.confirmValue} numberOfLines={2}>📍 {jobLocationLabel}</Text>
+                  </View>
+                )}
 
                 {/* Service mode — On-site vs Remote (no physical location/
                     distance matching at all, e.g. hiring a developer). Hidden
@@ -1050,12 +1256,12 @@ export function VoicePostModal({
         ) : (
           // ── VOICE CONVERSATION UI ─────────────────────────────────────────
           <>
-            {/* Address chip */}
-            {address ? (
+            {/* Where the job is — always shown so the customer can check it */}
+            {serviceMode !== 'REMOTE' && (
               <View style={s.addressChip}>
-                <Text style={s.addressText} numberOfLines={1}>📍 {address}</Text>
+                <Text style={s.addressText} numberOfLines={1}>📍 {jobLocationLabel}</Text>
               </View>
-            ) : null}
+            )}
 
             {/* Chat bubbles */}
             <ScrollView ref={scrollRef} style={s.chat} contentContainerStyle={s.chatContent} showsVerticalScrollIndicator={false}>
@@ -1334,7 +1540,25 @@ function makeStyles(C: Colors) {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: C.bg, paddingTop: 48 },
 
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 10 },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 10, zIndex: 20 },
+    headerRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    langChip: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+      backgroundColor: C.surface2, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 7,
+    },
+    langChipText: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: C.text },
+    langMenu: {
+      position: 'absolute', top: '100%', right: 20, width: 250, zIndex: 30,
+      backgroundColor: C.bg, borderRadius: 16, borderWidth: 1, borderColor: C.border,
+      paddingVertical: 8, elevation: 12,
+      shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 16, shadowOffset: { width: 0, height: 6 },
+    },
+    langMenuTitle: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsSemiBold, color: C.muted, paddingHorizontal: 16, paddingVertical: 6 },
+    langOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 11 },
+    langOptionActive: { backgroundColor: '#FFF7D6' },
+    langOptionText: { fontSize: 15, lineHeight: 21, fontFamily: Fonts.poppins, color: C.text },
+    langOptionTextActive: { fontFamily: Fonts.poppinsSemiBold, color: '#111827' },
+    langMenuHint: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppins, color: C.muted, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4 },
     headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     headerDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#FFCE48' },
     headerTitle: { fontSize: 20, fontFamily: Fonts.poppinsBold, color: C.text },

@@ -2,7 +2,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Image } from 'expo-image';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
   CheckCheck,
   ChevronLeft,
@@ -12,7 +12,7 @@ import {
   Star,
   XCircle
 } from 'lucide-react-native';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
@@ -41,10 +41,11 @@ import {
 } from 'react-native-webrtc';
 import { Audio } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SkoFyApi, TokenStore } from '@/services/api';
+import { isRatingSkipped, markRatingSkipped } from '@/services/ratingReminders';
+import { RTCIceServerConfig, SkoFyApi, TokenStore, getFreshAccessToken } from '@/services/api';
 import { CallOverlay } from '@/components/call-overlay';
 import InCallManager from 'react-native-incall-manager';
-import { cancelIncomingCallNotification, registerHangupHandler, registerMuteHandler, registerSpeakerHandler, setActiveChatJob, setChatCallActive, startOngoingCallNotification, stopOngoingCallNotification, updateOngoingCallControls } from '@/services/callManager';
+import { cancelIncomingCallNotification, registerAcceptHandler, registerHangupHandler, registerMuteHandler, registerSpeakerHandler, setActiveChatJob, setChatCallActive, startOngoingCallNotification, stopOngoingCallNotification, updateOngoingCallControls } from '@/services/callManager';
 
 // No-answer cutoff — like a real phone call, ringing/calling shouldn't go on forever.
 const CALL_TIMEOUT_MS = 45000;
@@ -59,6 +60,13 @@ const MESSAGE_PAGE_SIZE = 50;
 // stuck on "Connecting…" forever with no offer ever arriving and no way out
 // (the back button is intentionally blocked while a call is active).
 const CONNECTING_TIMEOUT_MS = 15000;
+// A dropped connection (often a Wi-Fi ↔ mobile data switch) gets this long to
+// recover before the call is ended — it used to end on the first blip.
+const DISCONNECT_GRACE_MS = 10000;
+// Max wait for the TURN relay details before calling without them.
+const ICE_SERVERS_WAIT_MS = 3000;
+
+const newCallId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 // Vibration alongside the real ringtone/ringback audio (belt-and-suspenders —
 // some devices' media volume is down even when ringer isn't).
@@ -89,21 +97,22 @@ type CallState = 'idle' | 'connecting' | 'calling' | 'ringing' | 'connected';
 // fine for testing, but it's shared/rate-limited and not something to rely
 // on long-term; swap in a real TURN deployment (self-hosted coturn, or a
 // paid service like Twilio/Xirsys) before this goes anywhere near production.
-const ICE_SERVERS = [
-  { urls: 'stun:stun.relay.metered.ca:80' },
-  { urls: 'turn:global.relay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:global.relay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:global.relay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-];
+// The real STUN/TURN list (with short-lived credentials for Dodorez's own
+// relay) comes from the server — see iceServersRef below. This is only the
+// fallback if that request fails: a public STUN server, which still connects
+// most calls directly but can't relay through strict networks. The app used
+// to ship a shared TURN password here.
+const FALLBACK_ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 
 export default function ChatScreen() {
-  const { jobId, id, name: paramName, profileImage: paramProfileImage, profession: paramProfession, autoAnswer, autoCall } = useLocalSearchParams<{
+  const { jobId, id, name: paramName, profileImage: paramProfileImage, profession: paramProfession, autoAnswer, autoCall, callId: callIdParam } = useLocalSearchParams<{
     jobId: string;
     id: string;
     name: string;
     profileImage: string;
     profession: string;
     autoAnswer?: string;
+    callId?: string;
     autoCall?: string;
   }>();
   // Notification-tap navigation (notifications.tsx) only passes jobId, not
@@ -166,6 +175,11 @@ export default function ChatScreen() {
   // a brand-new incoming call, disrupting the active one.
   const callStateRef = useRef<CallState>(callState);
   useEffect(() => { callStateRef.current = callState; }, [callState]);
+  // The socket handler below is an effect keyed only on [jobId] — calling
+  // handleAcceptCall directly from it would use the function (and the state
+  // it closes over) from the render that set the handler up.
+  const handleAcceptCallRef = useRef<() => void>(() => {});
+  const handleDeclineCallRef = useRef<() => void>(() => {});
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
@@ -177,6 +191,21 @@ export default function ChatScreen() {
   const callTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoAnswerSentRef = useRef(false);
   const autoCallSentRef = useRef(false);
+  // Identifies the current call in every signal (sendSignal adds it), so a
+  // message from an earlier call — a late call_end, a call_ready from a
+  // screen opened for a call that's already over, an old ICE candidate — is
+  // ignored instead of ending, answering or re-ringing the current one.
+  const callIdRef = useRef<string | null>(autoAnswer !== undefined ? (callIdParam ?? null) : null);
+  // The notification's Accept answers ONE call — the one it was pressed for.
+  // Read straight from the route param, it stayed 'true' for the screen's
+  // whole life and every later call into this chat was answered automatically.
+  const autoAnswerPendingRef = useRef(autoAnswer === 'true');
+  // ICE candidates sent for the current outgoing call. Replayed after the
+  // offer is re-sent to a callee who opened the app from the notification:
+  // the originals went out while nobody was listening, and without them the
+  // call "connected" with no audio.
+  const sentIceRef = useRef<any[]>([]);
+  const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ringbackSoundRef = useRef<Audio.Sound | null>(null);
   const ringtoneSoundRef = useRef<Audio.Sound | null>(null);
   const callTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -203,6 +232,10 @@ export default function ChatScreen() {
   const [ratingComment, setRatingComment] = useState('');
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
 
+  const clearDisconnectTimer = () => {
+    if (disconnectTimerRef.current) { clearTimeout(disconnectTimerRef.current); disconnectTimerRef.current = null; }
+  };
+
   const clearCallTimeout = () => {
     if (callTimeoutRef.current) { clearTimeout(callTimeoutRef.current); callTimeoutRef.current = null; }
   };
@@ -216,10 +249,58 @@ export default function ChatScreen() {
   // Lets the foreground push handler know this exact call is already being
   // handled by the in-app ringing UI, so it doesn't ALSO show the incoming-
   // call notification on top of it.
+  //
+  // Focus, not mount: another screen pushed on top (e.g. the map) keeps this
+  // one mounted, and a mount-based flag kept treating the chat as "open" —
+  // silently swallowing every message/call notification for this job while
+  // the user was actually looking at something else.
+  const iceServersRef = useRef<RTCIceServerConfig[]>(FALLBACK_ICE_SERVERS);
+  const [socketOpen, setSocketOpen] = useState(false);
+  const iceServersReadyRef = useRef<Promise<void>>(Promise.resolve());
   useEffect(() => {
-    if (jobId) setActiveChatJob(jobId);
-    return () => setActiveChatJob(null);
-  }, [jobId]);
+    iceServersReadyRef.current = SkoFyApi.calls.iceServers()
+      .then(servers => { if (Array.isArray(servers) && servers.length) iceServersRef.current = servers; })
+      .catch(() => { /* keep the STUN fallback */ });
+  }, []);
+  // A call answered straight from the notification used to build its
+  // connection before the relay details had loaded — STUN only, which fails
+  // on most mobile networks.
+  const waitForIceServers = () =>
+    Promise.race([iceServersReadyRef.current, new Promise<void>(resolve => setTimeout(resolve, ICE_SERVERS_WAIT_MS))]);
+
+  // Only while this screen's socket is actually connected: being the active
+  // chat makes callManager skip the incoming-call notification, trusting
+  // this socket to ring instead. With the socket down, that skipped the only
+  // ring the user would have got.
+  useFocusEffect(
+    useCallback(() => {
+      if (jobId && socketOpen) setActiveChatJob(jobId);
+      registerAcceptHandler(() => handleAcceptCallRef.current());
+      return () => {
+        setActiveChatJob(null);
+        registerAcceptHandler(null);
+      };
+    }, [jobId, socketOpen])
+  );
+
+  // Opened from a call notification: give up if the call never arrives — the
+  // timer used to start only once the socket opened, so a screen opened for
+  // a call that had already ended could sit on "Connecting…" indefinitely.
+  useEffect(() => {
+    if (autoAnswer === undefined) return;
+    const timer = setTimeout(() => {
+      if (callStateRef.current === 'connecting') handleDeclineCallRef.current();
+    }, CONNECTING_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Leaving this screen mid-call must end the call for both people — not
+  // leave the microphone and connection running with no screen to hang up
+  // from. Declared before the socket effect so call_end is sent before the
+  // socket closes (effect cleanups run in declaration order).
+  useEffect(() => () => {
+    if (callStateRef.current !== 'idle') handleEndCallRef.current();
+  }, []);
 
   // AppLockGate must only skip re-locking (or force-dismiss an existing
   // lock) while an actual call is ringing/connecting/connected here — not
@@ -274,8 +355,12 @@ export default function ChatScreen() {
     }
   };
 
-  const sendSignal = (payload: any) => {
-    wsRef.current?.send(JSON.stringify(payload));
+  /** False (nothing sent) while the socket is down or reconnecting. */
+  const sendSignal = (payload: any): boolean => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    ws.send(JSON.stringify({ ...payload, call_id: payload.call_id ?? callIdRef.current }));
+    return true;
   };
 
   const cleanupCall = () => {
@@ -285,7 +370,11 @@ export default function ChatScreen() {
     stopSound(ringtoneSoundRef);
     InCallManager.stop();
     clearCallTimeout();
+    clearDisconnectTimer();
     callActionInFlightRef.current = false;
+    callIdRef.current = null;
+    autoAnswerPendingRef.current = false;
+    sentIceRef.current = [];
     if (jobId) stopOngoingCallNotification(jobId);
     registerHangupHandler(null);
     registerMuteHandler(null);
@@ -306,15 +395,26 @@ export default function ChatScreen() {
   };
 
   const makePeerConnection = () => {
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const pc = new RTCPeerConnection({ iceServers: iceServersRef.current });
     // react-native-webrtc's RTCPeerConnection implements EventTarget at runtime,
     // but its published .d.ts doesn't surface addEventListener — cast around it.
     (pc as any).addEventListener('icecandidate', (event: any) => {
-      if (event.candidate) sendSignal({ type: 'ice_candidate', candidate: event.candidate });
+      if (!event.candidate) return;
+      sentIceRef.current.push(event.candidate);
+      sendSignal({ type: 'ice_candidate', candidate: event.candidate });
     });
     (pc as any).addEventListener('connectionstatechange', () => {
-      if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
-        cleanupCall();
+      if (peerConnectionRef.current !== pc) return; // an earlier call's connection
+      const state = pc.connectionState;
+      if (state === 'connected') {
+        clearDisconnectTimer();
+      } else if (state === 'disconnected') {
+        clearDisconnectTimer();
+        disconnectTimerRef.current = setTimeout(() => handleEndCallRef.current(), DISCONNECT_GRACE_MS);
+      } else if (state === 'failed') {
+        // End it properly — call_end tells the other phone, which used to
+        // keep showing the call until its own connection noticed.
+        handleEndCallRef.current();
       }
     });
     return pc;
@@ -322,11 +422,20 @@ export default function ChatScreen() {
 
   const handleStartCall = async () => {
     if (!jobId || callState !== 'idle' || callActionInFlightRef.current) return;
+    // The offer travels over the socket — without it the other phone never
+    // hears about the call, so don't play ringback to nobody.
+    if (wsRef.current?.readyState !== WebSocket.OPEN) {
+      appAlert.show('info', 'Not connected', "You're offline right now. Check your internet and try again in a moment.");
+      return;
+    }
     callActionInFlightRef.current = true;
+    callIdRef.current = newCallId();
+    sentIceRef.current = [];
     try {
       InCallManager.start({ media: 'audio' });
       const stream = await mediaDevices.getUserMedia({ audio: true, video: false });
       localStreamRef.current = stream;
+      await waitForIceServers();
       const pc = makePeerConnection();
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
       peerConnectionRef.current = pc;
@@ -357,6 +466,7 @@ export default function ChatScreen() {
   const handleAcceptCall = async () => {
     const offer = incomingOfferRef.current;
     if (!offer) return;
+    autoAnswerPendingRef.current = false;
     Vibration.cancel();
     InCallManager.stopRingtone();
     stopSound(ringtoneSoundRef);
@@ -370,6 +480,7 @@ export default function ChatScreen() {
       InCallManager.start({ media: 'audio' });
       const stream = await mediaDevices.getUserMedia({ audio: true, video: false });
       localStreamRef.current = stream;
+      await waitForIceServers();
       const pc = makePeerConnection();
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
       peerConnectionRef.current = pc;
@@ -445,6 +556,9 @@ export default function ChatScreen() {
 
   useEffect(() => () => cleanupCall(), []);
 
+  handleAcceptCallRef.current = handleAcceptCall;
+  handleDeclineCallRef.current = handleDeclineCall;
+
   useEffect(() => {
     TokenStore.getUser().then(u => setMyUserId(u?.user_id ?? null));
   }, []);
@@ -461,23 +575,46 @@ export default function ChatScreen() {
     });
     // Show rating modal if this is a completed job the customer hasn't rated yet
     SkoFyApi.ratingStatus.get(jobId).then(s => {
-      if (!s.customer_has_rated) setRatingVisible(true);
+      // Not if they chose "Maybe later" this session — same rule as the home-screen reminder.
+      if (!s.customer_has_rated && !isRatingSkipped(jobId)) setRatingVisible(true);
     }).catch(() => {});
 
     let socket: WebSocket | null = null;
+    // Reconnects with backoff (1s→30s): a socket dropped by a network blip or
+    // an expired token used to stay dead until the screen was reopened — no
+    // chat updates and no calls in either direction in the meantime.
+    let closedByScreen = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectDelay = 1000;
+    const scheduleReconnect = () => {
+      if (closedByScreen) return;
+      reconnectTimer = setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+    };
     // Token fetched up front (in parallel with the URL) so onopen below can
     // send it synchronously — no await inside onopen. sendSignal (used for
     // mute/end-call/etc, triggerable straight from the UI) has no readiness
     // gate of its own, so any async gap between "socket is OPEN" and "auth
     // message actually sent" is a real window for a user tap to jump the
     // queue ahead of auth and get the connection rejected by the server.
-    Promise.all([SkoFyApi.chat.getSocketUrl(jobId), TokenStore.getAccessToken()]).then(([url, token]) => {
-      socket = new WebSocket(url);
-      wsRef.current = socket;
-      socket.onopen = () => {
+    const connect = () => Promise.all([SkoFyApi.chat.getSocketUrl(jobId), getFreshAccessToken()]).then(([url, token]) => {
+      if (closedByScreen) return;
+      const ws = new WebSocket(url);
+      socket = ws;
+      wsRef.current = ws;
+      ws.onclose = (event) => {
+        if (wsRef.current === ws) wsRef.current = null;
+        setSocketOpen(false);
+        setIsOtherOnline(false);
+        // 4403/4404: not a party to this job / no such job — retrying can't help.
+        if (event.code !== 4403 && event.code !== 4404) scheduleReconnect();
+      };
+      ws.onopen = () => {
         // Must be the first message — the server holds the connection
         // unauthenticated until this arrives (see ws.py).
-        socket?.send(JSON.stringify({ type: 'auth', token }));
+        ws.send(JSON.stringify({ type: 'auth', token }));
+        reconnectDelay = 1000;
+        setSocketOpen(true);
         // autoAnswer being set AT ALL (true or false) means this screen was
         // opened via a call notification action — the original offer was
         // sent while we had no socket listening, so it was lost; the caller
@@ -505,7 +642,7 @@ export default function ChatScreen() {
           handleStartCall();
         }
       };
-      socket.onmessage = async (event) => {
+      ws.onmessage = async (event) => {
         try {
           const data = JSON.parse(event.data);
           if (data.type === 'chat_message') {
@@ -516,10 +653,17 @@ export default function ChatScreen() {
             const curState = callStateRef.current;
             // Already ringing or connected — ignore duplicates/stray offers.
             if (curState === 'ringing' || curState === 'connected') return;
+            // Opened from a notification: auto-answer only the call that
+            // notification was for (no id from an older backend: accept it).
+            const expectedCallId = curState === 'connecting' ? callIdRef.current : null;
+            const isNotifiedCall = !expectedCallId || !data.call_id || data.call_id === expectedCallId;
             // Simultaneous call: both sides sent an offer at the same time.
             // Resolve with a deterministic tiebreaker — lower user_id becomes
             // the callee and accepts the other's offer; higher user_id stays
-            // as caller and waits for its own offer to be answered.
+            // as caller and waits for its own offer to be answered. The side
+            // that yields answers at once instead of ringing: its user just
+            // tapped Call themselves, so both people want to talk.
+            let yieldedToTheirCall = false;
             if (curState === 'calling') {
               const myId = myUserIdRef.current;
               const theirId = data.from as string | undefined;
@@ -533,10 +677,12 @@ export default function ChatScreen() {
               stopSound(ringbackSoundRef);
               clearCallTimeout();
               callActionInFlightRef.current = false;
+              yieldedToTheirCall = true;
             }
             incomingOfferRef.current = { sdp: data.sdp, type: data.sdpType };
-            if (autoAnswer === 'true') {
-              handleAcceptCall();
+            callIdRef.current = data.call_id ?? null;
+            if ((autoAnswerPendingRef.current && isNotifiedCall) || yieldedToTheirCall) {
+              handleAcceptCallRef.current();
             } else {
               setCallState('ringing');
               // InCallManager.startRingtone plays on the actual ring audio
@@ -551,7 +697,10 @@ export default function ChatScreen() {
             }
             return;
           }
+          // Every other call signal must belong to the current call.
+          const isOtherCall = !!data.call_id && data.call_id !== callIdRef.current;
           if (data.type === 'call_answer') {
+            if (isOtherCall) return;
             const pc = peerConnectionRef.current;
             if (!pc) return;
             stopSound(ringbackSoundRef);
@@ -570,6 +719,7 @@ export default function ChatScreen() {
             return;
           }
           if (data.type === 'ice_candidate') {
+            if (isOtherCall) return;
             const pc = peerConnectionRef.current;
             if (pc && pc.remoteDescription) {
               await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
@@ -579,12 +729,14 @@ export default function ChatScreen() {
             return;
           }
           if (data.type === 'call_ready') {
-            if (outgoingOfferRef.current) {
+            if (outgoingOfferRef.current && !isOtherCall) {
               sendSignal({ type: 'call_offer', sdp: outgoingOfferRef.current.sdp, sdpType: outgoingOfferRef.current.type });
+              for (const candidate of sentIceRef.current) sendSignal({ type: 'ice_candidate', candidate });
             }
             return;
           }
           if (data.type === 'call_end') {
+            if (isOtherCall) return;
             cleanupCall();
             return;
           }
@@ -596,11 +748,15 @@ export default function ChatScreen() {
           console.error('Failed to handle WS message:', err);
         }
       };
-    });
+    }).catch(scheduleReconnect);
+    connect();
 
     return () => {
+      closedByScreen = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       socket?.close();
       wsRef.current = null;
+      setSocketOpen(false);
       // Our own socket is what tells us whether the other party is online —
       // once it's gone we can no longer know that, so don't keep showing a
       // (possibly stale) green dot.
@@ -813,7 +969,7 @@ export default function ChatScreen() {
       {appAlert.element}
 
       {/* Mutual rating modal — shown once when opening a completed job chat */}
-      <Modal visible={ratingVisible} transparent animationType="fade" onRequestClose={() => setRatingVisible(false)}>
+      <Modal visible={ratingVisible} transparent animationType="fade" onRequestClose={() => { markRatingSkipped(jobId); setRatingVisible(false); }}>
         <View style={styles.ratingOverlay}>
           <View style={styles.ratingSheet}>
             <Text style={styles.ratingTitle}>Rate your experience</Text>
@@ -842,7 +998,7 @@ export default function ChatScreen() {
               />
             </ScrollView>
             <View style={styles.ratingActions}>
-              <TouchableOpacity style={styles.ratingSkipBtn} onPress={() => setRatingVisible(false)}>
+              <TouchableOpacity style={styles.ratingSkipBtn} onPress={() => { markRatingSkipped(jobId); setRatingVisible(false); }}>
                 <Text style={styles.ratingSkipText}>Skip</Text>
               </TouchableOpacity>
               <TouchableOpacity

@@ -13,6 +13,7 @@ import { Colors, Fonts } from '@/constants/theme';
 import { QUICK_NEEDS, QuickNeed } from '@/constants/quick-needs';
 import { useIsOnline } from '@/hooks/use-is-online';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { RatingReminder } from '@/components/rating-reminder';
 import { BASE_URL, SkoFyApi } from '@/services/api';
 import { readHomeCache, writeHomeCache } from '@/services/homeCache';
 import type { OfferResponse } from '@/types/offer';
@@ -44,8 +45,10 @@ import {
   Package,
   Paintbrush,
   Pencil,
+  ShieldCheck,
   Snowflake,
   Sparkles,
+  Star,
   TicketPercent,
   User,
   UserRound,
@@ -107,6 +110,23 @@ interface ServiceProvider {
   latitude: number;
   longitude: number;
   name: string;
+}
+
+// A provider this customer has booked more than once — Repeat Provider
+// dashboard feature (find/re-book someone you've used before, instead of
+// needing their number saved off-platform).
+interface RegularProvider {
+  provider_id: string;
+  name: string;
+  profile_image_url: string | null;
+  profession: string | null;
+  avg_rating: number;
+  is_identity_verified: boolean;
+  // Set False the moment this provider is hired onto any job, True again
+  // on completion — a reliable "can you book them right now" signal, not
+  // a manual online/offline toggle.
+  is_available: boolean;
+  jobs_with_you_count: number;
 }
 
 interface ActiveJob {
@@ -426,6 +446,21 @@ export default function HomeScreen() {
       .catch(() => { /* dashboard still works without offers */ });
   }, []);
 
+  const [regularProviders, setRegularProviders] = useState<RegularProvider[]>([]);
+  // Also called from refreshDashboard (pull-to-refresh), not just on mount
+  // — unlike this card's other fields (name/rating/profession), is_available
+  // flips the moment a provider is hired on any job, so this one genuinely
+  // needs to stay refreshable, not just fetched once per screen visit.
+  const fetchRegularProviders = async () => {
+    try {
+      const data = await SkoFyApi.customers.getRepeatProviders();
+      setRegularProviders(Array.isArray(data) ? data : []);
+    } catch { /* dashboard still works without this section */ }
+  };
+  // On every focus, not just first mount — returning to Home after finishing
+  // a 2nd job with the same provider should show them here straight away.
+  useFocusEffect(useCallback(() => { fetchRegularProviders(); }, []));
+
   const dismissJob = (jobId: string) => {
     // Optimistic local update so card disappears instantly
     setDismissedJobIds(prev => {
@@ -531,22 +566,6 @@ export default function HomeScreen() {
     }
   };
 
-  const generateMockProviders = (lat: number, lon: number, count: number): ServiceProvider[] => {
-    const providers: ServiceProvider[] = [];
-    const radius = 0.0012; // Narrowed radius to match street-level zoom (0.0015)
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const r = Math.sqrt(Math.random()) * radius;
-      providers.push({
-        id: `provider-${i}`,
-        latitude: lat + r * Math.cos(angle),
-        longitude: lon + r * Math.sin(angle),
-        name: `Dodorez Pro ${i + 1}`,
-      });
-    }
-    return providers;
-  };
-
   // Real-time Data Provisions — the two fetches below are independent of
   // each other, so they run concurrently (each with its own try/catch, so
   // one failing doesn't block or cancel the other) instead of the nearby-
@@ -558,20 +577,19 @@ export default function HomeScreen() {
         const mapped = providers
           .filter(p => p.lat != null && p.lng != null)
           .map(p => ({ id: p.provider_id, latitude: p.lat!, longitude: p.lng!, name: p.name }));
-        const finalProviders = mapped.length > 0 ? mapped : generateMockProviders(lat, lon, 15);
-        setServiceProviders(finalProviders);
-        // Only real (non-mock) results count as "live data arrived" for the
-        // cache-priming race guard — if this came back empty and fell back
-        // to randomized mock dots, letting a still-in-flight cache read
-        // override those with real last-known providers later is strictly
-        // better than leaving the guard up and keeping the mock ones.
+        setServiceProviders(mapped);
+        // Only a non-empty result counts as "live data arrived" for the
+        // cache-priming race guard — if this came back empty, letting a
+        // still-in-flight cache read show last-known providers is better
+        // than an empty map.
         if (mapped.length > 0) {
           liveDataArrivedRef.current = true;
-          writeHomeCache({ serviceProviders: finalProviders });
+          writeHomeCache({ serviceProviders: mapped });
         }
       } catch (err) {
-        console.error('Failed to fetch nearby providers, falling back to mock pins:', err);
-        setServiceProviders(generateMockProviders(lat, lon, 15));
+        // Keep whatever is already shown (cached providers) rather than
+        // inventing pins — fake dots used to be generated here.
+        console.error('Failed to fetch nearby providers:', err);
       }
     };
 
@@ -603,7 +621,7 @@ export default function HomeScreen() {
       }
     };
 
-    await Promise.all([fetchNearbyProviders(), fetchActiveJobs()]);
+    await Promise.all([fetchNearbyProviders(), fetchActiveJobs(), fetchRegularProviders()]);
   };
 
   const handleRefresh = async () => {
@@ -1229,6 +1247,78 @@ export default function HomeScreen() {
     </Reanimated.View>
   );
 
+  // Hidden entirely when empty (a brand-new customer, or nobody re-booked
+  // yet) rather than shown as an empty section — same convention as the
+  // Deals strip above and Job History on profile.tsx.
+  const renderRegularProvidersSection = () => regularProviders.length > 0 && (
+    <View style={styles.dealsSection}>
+      <View style={styles.dealsSectionHeader}>
+        <ThemedText style={[styles.sectionLabel, { marginBottom: 0 }]}>Your Regular Providers</ThemedText>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dealsList}>
+        {regularProviders.map((p) => (
+          <TouchableOpacity
+            key={p.provider_id}
+            style={styles.regularProviderCard}
+            activeOpacity={0.85}
+            onPress={() => router.push({
+              pathname: '/provider-details' as any,
+              params: { providerId: p.provider_id, viewOnly: 'true' },
+            })}
+          >
+            <View style={styles.regularProviderTopRow}>
+              <View>
+                {p.profile_image_url ? (
+                  <Image source={{ uri: p.profile_image_url }} style={styles.regularProviderAvatar} />
+                ) : (
+                  <View style={[styles.regularProviderAvatar, styles.regularProviderAvatarFallback]}>
+                    <Text style={styles.regularProviderAvatarInitial}>{(p.name[0] ?? '?').toUpperCase()}</Text>
+                  </View>
+                )}
+                {/* Presence dot — a repeat provider being booked on another
+                    job right now is exactly the moment a customer would
+                    otherwise tap through expecting to book them and find
+                    out only after. See is_available's own comment above. */}
+                <View style={[
+                  styles.regularProviderPresenceDot,
+                  { backgroundColor: p.is_available ? '#10B981' : '#9CA3AF' },
+                ]} />
+              </View>
+              <View style={styles.regularProviderBadge}>
+                <ThemedText style={styles.regularProviderBadgeText} numberOfLines={1}>{p.jobs_with_you_count}x booked</ThemedText>
+              </View>
+            </View>
+            <ThemedText style={styles.regularProviderName} numberOfLines={1}>{p.name}</ThemedText>
+            {p.profession && (
+              <ThemedText style={styles.regularProviderProfession} numberOfLines={1}>{p.profession}</ThemedText>
+            )}
+            <ThemedText style={[styles.regularProviderAvailabilityText, { color: p.is_available ? '#10B981' : '#9CA3AF' }]} numberOfLines={1}>
+              {p.is_available ? 'Available now' : 'Currently busy'}
+            </ThemedText>
+            <View style={styles.regularProviderStatsRow}>
+              {/* Ratings are validated 1-5 server-side (see job schemas) —
+                  avg_rating can only read exactly 0 via its column default,
+                  never a real score, so that's "no reviews yet," not "zero
+                  stars." A provider a customer has rebooked but just hasn't
+                  rated showing a literal "0.0" would read as damning. */}
+              {p.avg_rating > 0 ? (
+                <>
+                  <Star size={12} color="#F59E0B" fill="#F59E0B" />
+                  <ThemedText style={styles.regularProviderStatsText}>{p.avg_rating.toFixed(1)}</ThemedText>
+                </>
+              ) : (
+                <ThemedText style={[styles.regularProviderStatsText, { color: '#9CA3AF' }]} numberOfLines={1}>No ratings yet</ThemedText>
+              )}
+              {p.is_identity_verified && (
+                <ShieldCheck size={12} color="#10B981" style={{ marginLeft: 6 }} />
+              )}
+            </View>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  );
+
   const renderCultfitHeroCard = () => (
     <Reanimated.View entering={FadeInUp.delay(200)} style={styles.cultfitHeroCard}>
       {/* Title + mascot row — the sparkle sits inline with the title instead
@@ -1566,6 +1656,8 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
+        {renderRegularProvidersSection()}
+
         {/* ── Deals for You — real offers only, nothing hardcoded/decorative
              mixed in here anymore (that used to include app-feature ads
              like "Same Day" that aren't offers at all, and two fake
@@ -1817,7 +1909,7 @@ export default function HomeScreen() {
         <View style={styles.exitModalOverlay}>
           <View style={styles.exitModalContent}>
             <View style={styles.exitIconContainer}><AlertTriangle size={36} color="#F59E0B" /></View>
-            <ThemedText style={styles.exitTitle}>Exit Skofy?</ThemedText>
+            <ThemedText style={styles.exitTitle}>Exit Dodorez?</ThemedText>
             <ThemedText style={styles.exitMessage}>Are you sure you want to close the app?</ThemedText>
             <View style={styles.exitActionRow}>
               <TouchableOpacity style={[styles.exitButton, styles.exitCancelButton]} onPress={() => setIsExitModalVisible(false)}>
@@ -1861,6 +1953,9 @@ export default function HomeScreen() {
       </Modal>
 
       {/* ── Voice Post Modal ── */}
+      {/* Rate any finished job (incl. disputed) the customer still owes a rating for */}
+      <RatingReminder />
+
       <VoicePostModal
         visible={voiceModalVisible}
         onClose={() => { setVoiceModalVisible(false); setPreselectedProfession(''); }}
@@ -2045,6 +2140,90 @@ function makeStyles(t: typeof Colors.light) {
     backgroundColor: '#FFFFFF',
     borderRadius: 18, overflow: 'hidden' as const,
     height: 96, paddingRight: 12, gap: 10,
+  },
+  // ── Your Regular Providers strip ──────────────────────────────────────────
+  regularProviderCard: {
+    width: 150,
+    borderRadius: 18,
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#F1F2F4',
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  regularProviderTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  regularProviderAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  regularProviderAvatarFallback: {
+    backgroundColor: '#F59E0B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  regularProviderAvatarInitial: {
+    fontSize: 16,
+    fontFamily: Fonts.poppinsBold,
+    color: '#fff',
+  },
+  regularProviderBadge: {
+    backgroundColor: '#FFF9E6',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  regularProviderBadgeText: {
+    fontSize: 10,
+    lineHeight: 14,
+    fontFamily: Fonts.poppinsBold,
+    color: '#F59E0B',
+  },
+  regularProviderName: {
+    fontSize: 13.5,
+    fontFamily: Fonts.poppinsBold,
+    color: '#111827',
+    marginBottom: 2,
+  },
+  regularProviderProfession: {
+    fontSize: 11,
+    fontFamily: Fonts.poppins,
+    color: '#6B7280',
+    marginBottom: 6,
+  },
+  regularProviderStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  regularProviderStatsText: {
+    fontSize: 11.5,
+    fontFamily: Fonts.poppinsSemiBold,
+    color: '#111827',
+  },
+  regularProviderPresenceDot: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  regularProviderAvailabilityText: {
+    fontSize: 10.5,
+    fontFamily: Fonts.poppinsSemiBold,
+    marginTop: 4,
   },
   dealAccentBar: { width: 5, alignSelf: 'stretch' as const },
   dealIconBox: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center' as const, alignItems: 'center' as const },

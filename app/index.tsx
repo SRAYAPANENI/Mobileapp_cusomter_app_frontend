@@ -5,7 +5,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { router } from 'expo-router';
 import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
-import { TokenStore } from '@/services/api';
+import { TokenStore, clearStaleSessionAfterReinstall } from '@/services/api';
 import { handleInitialCallAction, handleInitialNotification } from '@/services/callManager';
 import { prefetchHomeEssentials } from '@/services/homeCache';
 
@@ -37,7 +37,14 @@ export default function SplashScreen() {
     // home screen's profile/notifications/addresses calls have that whole
     // window to resolve in the background instead of starting from zero
     // the moment the user actually lands there.
-    const tokenPromise = TokenStore.getAccessToken();
+    //
+    // Chained after clearStaleSessionAfterReinstall() — a pre-uninstall
+    // token can still be sitting in SecureStore/Keychain on a fresh install
+    // (see that function's own comment); reading it here before the clear
+    // has a chance to run would read back a dead session as "logged in" for
+    // this one launch, briefly show the home screen from cache, then bounce
+    // into a confusing "Signed Out" the moment a live call gets rejected.
+    const tokenPromise = clearStaleSessionAfterReinstall().then(() => TokenStore.getAccessToken());
     tokenPromise.then(token => {
       if (token) prefetchHomeEssentials();
     });

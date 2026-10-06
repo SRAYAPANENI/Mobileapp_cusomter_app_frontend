@@ -7,6 +7,7 @@ import { Image } from 'expo-image';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
   ChevronLeft,
+  HelpCircle,
   MoreVertical,
   Paperclip,
   Send
@@ -18,6 +19,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StyleSheet,
   TextInput,
   TouchableOpacity,
@@ -41,27 +43,65 @@ const POLL_INTERVAL_MS = 8000;
 // "General Support" with no way to tell what it's actually about.
 const CATEGORIES = ['Payment Issue', 'Job / Booking Issue', 'Provider Behavior', 'Account Issue', 'Something Else'];
 
-// A quick self-service answer offered before a ticket is ever raised — most
-// categories have one obvious, already-documented answer (see help-support.tsx's
-// FAQ) that resolves the question without needing a human at all. Categories
-// with no single obvious answer (Account Issue, Something Else) go straight
-// to chat instead of showing a canned answer that probably won't fit.
-const CATEGORY_SELF_HELP: Record<string, { question: string; answer: string } | null> = {
-  'Payment Issue': {
-    question: 'Is my payment safe?',
-    answer: "Yes. Your payment is held securely by SkoFy the moment you hire a provider, and it's only released to them once the job is marked complete — never paid out upfront.",
-  },
-  'Job / Booking Issue': {
-    question: "What's the cancellation policy?",
-    answer: "You can cancel a job for free any time before the provider actually starts work on-site. Once a job is marked \"In Progress\" (or already completed), cancellation isn't available — but you can file a dispute directly from that job's page instead.",
-  },
-  'Provider Behavior': {
-    question: 'Had a problem with your provider?',
-    answer: "If a provider didn't show up, was unprofessional, or there's a quality issue on a job that's in progress or completed, file a dispute directly from that job — go to My Jobs, open it, and tap \"Report an Issue.\" Our team reviews every dispute within 24 hours.",
-  },
-  'Account Issue': null,
-  'Something Else': null,
+// The category a "Get Help" button on a specific job opens straight into.
+const JOB_CATEGORY = 'Job / Booking Issue';
+
+// Common questions shown for each topic BEFORE any chat or ticket exists —
+// most questions are answered here without needing a person. A topic with
+// no FAQs (Something Else) goes straight to chat.
+const CATEGORY_FAQS: Record<string, { question: string; answer: string }[]> = {
+  'Payment Issue': [
+    {
+      question: 'Is my payment safe?',
+      answer: "Yes. Your payment is held securely by Dodorez the moment you hire a provider, and it's only released to them once the job is marked complete — never paid out upfront.",
+    },
+    {
+      question: 'When am I charged?',
+      answer: "The provider's visiting fee is charged when you hire them. The cost of the work is charged when you approve their invoice. Both are held safely until the job is done.",
+    },
+    {
+      question: 'How do refunds work?',
+      answer: "If a job is cancelled before work starts, your payment goes back to your original card — usually within 5–10 business days. The visiting fee isn't refunded once the provider has done the inspection, but it counts toward the final bill if you hire them.",
+    },
+  ],
+  'Job / Booking Issue': [
+    {
+      question: "What's the cancellation policy?",
+      answer: "You can cancel a job for free any time before the provider actually starts work on-site. Once a job is marked \"In Progress\" (or already completed), cancellation isn't available — but you can file a dispute directly from that job's page instead.",
+    },
+    {
+      question: 'No provider has applied to my job yet',
+      answer: "Your job is sent to every verified provider in your city with the right skills. Give it a little time — or open the job and add more details or a photo, which helps providers respond.",
+    },
+    {
+      question: 'How do I contact my provider?',
+      answer: "Once you've hired someone, chat and call open from that job's page — your phone number is never shared outside the app.",
+    },
+  ],
+  'Provider Behavior': [
+    {
+      question: 'Had a problem with your provider?',
+      answer: "If a provider didn't show up, was unprofessional, or there's a quality issue on a job that's in progress or completed, file a dispute directly from that job — go to My Jobs, open it, and tap \"Report an Issue.\" Our team reviews every dispute within 24 hours.",
+    },
+    {
+      question: 'The provider asked me to pay outside the app',
+      answer: "Please don't. Payments made outside Dodorez aren't protected — we can't refund them or help with disputes. Pay through the app, and let us know if a provider asks you to pay them directly.",
+    },
+  ],
+  'Account Issue': [
+    {
+      question: "I can't log in",
+      answer: "Use \"Forgot password\" on the login screen, or log in with a one-time code sent to your phone. If neither works, tap \"I still need help\" below.",
+    },
+    {
+      question: 'How do I update my details or address?',
+      answer: "Go to Profile to change your name, email and saved addresses. To change your phone number, tap \"I still need help\" and we'll do it for you.",
+    },
+  ],
+  'Something Else': [],
 };
+
+const nowTime = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -77,45 +117,48 @@ export default function SupportChatScreen() {
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(!!paramTicketId);
-  // No ticket yet until either a ticketId was passed in, or the first
-  // message the user sends creates one.
+  // No ticket exists until the user sends their first real message (or a
+  // ticketId was passed in to reopen one). Previously a ticket was created
+  // the moment a topic was picked, with an auto "Needs help with: …" message
+  // saved as if the user had typed it — so every chat started with a message
+  // they never sent.
   const [ticketId, setTicketId] = useState<string | undefined>(paramTicketId);
-  // Opened from a specific job (a "Get Help" button on that job) — the
-  // category is already implied, so skip straight to chatting instead of
-  // making them pick it again.
-  const [category, setCategory] = useState<string | null>(jobId ? 'Job / Booking Issue' : null);
-  // 'showing': the canned Q&A for the chosen category is up, waiting on
-  // "Did this help?" — 'resolved': they said yes, no ticket ever created —
-  // 'declined': either they said no, or the category has no canned answer;
-  // either way the real chat (and eventual ticket) is now unlocked. Skipped
-  // entirely for a job-context open — they've already navigated past
-  // general FAQs to ask about one specific job.
-  const [selfHelpStage, setSelfHelpStage] = useState<'idle' | 'showing' | 'resolved' | 'declined'>(
-    jobId ? 'declined' : 'idle'
+  // Opened from a specific job (a "Get Help" button on that job) — the topic
+  // is already known, so it opens straight on that topic's FAQs.
+  const [category, setCategory] = useState<string | null>(jobId ? JOB_CATEGORY : null);
+  // 'pick': choose a topic — 'faq': that topic's common questions, no ticket
+  // yet — 'resolved': an FAQ answered it, no ticket ever created — 'chat':
+  // typing to a person.
+  const [stage, setStage] = useState<'pick' | 'faq' | 'resolved' | 'chat'>(
+    paramTicketId ? 'chat' : jobId ? 'faq' : 'pick'
   );
-  // Covers the gap between picking a category and the eagerly-created
-  // ticket actually landing (ticketId flips true immediately on success,
-  // before selfHelpStage/category settle) — without this, the plain chat
-  // input briefly renders and a fast tap could fire a second, duplicate
-  // ticket via handleSendMessage's own fallback creation path.
-  const [creatingTicket, setCreatingTicket] = useState(false);
   const [assignedAdminName, setAssignedAdminName] = useState<string | null>(null);
+  const [viewedFaqs, setViewedFaqs] = useState<string[]>([]);
+  // Brief window while "I still need help" opens the ticket — the send
+  // button waits so a fast first message can't create a second ticket.
+  const [creatingTicket, setCreatingTicket] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
-  const [messages, setMessages] = useState<Message[]>(
-    paramTicketId
-      ? []
-      : [
-          {
-            id: 'greeting',
-            text: jobId
-              ? "Hi! Tell us what's going on with this job and we'll take a look."
-              : 'Hello! Welcome to Dodorez Support. What can we help you with?',
-            sender: 'agent',
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          },
-        ]
-  );
+  // Two lists: `intro` is this screen's local lead-in (greeting, topic, FAQ
+  // answers) and is never sent to the server; `thread` is the real ticket
+  // conversation. Kept apart so the 8s poll can replace `thread` with the
+  // server's copy without wiping the FAQ answers the user just read.
+  const [intro, setIntro] = useState<Message[]>(() => {
+    if (paramTicketId) return [];
+    return [{
+      id: 'greeting',
+      text: jobId
+        ? "Hi! Here are answers to common questions about jobs. If none of them help, tap \"I still need help\" to chat with our team."
+        : 'Hello! Welcome to Dodorez Support. What can we help you with?',
+      sender: 'agent',
+      timestamp: nowTime(),
+    }];
+  });
+  const [thread, setThread] = useState<Message[]>([]);
+  const messages = [...intro, ...thread];
+
+  const addIntro = (text: string, sender: Message['sender']) =>
+    setIntro(prev => [...prev, { id: `intro-${Date.now()}-${prev.length}`, text, sender, timestamp: nowTime() }]);
 
   const loadTicket = useCallback(async (id: string) => {
     try {
@@ -123,10 +166,12 @@ export default function SupportChatScreen() {
       const mapped: Message[] = (ticket.messages ?? []).map((m: any) => ({
         id: m.id,
         text: m.message,
-        sender: m.sender_role === 'admin' ? 'agent' : 'user',
+        // 'system' messages (automatic answers recorded on older tickets) are
+        // from support too — they used to render as the user's own messages.
+        sender: m.sender_role === 'admin' || m.sender_role === 'system' ? 'agent' : 'user',
         timestamp: formatTime(m.sent_at),
       }));
-      setMessages(mapped);
+      setThread(mapped);
       setAssignedAdminName(ticket.assigned_admin_name ?? null);
     } catch (err) {
       // A background refresh failing silently and retrying next poll is
@@ -151,23 +196,18 @@ export default function SupportChatScreen() {
 
   const handleSendMessage = async () => {
     const text = inputText.trim();
-    if (text === '' || sending) return;
+    if (text === '' || sending || creatingTicket) return;
 
     setInputText('');
     Keyboard.dismiss();
     setSending(true);
 
     const optimisticId = `local-${Date.now()}`;
-    const optimistic: Message = {
-      id: optimisticId,
-      text,
-      sender: 'user',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-    setMessages(prev => [...prev, optimistic]);
+    setThread(prev => [...prev, { id: optimisticId, text, sender: 'user', timestamp: nowTime() }]);
 
     try {
       if (!ticketId) {
+        // First real message creates the ticket — with the user's own words.
         const ticket: any = await SkoFyApi.supportTickets.create(category ?? 'General Support', text, jobId);
         setTicketId(ticket.id);
       } else {
@@ -178,7 +218,7 @@ export default function SupportChatScreen() {
       // The optimistic bubble never actually reached the server — pull it
       // back out instead of leaving a permanent "sent" message that lies
       // about what happened, and give the text back so it's not lost.
-      setMessages(prev => prev.filter(m => m.id !== optimisticId));
+      setThread(prev => prev.filter(m => m.id !== optimisticId));
       setInputText(text);
       alert.show('error', 'Message Not Sent', "Couldn't reach support right now. Please try again.", undefined, 2500);
     } finally {
@@ -186,111 +226,68 @@ export default function SupportChatScreen() {
     }
   };
 
-  // Ticket is created here, the moment a category is picked — not lazily
-  // on first typed message like before. Everything that happens in this
-  // screen, including a self-help answer someone never actually needed
-  // real help beyond, now has a real ticket backing it so the full
-  // conversation is on record rather than living only in this screen's
-  // local state until it's closed and lost.
-  const createTicketEagerly = async (cat: string): Promise<string | null> => {
+  const handleSelectCategory = (cat: string) => {
+    setCategory(cat);
+    addIntro(cat, 'user');
+    if (CATEGORY_FAQS[cat]?.length) {
+      addIntro(`Here are quick answers about ${cat.toLowerCase()}. Tap a question below.`, 'agent');
+      setStage('faq');
+    } else {
+      addIntro(`Got it — tell us more about your ${cat.toLowerCase()}.`, 'agent');
+      setStage('chat');
+    }
+  };
+
+  const handleFaqTap = (faq: { question: string; answer: string }) => {
+    addIntro(faq.question, 'user');
+    addIntro(faq.answer, 'agent');
+    setViewedFaqs(prev => (prev.includes(faq.question) ? prev : [...prev, faq.question]));
+  };
+
+  // Every FAQ visit is recorded as a ticket: RESOLVED if an answer was
+  // enough, OPEN if the user still needs a person. The opening note says
+  // which questions they read, saved as a system message so it never shows
+  // as something the user typed.
+  const faqNote = (outcome: string) => {
+    const viewed = viewedFaqs.length
+      ? `Questions viewed: ${viewedFaqs.map(q => `"${q}"`).join(', ')}.`
+      : 'No questions opened.';
+    return `Topic: ${category}. ${viewed} ${outcome}`;
+  };
+
+  const handleSelfHelpResolved = async () => {
+    setStage('resolved');
+    addIntro('Glad that helped! Feel free to come back anytime if something else comes up.', 'agent');
+    try {
+      const ticket: any = await SkoFyApi.supportTickets.create(
+        category ?? 'General Support', faqNote('Marked as solved by the FAQ answers.'), jobId, true,
+      );
+      await SkoFyApi.supportTickets.selfResolve(ticket.id);
+    } catch (err) {
+      // Record-keeping only — the user already got their answer.
+      console.warn('Failed to record self-resolved support visit:', err);
+    }
+  };
+
+  const handleNeedHelp = async () => {
+    setStage('chat');
     setCreatingTicket(true);
     try {
-      const ticket: any = await SkoFyApi.supportTickets.create(cat, `Needs help with: ${cat}`, jobId);
+      const ticket: any = await SkoFyApi.supportTickets.create(
+        category ?? 'General Support', faqNote('Still needs help — waiting for a team member.'), jobId, true,
+      );
       setTicketId(ticket.id);
-      return ticket.id as string;
+      addIntro("No problem — we've opened a request for you. Type your message below and our team will reply right here.", 'agent');
     } catch (err) {
-      console.error('Failed to start support ticket:', err);
-      alert.show('error', 'Something Went Wrong', "Couldn't start this conversation. Please try again.", undefined, 2500);
-      return null;
+      // Falls back to creating the ticket from their first typed message.
+      console.warn('Failed to open support ticket:', err);
+      addIntro("No problem — type your message below and our team will reply right here.", 'agent');
     } finally {
       setCreatingTicket(false);
     }
   };
 
-  const handleSelectCategory = async (cat: string) => {
-    setCategory(cat);
-    const newTicketId = await createTicketEagerly(cat);
-    if (!newTicketId) { setCategory(null); return; }
-
-    const selfHelp = CATEGORY_SELF_HELP[cat];
-    if (selfHelp) {
-      const text = `${selfHelp.question}\n\n${selfHelp.answer}`;
-      setSelfHelpStage('showing');
-      setMessages(prev => [...prev, {
-        id: `selfhelp-${Date.now()}`,
-        text,
-        sender: 'agent',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      }]);
-      SkoFyApi.supportTickets.addSystemMessage(newTicketId, text).catch((err) => {
-        // Purely a record-keeping call — the customer already sees the
-        // answer either way, so a failure here shouldn't interrupt them.
-        console.warn('Failed to record self-help message:', err);
-      });
-    } else {
-      setSelfHelpStage('declined');
-      const text = `Got it — tell us more about your ${cat.toLowerCase()}.`;
-      setMessages(prev => [...prev, {
-        id: `category-${Date.now()}`,
-        text,
-        sender: 'agent',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      }]);
-      SkoFyApi.supportTickets.addSystemMessage(newTicketId, text).catch((err) => {
-        console.warn('Failed to record category prompt message:', err);
-      });
-    }
-  };
-
-  // Opened with a jobId (a "Get Help" button on a specific job) — self-help
-  // is skipped for that path, but the ticket still needs to exist eagerly
-  // just like the category-picker path does, so this conversation is
-  // recorded even if the customer never ends up typing anything either.
-  useEffect(() => {
-    if (jobId && !paramTicketId && category) {
-      createTicketEagerly(category);
-    }
-    // Only ever relevant once, on mount, for a job-context open — category/
-    // jobId/paramTicketId are stable for the life of this screen.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleSelfHelpResolved = () => {
-    setSelfHelpStage('resolved');
-    const text = "Glad that helped! Feel free to come back anytime if something else comes up.";
-    setMessages(prev => [...prev, {
-      id: `resolved-${Date.now()}`,
-      text,
-      sender: 'agent',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    }]);
-    if (ticketId) {
-      // Both calls are fire-and-forget record-keeping/status updates — the
-      // customer already sees the outcome locally either way.
-      SkoFyApi.supportTickets.addSystemMessage(ticketId, text).catch((err) => {
-        console.warn('Failed to record self-help resolution message:', err);
-      });
-      SkoFyApi.supportTickets.selfResolve(ticketId).catch((err) => {
-        console.warn('Failed to mark ticket self-resolved:', err);
-      });
-    }
-  };
-
-  const handleSelfHelpDeclined = () => {
-    setSelfHelpStage('declined');
-    const text = `Got it — tell us more about your ${(category ?? '').toLowerCase()}.`;
-    setMessages(prev => [...prev, {
-      id: `declined-${Date.now()}`,
-      text,
-      sender: 'agent',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    }]);
-    if (ticketId) {
-      SkoFyApi.supportTickets.addSystemMessage(ticketId, text).catch((err) => {
-        console.warn('Failed to record self-help decline message:', err);
-      });
-    }
-  };
+  const faqs = category ? CATEGORY_FAQS[category] ?? [] : [];
 
   const renderMessage = ({ item }: { item: Message }) => {
     const isUser = item.sender === 'user';
@@ -381,7 +378,7 @@ export default function SupportChatScreen() {
         />
       )}
 
-      {!ticketId && !category ? (
+      {stage === 'pick' ? (
         <View style={styles.categoryContainer}>
           <ThemedText style={styles.categoryPrompt}>What's this about?</ThemedText>
           <View style={styles.categoryChipsRow}>
@@ -392,23 +389,27 @@ export default function SupportChatScreen() {
             ))}
           </View>
         </View>
-      ) : creatingTicket ? (
+      ) : stage === 'faq' ? (
         <View style={styles.categoryContainer}>
-          <ActivityIndicator color={themeColors.textPrimary} />
-        </View>
-      ) : selfHelpStage === 'showing' ? (
-        <View style={styles.categoryContainer}>
-          <ThemedText style={styles.categoryPrompt}>Did this answer your question?</ThemedText>
-          <View style={styles.selfHelpButtonRow}>
-            <TouchableOpacity style={styles.selfHelpNoBtn} onPress={handleSelfHelpDeclined} activeOpacity={0.8}>
-              <ThemedText style={styles.selfHelpNoBtnText}>No, I still need help</ThemedText>
+          <ThemedText style={styles.categoryPrompt}>Common questions</ThemedText>
+          <ScrollView style={styles.faqList} contentContainerStyle={{ gap: 8 }}>
+            {faqs.map(faq => (
+              <TouchableOpacity key={faq.question} style={styles.faqChip} onPress={() => handleFaqTap(faq)} activeOpacity={0.8}>
+                <HelpCircle size={16} color={themeColors.textSecondary} />
+                <ThemedText style={styles.faqChipText}>{faq.question}</ThemedText>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <View style={[styles.selfHelpButtonRow, { marginTop: 12 }]}>
+            <TouchableOpacity style={styles.selfHelpNoBtn} onPress={handleNeedHelp} activeOpacity={0.8}>
+              <ThemedText style={styles.selfHelpNoBtnText}>I still need help</ThemedText>
             </TouchableOpacity>
             <TouchableOpacity style={styles.selfHelpYesBtn} onPress={handleSelfHelpResolved} activeOpacity={0.8}>
-              <ThemedText style={styles.selfHelpYesBtnText}>Yes, that helped</ThemedText>
+              <ThemedText style={styles.selfHelpYesBtnText}>That answered it</ThemedText>
             </TouchableOpacity>
           </View>
         </View>
-      ) : selfHelpStage === 'resolved' ? (
+      ) : stage === 'resolved' ? (
         <View style={styles.categoryContainer}>
           <TouchableOpacity style={styles.selfHelpYesBtn} onPress={() => router.back()} activeOpacity={0.85}>
             <ThemedText style={styles.selfHelpYesBtnText}>Done</ThemedText>
@@ -430,7 +431,7 @@ export default function SupportChatScreen() {
         <TouchableOpacity
           style={[styles.sendButton, inputText.trim() === '' && styles.sendButtonDisabled]}
           onPress={handleSendMessage}
-          disabled={inputText.trim() === '' || sending}
+          disabled={inputText.trim() === '' || sending || creatingTicket}
         >
           <Send size={20} color={inputText.trim() === '' ? '#9CA3AF' : '#fff'} />
         </TouchableOpacity>
@@ -487,6 +488,13 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   categoryChip: { backgroundColor: t.inputFilled, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1, borderColor: t.borderSubtle },
   categoryChipText: { fontSize: 13, fontFamily: Fonts.poppinsSemiBold, color: t.textPrimary },
   selfHelpButtonRow: { flexDirection: 'row', gap: 10 },
+  faqList: { maxHeight: 220 },
+  faqChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: t.inputFilled, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11,
+    borderWidth: 1, borderColor: t.borderSubtle,
+  },
+  faqChipText: { flex: 1, fontSize: 13, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: t.textPrimary },
   selfHelpNoBtn: {
     flex: 1, borderRadius: 22, paddingVertical: 12, alignItems: 'center',
     backgroundColor: t.inputFilled, borderWidth: 1, borderColor: t.border,

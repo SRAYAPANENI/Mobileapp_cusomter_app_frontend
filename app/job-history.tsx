@@ -4,6 +4,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SkoFyApi } from '@/services/api';
+import { markRatingSkipped } from '@/services/ratingReminders';
 import { router } from 'expo-router';
 import {
   Calendar,
@@ -49,7 +50,7 @@ interface JobHistoryItem {
   professional: string;
   date: string;
   price: string;
-  status: 'Completed' | 'Cancelled';
+  status: 'Completed' | 'Disputed' | 'Cancelled';
   review: JobReview | null;           // what customer gave provider
   customer_review: CustomerReview | null; // what provider gave customer
 }
@@ -60,6 +61,12 @@ function formatDate(iso?: string): string {
   if (isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
 }
+
+const STATUS_COLORS: Record<JobHistoryItem['status'], { bg: string; fg: string }> = {
+  Completed: { bg: '#ECFDF5', fg: '#10B981' },
+  Disputed: { bg: '#FFFBEB', fg: '#D97706' },
+  Cancelled: { bg: '#FEF2F2', fg: '#EF4444' },
+};
 
 export default function JobHistoryScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -74,7 +81,8 @@ export default function JobHistoryScreen() {
     try {
       const jobs = await SkoFyApi.jobs.list();
       const filtered = (Array.isArray(jobs) ? jobs : [])
-        .filter((j: any) => j.status === 'COMPLETED' || j.status === 'CANCELLED')
+        // DISPUTED is finished from the customer's side too — and can still be rated.
+        .filter((j: any) => j.status === 'COMPLETED' || j.status === 'DISPUTED' || j.status === 'CANCELLED')
         .sort((a: any, b: any) => new Date(b.updated_at ?? b.created_at).getTime() - new Date(a.updated_at ?? a.created_at).getTime());
       setHistory(filtered.map((j: any) => ({
         id: j.id,
@@ -82,7 +90,7 @@ export default function JobHistoryScreen() {
         professional: j.assigned_provider?.name ?? 'No provider assigned',
         date: formatDate(j.updated_at ?? j.created_at),
         price: `$ ${j.inspection_fee ?? 0}`,
-        status: j.status === 'COMPLETED' ? 'Completed' : 'Cancelled',
+        status: j.status === 'COMPLETED' ? 'Completed' : j.status === 'DISPUTED' ? 'Disputed' : 'Cancelled',
         review: j.review ?? null,
         customer_review: j.customer_review ? {
           overall: j.customer_review.overall_rating,
@@ -121,13 +129,13 @@ export default function JobHistoryScreen() {
             <ThemedText style={styles.professionalName}>{item.professional}</ThemedText>
           </View>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: item.status === 'Completed' ? '#ECFDF5' : '#FEF2F2' }]}>
+        <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[item.status].bg }]}>
           {item.status === 'Completed' ? (
-            <CheckCircle2 size={12} color="#10B981" />
+            <CheckCircle2 size={12} color={STATUS_COLORS[item.status].fg} />
           ) : (
-            <XCircle size={12} color="#EF4444" />
+            <XCircle size={12} color={STATUS_COLORS[item.status].fg} />
           )}
-          <ThemedText style={[styles.statusText, { color: item.status === 'Completed' ? '#10B981' : '#EF4444' }]}>
+          <ThemedText style={[styles.statusText, { color: STATUS_COLORS[item.status].fg }]}>
             {item.status}
           </ThemedText>
         </View>
@@ -144,7 +152,7 @@ export default function JobHistoryScreen() {
         </View>
       </View>
 
-      {item.status === 'Completed' && !item.review && (
+      {(item.status === 'Completed' || item.status === 'Disputed') && !item.review && (
         <>
           <View style={styles.divider} />
           <TouchableOpacity
@@ -303,6 +311,10 @@ export default function JobHistoryScreen() {
         providerName={ratingTarget?.providerName ?? ''}
         onClose={() => setRatingTarget(null)}
         onSubmit={handleRatingSubmit}
+        onSkip={() => {
+          if (ratingTarget) markRatingSkipped(ratingTarget.jobId);
+          setRatingTarget(null);
+        }}
       />
     </ThemedView>
   );

@@ -21,9 +21,13 @@ export interface RatingDimensions {
 
 interface RatingModalProps {
   visible: boolean;
+  /** After a rating was submitted ("Done"). */
   onClose: () => void;
   onSubmit: (ratings: RatingDimensions, comment: string) => Promise<void>;
   providerName: string;
+  /** "Maybe later" — closes without rating. The rating is still owed, so the
+   *  app reminds the customer again next time it's opened. */
+  onSkip: () => void;
 }
 
 const DIMENSIONS: { key: keyof RatingDimensions; label: string; hint: string }[] = [
@@ -33,7 +37,7 @@ const DIMENSIONS: { key: keyof RatingDimensions; label: string; hint: string }[]
   { key: 'communication_rating', label: 'Communication', hint: 'Responsiveness and clarity' },
 ];
 
-export function RatingModal({ visible, onClose, onSubmit, providerName }: RatingModalProps) {
+export function RatingModal({ visible, onClose, onSubmit, providerName, onSkip }: RatingModalProps) {
   const [ratings, setRatings] = useState<RatingDimensions>({
     skill_rating: 0,
     punctuality_rating: 0,
@@ -66,7 +70,7 @@ export function RatingModal({ visible, onClose, onSubmit, providerName }: Rating
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={() => {}}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={isSubmitted ? onClose : onSkip}>
       <KeyboardAvoidingView style={styles.overlay} behavior="padding" automaticOffset>
         {!isSubmitted ? (
           <Animated.View entering={SlideInDown.springify()} style={styles.card}>
@@ -125,6 +129,10 @@ export function RatingModal({ visible, onClose, onSubmit, providerName }: Rating
               <ThemedText style={[styles.submitButtonText, (!allRated || submitting) && styles.disabledButtonText]}>
                 {submitting ? 'Submitting...' : 'Submit Rating'}
               </ThemedText>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.skipButton} onPress={onSkip} disabled={submitting}>
+              <ThemedText style={styles.skipButtonText}>Maybe later</ThemedText>
             </TouchableOpacity>
           </Animated.View>
         ) : (
@@ -240,6 +248,17 @@ const styles = StyleSheet.create({
   },
   disabledButtonText: {
     color: '#9CA3AF',
+  },
+  skipButton: {
+    alignSelf: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    marginTop: 4,
+  },
+  skipButtonText: {
+    fontSize: 14, lineHeight: 18,
+    fontFamily: Fonts.poppinsSemiBold,
+    color: '#6B7280',
   },
   hintText: {
     fontSize: 12, lineHeight: 16,

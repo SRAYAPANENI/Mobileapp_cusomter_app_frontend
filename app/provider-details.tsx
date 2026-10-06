@@ -11,6 +11,8 @@ import { Video, ResizeMode } from 'expo-av';
 import {
   Award,
   ChevronLeft,
+  CloudOff,
+  RefreshCw,
   Clock,
   Layers,
   MapPin,
@@ -106,12 +108,17 @@ export default function ProviderDetailsScreen() {
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const NOT_HIREABLE_STATUSES = ['COMPLETED', 'CANCELLED', 'DISPUTED', 'EXPIRED', 'ACCEPTED', 'INSPECTING', 'INVOICE_PENDING', 'IN_PROGRESS'];
 
+  // Bumped by "Try again" on the error screen to re-run the load below.
+  const [reloadKey, setReloadKey] = useState(0);
+
   useEffect(() => {
     if (!providerId) {
       setLoading(false);
       setLoadError(true);
       return;
     }
+    setLoading(true);
+    setLoadError(false);
     (async () => {
       try {
         const [profileData, docsData, reviewsData, historyData, jobData] = await Promise.all([
@@ -165,7 +172,7 @@ export default function ProviderDetailsScreen() {
         setLoading(false);
       }
     })();
-  }, [providerId, jobId]);
+  }, [providerId, jobId, reloadKey]);
 
   // Media Viewer State
   const [viewerVisible, setViewerVisible] = useState(false);
@@ -237,13 +244,32 @@ export default function ProviderDetailsScreen() {
 
   if (loadError || !profile) {
     return (
-      <ThemedView style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
-        <ThemedText style={{ fontFamily: Fonts.poppinsSemiBold, fontSize: 16, color: themeColors.textPrimary, marginBottom: 16, textAlign: 'center' }}>
-          Couldn't load this provider's profile.
-        </ThemedText>
-        <TouchableOpacity onPress={() => router.back()} style={styles.hireButton}>
-          <ThemedText style={styles.hireButtonText}>Go Back</ThemedText>
+      <ThemedView style={[styles.container, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 24 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.errorBackIcon} hitSlop={10}>
+          <ChevronLeft size={24} color={themeColors.textPrimary} />
         </TouchableOpacity>
+
+        <View style={styles.errorBody}>
+          <View style={styles.errorIconCircle}>
+            <CloudOff size={36} color={themeColors.textSecondary} />
+          </View>
+          <ThemedText style={[styles.errorTitle, { color: themeColors.textPrimary }]}>
+            Profile didn't load
+          </ThemedText>
+          <ThemedText style={[styles.errorMessage, { color: themeColors.textSecondary }]}>
+            Check your internet connection and try again. If it keeps happening, this provider may no longer be available.
+          </ThemedText>
+        </View>
+
+        <View style={styles.errorActions}>
+          <TouchableOpacity onPress={() => setReloadKey(k => k + 1)} style={styles.errorPrimaryBtn} activeOpacity={0.85}>
+            <RefreshCw size={18} color="#000" />
+            <ThemedText style={styles.hireButtonText}>Try again</ThemedText>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.back()} style={[styles.errorSecondaryBtn, { borderColor: themeColors.border }]} activeOpacity={0.7}>
+            <ThemedText style={[styles.errorSecondaryText, { color: themeColors.textPrimary }]}>Go back</ThemedText>
+          </TouchableOpacity>
+        </View>
       </ThemedView>
     );
   }
@@ -1118,6 +1144,40 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     fontSize: 16, lineHeight: 20,
     fontFamily: Fonts.poppinsBold,
     color: '#000',
+  },
+  errorBackIcon: {
+    width: 44, height: 44, marginLeft: 12,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  errorBody: {
+    flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32,
+  },
+  errorIconCircle: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: 'rgba(107,114,128,0.12)',
+    justifyContent: 'center', alignItems: 'center', marginBottom: 20,
+  },
+  errorTitle: {
+    fontSize: 20, lineHeight: 28, fontFamily: Fonts.poppinsSemiBold,
+    textAlign: 'center', marginBottom: 8,
+  },
+  errorMessage: {
+    fontSize: 14, lineHeight: 21, fontFamily: Fonts.poppins,
+    textAlign: 'center', maxWidth: 320,
+  },
+  errorActions: {
+    paddingHorizontal: 20, gap: 12,
+  },
+  errorPrimaryBtn: {
+    height: 56, borderRadius: 28, backgroundColor: '#FFCE48',
+    flexDirection: 'row', gap: 8, justifyContent: 'center', alignItems: 'center',
+  },
+  errorSecondaryBtn: {
+    height: 56, borderRadius: 28, borderWidth: 1.5,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  errorSecondaryText: {
+    fontSize: 16, lineHeight: 20, fontFamily: Fonts.poppinsSemiBold,
   },
   modalOverlay: {
     flex: 1,

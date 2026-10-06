@@ -1,10 +1,10 @@
 import notifee, { AndroidForegroundServiceType, AndroidImportance, AndroidStyle, AndroidVisibility, EventType } from '@notifee/react-native';
 import messaging from '@react-native-firebase/messaging';
 import { router } from 'expo-router';
-import { Alert, NativeEventEmitter, NativeModules, Platform } from 'react-native';
+import { AppState, NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import RNCallKeep from 'react-native-callkeep';
 import VoipPushNotification from 'react-native-voip-push-notification';
-import { SkoFyApi, TokenStore } from './api';
+import { SkoFyApi, getFreshAccessToken } from './api';
 
 // Android-only native module (see CallStyleModule.kt/CallActionModule.kt) that
 // shows the incoming-call notification using NotificationCompat.CallStyle —
@@ -13,19 +13,20 @@ import { SkoFyApi, TokenStore } from './api';
 const { CallStyleModule, CallActionModule } = NativeModules;
 const callActionEmitter = CallActionModule ? new NativeEventEmitter(CallActionModule) : null;
 
-// v4: bumped because Android locks a channel's sound/audio-attributes forever
-// once created — MainApplication.kt now pre-creates this exact id natively,
-// using the phone's actual default ringtone (not a bundled custom tone) with
-// USAGE_NOTIFICATION_RINGTONE so it follows the ring/vibrate/silent state like
-// a real call. This JS-side createChannel() call below just becomes a no-op
-// against that (Android ignores re-creating an existing id).
-const CALL_CHANNEL_ID = 'incoming_calls_v5';
+// Created natively at app start (plugins/with-call-ringtone-channel.js — the
+// ids must match) with the phone's own ringtone, following ring volume and
+// silent/vibrate like a real call. Android fixes a channel's sound forever
+// once created, so a sound change needs a new id; the createChannel() below
+// is then a no-op against the native one.
+const CALL_CHANNEL_ID = 'incoming_calls_v7';
 const ONGOING_CALL_CHANNEL_ID = 'ongoing_calls_v1';
 
 interface IncomingCallData {
   jobId: string;
   callerId: string;
   callerName: string;
+  /** Which call this is — the opened screen auto-answers only this one. */
+  callId?: string;
 }
 
 // Deterministic per-job id — without this, every push created a brand new
@@ -51,7 +52,33 @@ function safeNavigate(fn: () => void, attempt = 0) {
   }
 }
 
+// An accepted/tapped call whose screen can only open once the app is in the
+// foreground. Opening it while the app was in the background stacked a
+// hidden call screen that surfaced later — after the user had already taken
+// the call another way — and tried to join a call that was over (no voice).
+let pendingCall: { call: IncomingCallData; autoAnswer: boolean; at: number } | null = null;
+const PENDING_CALL_MAX_AGE_MS = 30000;
+
+AppState.addEventListener('change', (state) => {
+  if (state !== 'active' || !pendingCall) return;
+  const { call, autoAnswer, at } = pendingCall;
+  pendingCall = null;
+  if (Date.now() - at < PENDING_CALL_MAX_AGE_MS) openCallScreen(call, autoAnswer);
+});
+
 function navigateToCall(call: IncomingCallData, autoAnswer: boolean) {
+  markAnswering();
+  // iOS answers through CallKit, which legitimately runs the call with the
+  // app in the background (e.g. answered from the lock screen) — only
+  // Android's notification Accept needs to wait for the foreground.
+  if (Platform.OS === 'ios' || AppState.currentState === 'active') {
+    openCallScreen(call, autoAnswer);
+  } else {
+    pendingCall = { call, autoAnswer, at: Date.now() };
+  }
+}
+
+function markAnswering() {
   // Must happen before the push — see isCallScreenActive's comment (further
   // down this file) for why AppLockGate needs this signal immediately,
   // synchronously, rather than waiting for chat.tsx to actually mount:
@@ -63,7 +90,17 @@ function navigateToCall(call: IncomingCallData, autoAnswer: boolean) {
   isAnsweringCall = true;
   onCallBecameActive?.();
   setTimeout(() => { isAnsweringCall = false; }, 8000);
+}
 
+function openCallScreen(call: IncomingCallData, autoAnswer: boolean) {
+  markAnswering();
+  // This job's chat is already on screen: it's ringing in place (or in the
+  // call). Pushing another copy on top was the duplicate call screen — answer
+  // in the open one instead.
+  if (call.jobId === activeChatJobId) {
+    if (autoAnswer) acceptHandler?.();
+    return;
+  }
   safeNavigate(() => router.push({
     pathname: '/chat',
     params: {
@@ -72,6 +109,7 @@ function navigateToCall(call: IncomingCallData, autoAnswer: boolean) {
       name: call.callerName,
       profession: 'Incoming Call',
       autoAnswer: autoAnswer ? 'true' : 'false',
+      ...(call.callId ? { callId: call.callId } : {}),
     },
   } as any));
 }
@@ -86,7 +124,7 @@ async function sendDecline(jobId: string) {
     await new Promise<void>((resolve) => {
       const done = () => { try { ws.close(); } catch {} resolve(); };
       ws.onopen = async () => {
-        const token = await TokenStore.getAccessToken();
+        const token = await getFreshAccessToken();
         ws.send(JSON.stringify({ type: 'auth', token }));
         ws.send(JSON.stringify({ type: 'call_end' }));
         setTimeout(done, 300);
@@ -140,11 +178,11 @@ async function showIncomingCallNotification(data: IncomingCallData) {
       category: 'call' as any,
       largeIcon: require('@/assets/images/icon-mark.png'),
       circularLargeIcon: true,
-      fullScreenAction: { id: 'default' },
-      pressAction: { id: 'default' },
+      fullScreenAction: { id: 'default', launchActivity: 'default' },
+      pressAction: { id: 'default', launchActivity: 'default' },
       actions: [
         { title: 'Decline', pressAction: { id: 'decline' } },
-        { title: 'Accept', pressAction: { id: 'accept' } },
+        { title: 'Accept', pressAction: { id: 'accept', launchActivity: 'default' } },
       ],
       ongoing: true,
       autoCancel: false,
@@ -303,6 +341,39 @@ const JOB_UPDATE_CHANNEL_ID = 'job_updates_v1';
  * anywhere useful. route is where tapping should land: the applicants
  * list for job_reopened (so they can pick someone else), or just the jobs
  * list for a true job_cancelled (nothing left to do on this job). */
+
+// Chat messages get their own channel at HIGH importance — they used to go
+// through the "Job Updates" channel (DEFAULT importance: no heads-up banner)
+// and shared its per-job notification id, so each message silently replaced
+// the last one AND earlier job alerts like "You've been hired!". One
+// notification per conversation (like WhatsApp), updated per message, and
+// re-alerting each time. A new channel id is required: Android never lets an
+// existing channel's importance be raised after it's created.
+const CHAT_MESSAGES_CHANNEL_ID = 'chat_messages_v1';
+
+async function showChatMessageNotification(jobId: string, title: string, body: string) {
+  await notifee.createChannel({
+    id: CHAT_MESSAGES_CHANNEL_ID,
+    name: 'Messages',
+    importance: AndroidImportance.HIGH,
+    visibility: AndroidVisibility.PRIVATE,
+  });
+  await notifee.displayNotification({
+    id: `chat-${jobId}`,
+    title,
+    body,
+    // Same tap handling as job updates — opens this job's chat.
+    data: { jobUpdateJobId: jobId, jobUpdateRoute: '/chat' },
+    android: {
+      channelId: CHAT_MESSAGES_CHANNEL_ID,
+      pressAction: { id: 'default' },
+      autoCancel: true,
+      onlyAlertOnce: false,
+    },
+    ios: { sound: 'default' },
+  });
+}
+
 async function showJobUpdateNotification(jobId: string, title: string, body: string, route: '/applicants' | '/my-jobs' | '/track-provider' | '/chat' | '/edit-job') {
   await notifee.createChannel({
     id: JOB_UPDATE_CHANNEL_ID,
@@ -365,7 +436,9 @@ async function showAdminBroadcastNotification(title: string, body: string, image
   await notifee.displayNotification({
     title,
     body,
-    data: { adminBroadcast: true } as any,
+    // notifee requires every data value to be a string — a boolean here made
+    // displayNotification() throw, so admin broadcasts never appeared.
+    data: { adminBroadcast: 'true' },
     android: {
       channelId: ADMIN_BROADCAST_CHANNEL_ID,
       pressAction: { id: 'default' },
@@ -386,6 +459,8 @@ function openAdminBroadcast() {
  * otherwise (e.g. the caller's own device, told to clean up after a decline
  * it already knows about) this is a harmless no-op. */
 function handleCallCancelled(jobId: string, callerName: string) {
+  if (pendingCall?.call.jobId === jobId) pendingCall = null;
+  endIosCallKitCalls(jobId, CXEndedReason.RemoteEnded);
   const wasRinging = ringingJobIds.has(jobId);
   cancelIncomingCallNotification(jobId);
   if (wasRinging) {
@@ -395,7 +470,12 @@ function handleCallCancelled(jobId: string, callerName: string) {
 
 function parseIncomingCall(remoteData: Record<string, any> | undefined): IncomingCallData | null {
   if (!remoteData || remoteData.type !== 'incoming_call') return null;
-  return { jobId: remoteData.job_id, callerId: remoteData.caller_id, callerName: remoteData.caller_name };
+  return {
+    jobId: remoteData.job_id,
+    callerId: remoteData.caller_id,
+    callerName: remoteData.caller_name,
+    callId: remoteData.call_id || undefined,
+  };
 }
 
 function handlePress(data: IncomingCallData, actionId: string | undefined) {
@@ -421,6 +501,14 @@ let speakerHandler: (() => void) | null = null;
  * instead of just opening the app. Call with null when the call ends. */
 export function registerHangupHandler(fn: (() => void) | null) {
   hangupHandler = fn;
+}
+
+// The open chat screen's accept — used when the notification's Accept is
+// pressed for the call that chat is already ringing for.
+let acceptHandler: (() => void) | null = null;
+
+export function registerAcceptHandler(fn: (() => void) | null) {
+  acceptHandler = fn;
 }
 
 /** Same idea as registerHangupHandler, for the notification's Mute/Speaker
@@ -647,7 +735,7 @@ export async function startOngoingCallNotification(jobId: string, callerName: st
         foregroundServiceTypes: [AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_PHONE_CALL],
         ongoing: true,
         autoCancel: false,
-        pressAction: { id: 'default' },
+        pressAction: { id: 'default', launchActivity: 'default' },
         actions: [
           { title: currentOngoingControls.isMuted ? 'Unmute' : 'Mute', pressAction: { id: 'mute' } },
           { title: currentOngoingControls.isSpeakerOn ? 'Speaker Off' : 'Speaker', pressAction: { id: 'speaker' } },
@@ -695,6 +783,32 @@ export function getCurrentVoipToken(): string | null {
   return currentVoipToken;
 }
 
+// CallKit's CXCallEndedReason values.
+const CXEndedReason = { RemoteEnded: 2, Unanswered: 3, AnsweredElsewhere: 4 } as const;
+// Matches the caller's own no-answer timeout (CALL_TIMEOUT_MS in chat.tsx).
+const IOS_UNANSWERED_TIMEOUT_MS = 60000;
+
+// iOS incoming calls currently showing on the CallKit screen, by CallKit UUID.
+const iosCallKitCalls = new Map<string, { call: IncomingCallData; timer: ReturnType<typeof setTimeout> }>();
+
+function takeIosCallKitCall(callUUID: string) {
+  const entry = iosCallKitCalls.get(callUUID);
+  if (!entry) return undefined;
+  clearTimeout(entry.timer);
+  iosCallKitCalls.delete(callUUID);
+  return entry;
+}
+
+/** Stops the CallKit ringing screen for this job's call (the caller hung up). */
+function endIosCallKitCalls(jobId: string, reason: number) {
+  if (Platform.OS !== 'ios') return;
+  for (const [callUUID, { call }] of [...iosCallKitCalls]) {
+    if (call.jobId !== jobId) continue;
+    takeIosCallKitCall(callUUID);
+    RNCallKeep.reportEndCallWithUUID(callUUID, reason);
+  }
+}
+
 function setupCallKeepForIOS() {
   if (callKeepReady || Platform.OS !== 'ios') return;
   callKeepReady = true;
@@ -709,22 +823,33 @@ function setupCallKeepForIOS() {
     android: { alertTitle: '', alertDescription: '', cancelButton: '', okButton: '' },
   }).catch((err) => console.warn('Failed to set up CallKeep (iOS):', err));
 
-  const activeCalls = new Map<string, IncomingCallData>();
-
   RNCallKeep.addEventListener('didDisplayIncomingCall', ({ callUUID, payload }: any) => {
     const call = parseIncomingCall(payload);
-    if (call) activeCalls.set(callUUID, call);
+    if (!call) return;
+    // AppDelegate must report every VoIP push to CallKit, even for a call
+    // this job's open chat is already ringing for in-app — end that
+    // duplicate straight away instead of showing two incoming-call screens.
+    if (call.jobId === activeChatJobId) {
+      RNCallKeep.reportEndCallWithUUID(callUUID, CXEndedReason.AnsweredElsewhere);
+      return;
+    }
+    // CallKit never stops ringing on its own, and the caller's hang-up may
+    // not reach a backgrounded app — give up when the caller's side does.
+    const timer = setTimeout(() => {
+      if (iosCallKitCalls.delete(callUUID)) RNCallKeep.reportEndCallWithUUID(callUUID, CXEndedReason.Unanswered);
+    }, IOS_UNANSWERED_TIMEOUT_MS);
+    iosCallKitCalls.set(callUUID, { call, timer });
   });
   RNCallKeep.addEventListener('answerCall', ({ callUUID }: any) => {
-    const call = activeCalls.get(callUUID);
-    if (call) navigateToCall(call, true);
+    const entry = takeIosCallKitCall(callUUID);
+    if (entry) navigateToCall(entry.call, true);
     RNCallKeep.endCall(callUUID);
-    activeCalls.delete(callUUID);
   });
   RNCallKeep.addEventListener('endCall', ({ callUUID }: any) => {
-    const call = activeCalls.get(callUUID);
-    if (call) sendDecline(call.jobId);
-    activeCalls.delete(callUUID);
+    // Already removed when answered or ended by the app itself — only a
+    // user's Decline on the CallKit screen gets here with an entry.
+    const entry = takeIosCallKitCall(callUUID);
+    if (entry) sendDecline(entry.call.jobId);
   });
 
   // PKPushRegistry lives natively (AppDelegate.swift, plugins/with-pushkit-voip.js)
@@ -850,11 +975,10 @@ export function registerBackgroundHandler() {
     // notification, ever, in either direction, for any chat message sent
     // while the recipient's app was backgrounded or killed.
     if (remoteMessage.data?.type === 'chat_message') {
-      await showJobUpdateNotification(
+      await showChatMessageNotification(
         remoteMessage.data.job_id as string,
         (remoteMessage.data.title as string) || 'New message',
         (remoteMessage.data.body as string) || 'You have a new message.',
-        '/chat',
       );
       return;
     }
@@ -865,9 +989,8 @@ export function registerBackgroundHandler() {
           (remoteMessage.data.body as string) || '',
           remoteMessage.data.image_url as string | undefined,
         );
-      } catch (err: any) {
-        // TEMP DIAGNOSTIC — see the matching note at the top of onMessage.
-        Alert.alert('DEBUG: showAdminBroadcastNotification threw', String(err?.message ?? err));
+      } catch (err) {
+        console.error('Failed to show admin broadcast notification:', err);
       }
       return;
     }
@@ -892,10 +1015,6 @@ export function initCallManager() {
   notifee.requestPermission().catch((err) => console.error('Failed to request notification permission:', err));
 
   messaging().onMessage(async (remoteMessage) => {
-    // TEMP DIAGNOSTIC — remove once admin_broadcast delivery is confirmed
-    // working. Proves whether onMessage fires at all for a given push, and
-    // exactly what shape its data arrives in, without needing adb/logcat.
-    Alert.alert('DEBUG: onMessage fired', JSON.stringify(remoteMessage.data ?? {}));
     if (remoteMessage.data?.type === 'call_cancelled') {
       handleCallCancelled(remoteMessage.data.job_id as string, (remoteMessage.data.caller_name as string) || 'them');
       return;
@@ -987,11 +1106,10 @@ export function initCallManager() {
       // the thread you already have open would just be a redundant duplicate
       // of what chat.tsx's own WebSocket handler already renders live.
       if (remoteMessage.data.job_id === activeChatJobId) return;
-      await showJobUpdateNotification(
+      await showChatMessageNotification(
         remoteMessage.data.job_id as string,
         (remoteMessage.data.title as string) || 'New message',
         (remoteMessage.data.body as string) || 'You have a new message.',
-        '/chat',
       );
       return;
     }
@@ -1002,9 +1120,8 @@ export function initCallManager() {
           (remoteMessage.data.body as string) || '',
           remoteMessage.data.image_url as string | undefined,
         );
-      } catch (err: any) {
-        // TEMP DIAGNOSTIC — see the matching note at the top of onMessage.
-        Alert.alert('DEBUG: showAdminBroadcastNotification threw', String(err?.message ?? err));
+      } catch (err) {
+        console.error('Failed to show admin broadcast notification:', err);
       }
       return;
     }

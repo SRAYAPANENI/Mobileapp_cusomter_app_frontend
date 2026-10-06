@@ -10,7 +10,7 @@ import { GooglePlacesService, GooglePlaceSuggestion } from '@/services/google-pl
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import * as ExpoLocation from 'expo-location';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import {
   Briefcase,
   Camera,
@@ -57,10 +57,24 @@ export default function RegisterScreen() {
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const appAlert = useAppAlert();
 
+  // Set by login.tsx when it redirects here after finding no Customer
+  // profile for a number (is_new_role) — see that screen's own comment.
+  // THIS screen's own verifyOTP call, moments later for the same number,
+  // will always see is_new_user=false by then (the identity row was
+  // already created by login.tsx's call) regardless of whether this is a
+  // genuinely brand-new person or an existing Provider adding a Customer
+  // role — the two cases are indistinguishable from this call alone.
+  // resumedIsNewUser carries the ORIGINAL, authoritative answer captured
+  // before any of that happened, so isAddingRole (which controls whether
+  // the password step is skipped) still comes out correct for a
+  // brand-new person instead of being misread as "existing account,
+  // adding a role" just because Login happened to touch it first.
+  const { prefillPhone, resumedIsNewUser } = useLocalSearchParams<{ prefillPhone?: string; resumedIsNewUser?: string }>();
+
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
-    mobileNumber: '',
+    mobileNumber: prefillPhone ?? '',
     otp: '',
     address: '',
     idNumber: '',
@@ -69,7 +83,21 @@ export default function RegisterScreen() {
   });
 
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  // Separate from profileImage (a local file:// URI, fine for the preview
+  // <Image> below but meaningless to the backend/other devices — it's only
+  // ever valid on this device's local filesystem). Mirrors the data-URL
+  // pattern profile.tsx already uses post-registration for the same field.
+  const [profileImageDataUrl, setProfileImageDataUrl] = useState<string | null>(null);
   const [idDocumentImages, setIdDocumentImages] = useState<(string | null)[]>([null, null, null]);
+  // Parallel to idDocumentImages (local file:// URIs, fine for the in-session
+  // preview below but meaningless to the backend — see profileImageDataUrl's
+  // own comment for why). These are what actually get sent on submit; a
+  // local URI saved instead used to render fine for this one screen/session
+  // but go blank in Profile afterwards — expo-image-picker's cache paths
+  // aren't guaranteed to survive a restart, let alone a reinstall, so by the
+  // time the backend's "display URI" was read back, the file it pointed to
+  // was usually already gone.
+  const [idDocumentDataUrls, setIdDocumentDataUrls] = useState<(string | null)[]>([null, null, null]);
   const [isOtpSent, setIsOtpSent] = useState(false);
   const [isOtpVerified, setIsOtpVerified] = useState(false);
   // True when this phone already had a Provider account and is now adding a
@@ -111,17 +139,41 @@ export default function RegisterScreen() {
   // total instead of permanently blocking the submit button below 100%.
   const calculateProgress = () => {
     let completed = 0;
-    const total = isAddingRole ? 7 : 8; // Name, Phone, OTP, Address, AddressType, ID Number, ID Doc, [Password]
+    // National ID Number / ID Document are intentionally NOT counted toward
+    // the required total — the ID section's own subtitle tells the user
+    // they're "Recommended for account recovery," not mandatory. They used
+    // to count here anyway, so Create Account silently stayed disabled
+    // below 100% until a user filled in fields the UI told them were
+    // optional, with no indication of why the button was stuck. Still
+    // tracked below (idNumberFilled/idDocFilled) so filling them in nudges
+    // the progress bar, just not required to reach 100%.
+    const total = isAddingRole ? 5 : 6; // Name, OTP, Address, AddressType, [Password], Terms
     if (formData.fullName) completed++;
     if (isOtpVerified) completed++;
     if (formData.address) completed++;
     if (addressType) completed++; // Always has a value
-    if (formData.idNumber) completed++;
-    if (idDocumentImages.some(Boolean)) completed++;
     if (!isAddingRole && formData.password && formData.password === formData.confirmPassword && formData.password.length >= 6) completed++;
     if (agreedToTerms && agreedToPrivacy) completed++;
 
-    return completed / total;
+    const idNumberFilled = formData.idNumber ? 1 : 0;
+    const idDocFilled = idDocumentImages.some(Boolean) ? 1 : 0;
+    return Math.min(1, (completed + idNumberFilled + idDocFilled) / total);
+  };
+
+  // Mirrors calculateProgress()'s own required checks exactly — surfaced to
+  // the user when they tap a not-yet-complete Create Account button, since
+  // a silently-disabled button with no explanation left them guessing which
+  // of several sections they'd missed.
+  const getMissingSteps = (): string[] => {
+    const missing: string[] = [];
+    if (!formData.fullName) missing.push('Full Name');
+    if (!isOtpVerified) missing.push('Mobile Number Verification (tap "Verify with OTP")');
+    if (!formData.address) missing.push('Address');
+    if (!isAddingRole && !(formData.password && formData.password === formData.confirmPassword && formData.password.length >= 6)) {
+      missing.push('Password (at least 6 characters, matching in both fields)');
+    }
+    if (!(agreedToTerms && agreedToPrivacy)) missing.push('Agree to Terms & Conditions and Privacy Policy');
+    return missing;
   };
 
   useEffect(() => {
@@ -247,16 +299,21 @@ export default function RegisterScreen() {
 
   const pickImage = async (type: 'profile' | 'document', docSlot?: number, useCamera = false) => {
     const result = useCamera
-      ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: type === 'profile' ? [1, 1] : [3, 2], quality: 0.8 })
-      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: type === 'profile' ? [1, 1] : [3, 2], quality: 0.8 });
+      ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: type === 'profile' ? [1, 1] : [3, 2], quality: 0.8, base64: true })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: type === 'profile' ? [1, 1] : [3, 2], quality: 0.8, base64: true });
 
     if (!result.canceled && result.assets[0]) {
+      const dataUrl = result.assets[0].base64 ? `data:image/jpeg;base64,${result.assets[0].base64}` : null;
       if (type === 'profile') {
         setProfileImage(result.assets[0].uri);
+        setProfileImageDataUrl(dataUrl);
       } else if (docSlot !== undefined) {
         const updated = [...idDocumentImages] as (string | null)[];
         updated[docSlot] = result.assets[0].uri;
         setIdDocumentImages(updated);
+        const updatedData = [...idDocumentDataUrls] as (string | null)[];
+        updatedData[docSlot] = dataUrl;
+        setIdDocumentDataUrls(updatedData);
       }
     }
   };
@@ -281,9 +338,21 @@ export default function RegisterScreen() {
         // there's a Customer profile left to fill in — is_new_user alone
         // can't distinguish "brand-new account" from "this phone already
         // has a Provider account and just got a Customer profile added"
-        // (dual-role support, same identity/phone). Only a phone that
-        // already has a Customer profile is genuinely "already registered."
-        if (!user.is_new_role) {
+        // (dual-role support, same identity/phone).
+        //
+        // !is_new_role alone isn't enough to mean "already registered,"
+        // though — verify_otp auto-creates a bare account for ANY phone
+        // that completes OTP, including via the Login screen (which now
+        // redirects here on is_new_role, see login.tsx). Re-verifying the
+        // SAME number here afterward would see is_new_role=false (that
+        // bare account now exists) and, without the profile_complete
+        // check, incorrectly bounce back to Login as "already
+        // registered" — Login says no account, Register says already
+        // registered, forever. profile_complete distinguishes a genuinely
+        // finished registration from a bare shell still named "New User"
+        // with nothing else filled in yet, which is exactly the case that
+        // belongs here, not back at Login.
+        if (!user.is_new_role && user.profile_complete) {
           appAlert.show(
             'error',
             'Already Registered',
@@ -292,7 +361,8 @@ export default function RegisterScreen() {
           );
           return;
         }
-        setIsAddingRole(!user.is_new_user);
+        const isNewUser = resumedIsNewUser != null ? resumedIsNewUser === '1' : user.is_new_user;
+        setIsAddingRole(!isNewUser);
         setIsOtpVerified(true);
         setIsOtpSent(false);
       } catch (error: any) {
@@ -843,6 +913,9 @@ export default function RegisterScreen() {
                               const updated = [...idDocumentImages] as (string | null)[];
                               updated[idx] = null;
                               setIdDocumentImages(updated);
+                              const updatedData = [...idDocumentDataUrls] as (string | null)[];
+                              updatedData[idx] = null;
+                              setIdDocumentDataUrls(updatedData);
                             }}
                           >
                             <X size={13} color="#fff" />
@@ -914,6 +987,11 @@ export default function RegisterScreen() {
               style={[styles.createButton, { backgroundColor: themeColors.brand, opacity: (calculateProgress() === 1 && !isSubmitting) ? 1 : 0.7 }]}
               onPress={async () => {
                 if (isSubmitting) return;
+                const missing = getMissingSteps();
+                if (missing.length > 0) {
+                  appAlert.show('warning', 'Almost There', `Please complete: ${missing.join(', ')}.`);
+                  return;
+                }
                 if (formData.email && !formData.email.includes('@')) {
                   appAlert.show('error', 'Invalid Email', 'Please enter a valid email address or leave it blank.');
                   return;
@@ -927,20 +1005,25 @@ export default function RegisterScreen() {
                     id_number: formData.idNumber || undefined,
                   });
 
-                  // Save ID document images as JSON array (base64 data URLs would need
-                  // a second pass with base64:true; for now we store display URIs at
-                  // registration and the user can retake from profile if needed).
+                  // Save profile photo + ID document images in one PATCH, both as JSON/
+                  // data-URL base64 (not idDocumentImages' local file:// URIs — those are
+                  // only good for this screen's own preview; expo-image-picker's cache
+                  // paths aren't guaranteed to survive a restart, so an address saved as a
+                  // local URI rendered fine here but showed up blank back in Profile).
+                  // Matches how profile.tsx already saves this same field post-registration.
                   // Both of these are intentionally non-fatal — shouldn't block account
                   // creation — but failures used to be totally invisible, so the user
                   // had no way to know they'd need to redo this from their profile.
                   const failedSteps: string[] = [];
-                  const docUris = idDocumentImages.filter(Boolean) as string[];
-                  if (docUris.length > 0) {
-                    await SkoFyApi.customers.updateProfile({
-                      id_document_url: JSON.stringify(docUris),
-                    }).catch((err) => {
-                      console.error('Failed to save ID document:', err);
-                      failedSteps.push('ID document');
+                  const docUris = idDocumentDataUrls.filter(Boolean) as string[];
+                  const customerProfilePatch: { id_document_url?: string; profile_image_url?: string } = {};
+                  if (docUris.length > 0) customerProfilePatch.id_document_url = JSON.stringify(docUris);
+                  if (profileImageDataUrl) customerProfilePatch.profile_image_url = profileImageDataUrl;
+                  if (Object.keys(customerProfilePatch).length > 0) {
+                    await SkoFyApi.customers.updateProfile(customerProfilePatch).catch((err) => {
+                      console.error('Failed to save profile photo/ID document:', err);
+                      if (customerProfilePatch.profile_image_url) failedSteps.push('profile photo');
+                      if (customerProfilePatch.id_document_url) failedSteps.push('ID document');
                     });
                   }
 
@@ -986,7 +1069,7 @@ export default function RegisterScreen() {
                   setIsSubmitting(false);
                 }
               }}
-              disabled={calculateProgress() < 1 || isSubmitting}
+              disabled={isSubmitting}
             >
               <ThemedText style={styles.createButtonText}>{isSubmitting ? 'Creating Account...' : 'Create Account'}</ThemedText>
             </TouchableOpacity>

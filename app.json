@@ -15,7 +15,11 @@
         "NSLocationWhenInUseUsageDescription": "This app needs access to your location to show nearby service providers.",
         "NSLocationAlwaysUsageDescription": "This app needs access to your location to show nearby service providers.",
         "NSMicrophoneUsageDescription": "This app needs access to your microphone for voice calls with your service provider.",
-        "UIBackgroundModes": ["voip", "audio", "remote-notification"]
+        "UIBackgroundModes": [
+          "voip",
+          "audio",
+          "remote-notification"
+        ]
       },
       "entitlements": {
         "aps-environment": "development"
@@ -26,6 +30,7 @@
         "backgroundColor": "#ffffff",
         "foregroundImage": "./assets/images/logo.png"
       },
+      "allowBackup": false,
       "softwareKeyboardLayoutMode": "resize",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -61,7 +66,7 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow Skofy to use your location to show nearby service providers."
+          "locationAlwaysAndWhenInUsePermission": "Allow Dodorez to use your location to show nearby service providers."
         }
       ],
       [
@@ -100,7 +105,9 @@
         {
           "faceIDPermission": "Allow Dodorez to use Face ID to unlock the app."
         }
-      ]
+      ],
+      "./plugins/with-call-foreground-service.js",
+      "./plugins/with-call-ringtone-channel.js"
     ],
     "experiments": {
       "typedRoutes": true,

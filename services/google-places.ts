@@ -95,6 +95,25 @@ export const GooglePlacesService = {
         signal
       });
 
+      // A non-2xx response (a proxy/captive-portal page, a firewall block,
+      // an API-level rejection with no JSON body) used to fall straight
+      // into response.json() — either throwing an opaque "Unexpected
+      // character" parse error, or silently parsing as valid-but-unrelated
+      // JSON and reading as "no suggestions" with no error at all. Checking
+      // status first surfaces the actual HTTP outcome instead of guessing
+      // at it from whatever the body happened to contain. Google's own
+      // error body (when present) carries the actual reason — e.g.
+      // PERMISSION_DENIED (key/restriction/API-not-enabled) vs
+      // RESOURCE_EXHAUSTED (quota) — which a bare status code can't tell
+      // apart, so it's read out here rather than just reporting the status.
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => null);
+        const detail = errJson?.error?.status
+          ? `${errJson.error.status}: ${errJson.error.message || ''}`.trim()
+          : `${response.status} ${response.statusText}`;
+        throw new Error(`Places API error — ${detail}`);
+      }
+
       const json = await response.json();
 
       if (json.suggestions) {

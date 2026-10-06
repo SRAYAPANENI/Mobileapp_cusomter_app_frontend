@@ -16,6 +16,7 @@
 
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { File, Paths } from 'expo-file-system';
 
 // ─── CONFIG ─────────────────────────────────────────────────────────────────
 const DEV_LAN_IP = '192.168.1.6'; // Your machine's LAN IP for physical device testing
@@ -32,7 +33,11 @@ const DEV_LAN_IP = '192.168.1.6'; // Your machine's LAN IP for physical device t
 // const NGROK_URL = 'https://underrate-snowfield-chemist.ngrok-free.dev/v1';
 // const NGROK_URL = 'https://lavender-strife-monopoly.ngrok-free.dev/v1';
 const NGROK_URL = 'https://dill-unstirred-amply.ngrok-free.dev/v1';
-export const BASE_URL = NGROK_URL;
+// Dodorez API on AWS (Mumbai) — see skofy-backend/deploy/README.md.
+// No laptop or ngrok tunnel needed. Switch back to NGROK_URL to test
+// against a local backend.
+const AWS_URL = 'https://16-4-28-180.sslip.io/v1';
+export const BASE_URL = AWS_URL;
 if (__DEV__) console.log('[SkoFyApi] BASE_URL:', BASE_URL, '__DEV__:', __DEV__);
 
 // Publishable keys are safe to ship in client code (unlike the secret key,
@@ -71,6 +76,42 @@ export const TokenStore = {
     await SecureStore.deleteItemAsync(USER_KEY);
   },
 };
+
+// ─── STALE SESSION ON REINSTALL ──────────────────────────────────────────────
+// iOS Keychain (what SecureStore is backed by) is explicitly NOT cleared when
+// an app is deleted — standard platform behavior, not a bug here. Android's
+// auto-backup can similarly restore SecureStore's encrypted prefs across a
+// reinstall. Either way, a token issued to a before-uninstall install can
+// still be sitting in SecureStore after a fresh install, read back by the
+// splash screen as "logged in", and then rejected by the backend a moment
+// later (session_version mismatch / revoked refresh token) as a "Signed Out"
+// the user never actually triggered. The document directory, unlike
+// SecureStore/Keychain, IS wiped on uninstall on both platforms, so the
+// absence of this marker file is a reliable "this is a fresh install" signal
+// regardless of platform-specific token-persistence quirks.
+let installMarkerFile: File | null | undefined;
+function getInstallMarkerFile(): File | null {
+  if (installMarkerFile === undefined) {
+    try {
+      installMarkerFile = new File(Paths.document, 'install_marker.txt');
+    } catch {
+      installMarkerFile = null;
+    }
+  }
+  return installMarkerFile;
+}
+
+export async function clearStaleSessionAfterReinstall(): Promise<void> {
+  try {
+    const marker = getInstallMarkerFile();
+    if (!marker || marker.exists) return;
+    await TokenStore.clear();
+    marker.write('1');
+  } catch {
+    // Best-effort — worst case a stale session survives one extra launch
+    // and gets caught by the normal "Signed Out" rejection instead.
+  }
+}
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 export interface AuthUser {
@@ -169,7 +210,23 @@ async function request<T = any>(
 }
 
 async function _parseResponse<T>(response: Response): Promise<T> {
-  const json = await response.json();
+  let json: any;
+  try {
+    json = await response.json();
+  } catch {
+    // The server didn't return valid JSON at all — most often a proxy/
+    // tunnel's own error page (e.g. ngrok's branded HTML page when the
+    // tunnel is down or over its bandwidth cap) instead of our API's JSON
+    // error shape. Unguarded, response.json() throws a raw SyntaxError
+    // ("Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON") straight
+    // into whatever alert the caller shows — exactly the kind of internals
+    // leaking into the UI this was meant to stop.
+    throw {
+      success: false,
+      error_code: 'INVALID_RESPONSE',
+      message: "Couldn't reach the server. Please check your connection and try again.",
+    } as ApiError;
+  }
   if (!response.ok) {
     throw json as ApiError;
   }
@@ -215,7 +272,54 @@ async function _refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
+// ─── TOKEN FOR LIVE CONNECTIONS ──────────────────────────────────────────────
+// request() refreshes on a 401, but a WebSocket gets no 401 — the server just
+// closes it (4401) when the token in the auth message has expired (access
+// tokens live 15 minutes). Screens that opened their socket with the stored,
+// expired token silently lost live chat and calls: offers were never
+// delivered and nothing rang. Every socket gets its token from here.
+export async function getFreshAccessToken(): Promise<string | null> {
+  const token = await TokenStore.getAccessToken();
+  if (token && !_expiresWithin(token, 60)) return token;
+  return (await _refreshAccessToken()) ?? token;
+}
+
+function _expiresWithin(token: string, seconds: number): boolean {
+  try {
+    const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const { exp } = JSON.parse(atob(part.padEnd(Math.ceil(part.length / 4) * 4, '=')));
+    return typeof exp !== 'number' || exp * 1000 - Date.now() < seconds * 1000;
+  } catch {
+    return true;
+  }
+}
+
 // ─── API SURFACE ─────────────────────────────────────────────────────────────
+/** Job-cost checkout amounts — see the backend's offer_pricing.py. The
+ * discount comes out of Dodorez's fee; the provider's share never changes. */
+export interface CheckoutBreakdown {
+  job_amount: number;
+  discount: number;
+  processing_fee: number;
+  total: number;
+}
+
+export interface CheckoutOffer {
+  offer_id: string;
+  code: string;
+  title: string;
+  description: string;
+  discount: number;
+  usable: boolean;
+  unusable_reason: string | null;
+}
+
+export interface RTCIceServerConfig {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+}
+
 export const SkoFyApi = {
 
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -306,12 +410,24 @@ export const SkoFyApi = {
 
     /** Set or update password for the logged-in user. currentPassword is
      * required when actually changing an existing password (not needed for
-     * first-time setup, e.g. right after registration). */
-    setPassword: async (password: string, currentPassword?: string) =>
-      request('/auth/set-password', {
+     * first-time setup, e.g. right after registration). A real change
+     * revokes the calling session's own token server-side (along with every
+     * other device's, as a security measure) and returns a fresh pair in
+     * its place — stored here so the user isn't immediately bounced to
+     * "Signed Out" by the very change they just made. */
+    setPassword: async (password: string, currentPassword?: string) => {
+      const data = await request<{
+        message: string;
+        tokens?: { access_token: string; refresh_token: string };
+      }>('/auth/set-password', {
         method: 'POST',
         body: JSON.stringify({ password, current_password: currentPassword }),
-      }),
+      });
+      if (data.tokens) {
+        await TokenStore.setTokens(data.tokens.access_token, data.tokens.refresh_token);
+      }
+      return data;
+    },
 
     /**
      * Forgot password, step 1 — separate from sendOTP (shared with login/
@@ -387,6 +503,23 @@ export const SkoFyApi = {
 
     updateProfile: async (data: { name?: string; email?: string; id_number?: string; id_document_url?: string; profile_image_url?: string }) =>
       request('/customers/me', { method: 'PATCH', body: JSON.stringify(data) }),
+
+    /** Providers this customer has booked more than once, most-booked first
+     * — Repeat Provider dashboard feature (find/re-book someone you've used
+     * before, instead of needing their number saved off-platform). */
+    getRepeatProviders: async (): Promise<Array<{
+      provider_id: string;
+      name: string;
+      profile_image_url: string | null;
+      profession: string | null;
+      avg_rating: number;
+      is_identity_verified: boolean;
+      // Set False the moment this provider is hired onto any job, True
+      // again on completion — a reliable "can you book them right now"
+      // signal, not a manual online/offline toggle.
+      is_available: boolean;
+      jobs_with_you_count: number;
+    }>> => request('/customers/me/repeat-providers'),
   },
 
   // ── Dashboard ─────────────────────────────────────────────────────────────
@@ -553,6 +686,10 @@ export const SkoFyApi = {
       comment?: string;
     }) => request(`/jobs/${jobId}/review`, { method: 'POST', body: JSON.stringify(review) }),
 
+    // Finished jobs (completed or disputed) the customer hasn't rated yet.
+    pendingRatings: async (): Promise<{ job_id: string; title: string; counterpart_name: string; status: string }[]> =>
+      request('/jobs/pending-ratings') as any,
+
     broadcast: async (jobId: string) =>
       request(`/jobs/${jobId}/broadcast`, { method: 'POST' }),
 
@@ -578,9 +715,25 @@ export const SkoFyApi = {
     /** Creates the job-cost escrow for whatever amount was actually agreed
      * (the invoice, or a counter-offer) — call once invoice.status is
      * ACCEPTED, before presenting the PaymentSheet. */
-    payInvoice: async (jobId: string): Promise<{
+    payInvoice: async (jobId: string, offerCode?: string): Promise<{
       requires_payment: boolean; client_secret: string | null; payment_intent_id: string | null; amount: number;
-    }> => request(`/jobs/${jobId}/invoice/pay`, { method: 'POST' }),
+    } & Partial<CheckoutBreakdown>> => request(`/jobs/${jobId}/invoice/pay`, {
+      method: 'POST',
+      body: JSON.stringify({ offer_code: offerCode ?? null }),
+    }),
+
+    /** Offers the customer can use on this invoice, each with its discount. */
+    invoiceOffers: async (jobId: string): Promise<CheckoutOffer[]> =>
+      request(`/jobs/${jobId}/invoice/offers`) as any,
+
+    /** What the customer would pay with (or without) a code — nothing is
+     * charged. Rejects with the reason if the code can't be used. */
+    previewInvoicePayment: async (jobId: string, offerCode?: string): Promise<CheckoutBreakdown & {
+      offer: { code: string; title: string } | null;
+    }> => request(`/jobs/${jobId}/invoice/preview`, {
+      method: 'POST',
+      body: JSON.stringify({ offer_code: offerCode ?? null }),
+    }) as any,
 
     /** Confirms the job-cost payment landed and starts the job. Self-heals
      * against Stripe directly if the webhook hasn't arrived yet. */
@@ -646,10 +799,12 @@ export const SkoFyApi = {
   // No WebSocket for this one (unlike job chat above) — screens polling for
   // new admin replies do so on a plain interval.
   supportTickets: {
-    create: async (subject: string, message: string, jobId?: string) =>
+    // openingIsSystem: the message is an automatic note (e.g. which FAQs were
+    // viewed), not something the user typed — shown as from support.
+    create: async (subject: string, message: string, jobId?: string, openingIsSystem = false) =>
       request('/support-tickets', {
         method: 'POST',
-        body: JSON.stringify({ subject, message, job_id: jobId }),
+        body: JSON.stringify({ subject, message, job_id: jobId, opening_is_system: openingIsSystem }),
       }),
     list: async () => request('/support-tickets'),
     get: async (ticketId: string) => request(`/support-tickets/${ticketId}`),
@@ -739,7 +894,7 @@ export const SkoFyApi = {
       body: JSON.stringify({ images, description }),
     }) as any,
 
-    voiceChat: async (messages: { role: string; content: string }[]): Promise<{
+    voiceChat: async (messages: { role: string; content: string }[], language?: string): Promise<{
       reply: string;
       is_complete: boolean;
       job_data: {
@@ -763,7 +918,7 @@ export const SkoFyApi = {
       ask_photo: boolean;
     }> => request('/ai/voice-chat', {
       method: 'POST',
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify({ messages, ...(language ? { language } : {}) }),
     }) as any,
 
     // language: an ISO-639-1 code (e.g. "en", "te") echoed back from a PRIOR
@@ -820,6 +975,12 @@ export const SkoFyApi = {
   },
 
   // ── Job rating status ─────────────────────────────────────────────────────
+  calls: {
+    /** STUN/TURN servers for in-app calls, with short-lived credentials for
+     * Dodorez's own relay (see backend app/services/ice_servers.py). */
+    iceServers: async (): Promise<RTCIceServerConfig[]> => request('/calls/ice-servers') as any,
+  },
+
   ratingStatus: {
     get: async (jobId: string): Promise<{ customer_has_rated: boolean; provider_has_rated: boolean }> =>
       request(`/jobs/${jobId}/rating-status`),

@@ -100,47 +100,6 @@ function timeAgo(ts: number): string {
   return `${Math.floor(diff / 3600)}h ago`;
 }
 
-function makeDummyProviders(lat: number, lng: number): NearbyProvider[] {
-  const now = Date.now();
-  return [
-    {
-      provider_id: 'dummy-1', name: 'Marcus Johnson', profession: 'Plumber',
-      avg_rating: 4.8, jobs_completed: 127, hci_score: 0.9, hci_confidence: 95, is_identity_verified: true, distance_km: 2.1,
-      is_available: true, profile_image_url: null,
-      lat: lat + 0.012, lng: lng + 0.008,
-      last_seen: now - 120_000, skills: ['Plumbing', 'Pipe Repair', 'Leak Fix'],
-    },
-    {
-      provider_id: 'dummy-2', name: 'Sarah Chen', profession: 'Electrician',
-      avg_rating: 4.9, jobs_completed: 89, hci_score: 0.95, hci_confidence: 90, is_identity_verified: true, distance_km: 3.4,
-      is_available: true, profile_image_url: null,
-      lat: lat - 0.008, lng: lng + 0.015,
-      last_seen: now - 45_000, skills: ['Wiring', 'Panel Upgrade', 'Smart Home'],
-    },
-    {
-      provider_id: 'dummy-3', name: 'David Park', profession: 'Handyman',
-      avg_rating: 4.6, jobs_completed: 203, hci_score: 0.82, hci_confidence: 100, is_identity_verified: true, distance_km: 1.8,
-      is_available: false, profile_image_url: null,
-      lat: lat + 0.005, lng: lng - 0.012,
-      last_seen: now - 300_000, skills: ['General Repairs', 'Assembly', 'Painting'],
-    },
-    {
-      provider_id: 'dummy-4', name: 'Priya Sharma', profession: 'House Cleaner',
-      avg_rating: 5.0, jobs_completed: 2, hci_score: 0.98, hci_confidence: 22, is_identity_verified: true, distance_km: 4.2,
-      is_available: true, profile_image_url: null,
-      lat: lat - 0.015, lng: lng - 0.009,
-      last_seen: now - 20_000, skills: ['Deep Clean', 'Move-in/out', 'Laundry'],
-    },
-    {
-      provider_id: 'dummy-5', name: 'James Rivera', profession: 'HVAC Tech',
-      avg_rating: 4.7, jobs_completed: 74, hci_score: 0.88, hci_confidence: 78, is_identity_verified: true, distance_km: 5.1,
-      is_available: false, profile_image_url: null,
-      lat: lat + 0.018, lng: lng - 0.004,
-      last_seen: now - 480_000, skills: ['AC Repair', 'Furnace', 'Duct Work'],
-    },
-  ];
-}
-
 export default function ProviderMapScreen() {
   const insets = useSafeAreaInsets();
   // Dashboard already has a real fix by the time you tap "Providers Near
@@ -154,17 +113,10 @@ export default function ProviderMapScreen() {
     return Number.isFinite(lat) && Number.isFinite(lng) ? { latitude: lat, longitude: lng } : null;
   }, []);
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(initialCoords);
-  // Kept separate, not one-replaces-the-other: dummy pins make the map usable
-  // for demos when only one or two real providers are registered, while real
-  // ones are fetched live so a real device can be direct-booked/notified for
-  // testing. Merged (real first) into `providers` below for everything else
-  // in this screen to consume unchanged.
-  const [dummyProviders, setDummyProviders] = useState<NearbyProvider[]>([]);
-  const [realProviders, setRealProviders] = useState<NearbyProvider[]>([]);
-  const providers = useMemo(() => {
-    const seen = new Set(realProviders.map(p => p.provider_id));
-    return [...realProviders, ...dummyProviders.filter(p => !seen.has(p.provider_id))];
-  }, [realProviders, dummyProviders]);
+  // Real providers only — hardcoded demo pins used to be merged in here, but
+  // they had no backend record, so their profile and "Add to request" both
+  // failed. Demo data now lives in the database instead.
+  const [providers, setProviders] = useState<NearbyProvider[]>([]);
   const [selected, setSelected] = useState<NearbyProvider | null>(null);
   const [region, setRegion] = useState<MapRegion | null>(null);
   const [voiceVisible, setVoiceVisible] = useState(false);
@@ -182,26 +134,25 @@ export default function ProviderMapScreen() {
   const regionDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Shared by the initial load, the 30s poll, region-change, and manual
-  // refresh — always sets (not merges with) realProviders, since it's already
-  // kept separate from dummyProviders and each call is a full fresh snapshot.
+  // refresh — always sets (not merges with) the list, since each call is a
+  // full fresh snapshot.
   const fetchRealProviders = useCallback(async (lat: number, lng: number, radiusKm: number) => {
     try {
       const data = await SkoFyApi.dashboard.getNearbyProviders(lat, lng, radiusKm, true);
       const real = (data as any[]).filter(p => p.lat != null && p.lng != null)
         .map(p => ({ ...p, last_seen: Date.now(), skills: [] })) as NearbyProvider[];
-      setRealProviders(real);
+      setProviders(real);
     } catch {}
   }, []);
 
-  // Get location + seed dummy providers immediately, and kick off the first
-  // real fetch right away too — previously this waited for the first 30s
-  // poll tick, so a real registered provider wouldn't show up for a while.
+  // Get location and kick off the first fetch right away — previously this
+  // waited for the first 30s poll tick, so a registered provider wouldn't
+  // show up for a while.
   useEffect(() => {
     // Already have a real fix passed in from the dashboard — show the map
     // with it right away instead of blocking on a fresh GPS read, then
     // quietly refine in the background once a more precise fix comes in.
     if (initialCoords) {
-      setDummyProviders(makeDummyProviders(initialCoords.latitude, initialCoords.longitude));
       fetchRealProviders(initialCoords.latitude, initialCoords.longitude, 40);
       mapRef.current?.animateToRegion(
         { latitude: initialCoords.latitude, longitude: initialCoords.longitude, latitudeDelta: 0.06, longitudeDelta: 0.06 },
@@ -222,7 +173,6 @@ export default function ProviderMapScreen() {
         const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
         setLocation(coords);
-        setDummyProviders(makeDummyProviders(coords.latitude, coords.longitude));
         fetchRealProviders(coords.latitude, coords.longitude, 40);
         mapRef.current?.animateToRegion(
           { latitude: coords.latitude, longitude: coords.longitude, latitudeDelta: 0.06, longitudeDelta: 0.06 },
@@ -240,8 +190,8 @@ export default function ProviderMapScreen() {
     return () => clearInterval(t);
   }, []);
 
-  // 30s polling — keeps realProviders fresh (last_seen, availability, new
-  // registrations); dummyProviders are untouched by this
+  // 30s polling — keeps providers fresh (last_seen, availability, new
+  // registrations)
   useEffect(() => {
     if (!location) return;
     const interval = setInterval(() => {
@@ -293,7 +243,6 @@ export default function ProviderMapScreen() {
   const refresh = useCallback(async () => {
     if (isRefreshing || !location) return;
     setIsRefreshing(true);
-    setDummyProviders(makeDummyProviders(location.latitude, location.longitude));
     const radiusKm = region ? (region.latitudeDelta * 111) / 2 : 40;
     await fetchRealProviders(location.latitude, location.longitude, radiusKm);
     setIsRefreshing(false);
