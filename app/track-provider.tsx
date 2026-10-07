@@ -35,7 +35,7 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { SlideInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RatingModal, RatingDimensions } from '@/components/ui/rating-modal';
-import { markRatingSkipped } from '@/services/ratingReminders';
+import { isRatingSkipped, markRatingSkipped, markRatingSubmitted } from '@/services/ratingReminders';
 import { CheckoutSheet } from '@/components/checkout-sheet';
 import { useHirePayment } from '@/hooks/use-hire-payment';
 
@@ -426,7 +426,7 @@ export default function TrackProviderScreen() {
         if (t.job_status === 'COMPLETED' && !hasShownCompletionRef.current) {
           hasShownCompletionRef.current = true;
           setIsCompleted(true);
-          setShowRatingModal(true);
+          if (!isRatingSkipped(jobId)) setShowRatingModal(true);
         }
         // Pick up the provider cancelling from their own app — they need
         // to see why, not just find themselves bounced back silently.
@@ -750,11 +750,14 @@ export default function TrackProviderScreen() {
     // Throws on failure — RatingModal awaits this and shows the error
     // inline instead of silently closing as if it succeeded.
     await SkoFyApi.jobs.submitReview(jobId, { ...ratings, comment });
+    markRatingSubmitted(jobId);
   };
 
   const handleRatingModalClose = () => {
     setShowRatingModal(false);
-    router.replace('/(tabs)/home' as any);
+    // Back to the existing Home, not a new copy of it stacked on top — the
+    // old one underneath could still be holding its own rating reminder.
+    router.dismissTo('/(tabs)/home' as any);
   };
 
   const handleCompleteJob = async () => {

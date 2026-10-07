@@ -323,6 +323,8 @@ export default function HomeScreen() {
 
   // ── Voice assistant state ──────────────────────────────────────────────────
   const [voiceModalVisible, setVoiceModalVisible] = useState(false);
+  // "Book again": the voice booking sends the job to this one provider only.
+  const [rebookProvider, setRebookProvider] = useState<{ id: string; name: string; profession: string | null } | null>(null);
   const [postMode, setPostMode] = useState<'voice' | 'manual' | 'quick' | 'pickupdrop'>('manual');
   const [pendingVoiceLat, setPendingVoiceLat] = useState<number | null>(null);
   const [pendingVoiceLng, setPendingVoiceLng] = useState<number | null>(null);
@@ -887,6 +889,15 @@ export default function HomeScreen() {
   };
 
   const handleVoiceTrigger = () => {
+    setRebookProvider(null);
+    setPostMode('voice');
+    setIsLocationModalVisible(true);
+  };
+
+  // Same voice booking (location, then describe the job), sent straight to
+  // a provider the customer has used before instead of to everyone nearby.
+  const handleBookAgain = (p: RegularProvider) => {
+    setRebookProvider({ id: p.provider_id, name: p.name, profession: p.profession ?? null });
     setPostMode('voice');
     setIsLocationModalVisible(true);
   };
@@ -1253,7 +1264,7 @@ export default function HomeScreen() {
   const renderRegularProvidersSection = () => regularProviders.length > 0 && (
     <View style={styles.dealsSection}>
       <View style={styles.dealsSectionHeader}>
-        <ThemedText style={[styles.sectionLabel, { marginBottom: 0 }]}>Your Regular Providers</ThemedText>
+        <ThemedText style={[styles.sectionLabel, { marginBottom: 0 }]}>Book Again</ThemedText>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dealsList}>
         {regularProviders.map((p) => (
@@ -1313,6 +1324,15 @@ export default function HomeScreen() {
                 <ShieldCheck size={12} color="#10B981" style={{ marginLeft: 6 }} />
               )}
             </View>
+            <TouchableOpacity
+              style={styles.regularProviderBookBtn}
+              activeOpacity={0.8}
+              onPress={() => handleBookAgain(p)}
+              accessibilityRole="button"
+              accessibilityLabel={`Book ${p.name} again`}
+            >
+              <ThemedText style={styles.regularProviderBookBtnText}>Book again</ThemedText>
+            </TouchableOpacity>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -1958,12 +1978,13 @@ export default function HomeScreen() {
 
       <VoicePostModal
         visible={voiceModalVisible}
-        onClose={() => { setVoiceModalVisible(false); setPreselectedProfession(''); }}
+        onClose={() => { setVoiceModalVisible(false); setPreselectedProfession(''); setRebookProvider(null); }}
         lat={pendingVoiceLat}
         lng={pendingVoiceLng}
         address={pendingVoiceAddress}
         initialProfession={preselectedProfession || undefined}
-        onJobPosted={() => { setVoiceModalVisible(false); setPreselectedProfession(''); if (location) refreshDashboard(location.coords.latitude, location.coords.longitude); }}
+        targetProvider={rebookProvider ?? undefined}
+        onJobPosted={() => { setVoiceModalVisible(false); setPreselectedProfession(''); setRebookProvider(null); if (location) refreshDashboard(location.coords.latitude, location.coords.longitude); }}
         onFallbackToManual={() => {
           router.push({ pathname: '/post-requirement/step1', params: { selectedAddress: pendingVoiceAddress, lat: pendingVoiceLat?.toString() ?? '', lng: pendingVoiceLng?.toString() ?? '' } });
         }}
@@ -2199,6 +2220,18 @@ function makeStyles(t: typeof Colors.light) {
     fontFamily: Fonts.poppins,
     color: '#6B7280',
     marginBottom: 6,
+  },
+  regularProviderBookBtn: {
+    marginTop: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#FFCE48',
+    alignItems: 'center',
+  },
+  regularProviderBookBtnText: {
+    fontSize: 12.5,
+    fontFamily: Fonts.poppinsSemiBold,
+    color: '#111827',
   },
   regularProviderStatsRow: {
     flexDirection: 'row',

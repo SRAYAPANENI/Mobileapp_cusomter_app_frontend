@@ -1,6 +1,7 @@
 import { RatingDimensions, RatingModal } from '@/components/ui/rating-modal';
 import { SkoFyApi } from '@/services/api';
-import { markRatingSkipped, nextPendingRating, PendingRating } from '@/services/ratingReminders';
+import { isRatingSkipped, markRatingSkipped, markRatingSubmitted, nextPendingRating, PendingRating } from '@/services/ratingReminders';
+import { useIsFocused } from '@react-navigation/native';
 import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 
@@ -15,6 +16,10 @@ import React, { useCallback, useState } from 'react';
  */
 export function RatingReminder() {
   const [pending, setPending] = useState<PendingRating | null>(null);
+  // A Modal shows over everything even when its screen isn't the one on top
+  // — a reminder loaded by a screen further down the stack stayed visible
+  // over the tracking screen's own rating sheet: two rating popups at once.
+  const isFocused = useIsFocused();
 
   useFocusEffect(
     useCallback(() => {
@@ -24,10 +29,12 @@ export function RatingReminder() {
     }, [])
   );
 
-  if (!pending) return null;
+  // Answered on another screen since this one loaded it.
+  if (!pending || !isFocused || isRatingSkipped(pending.job_id)) return null;
 
   const submit = async (ratings: RatingDimensions, comment: string) => {
     await SkoFyApi.jobs.submitReview(pending.job_id, { ...ratings, comment });
+    markRatingSubmitted(pending.job_id);
   };
 
   return (

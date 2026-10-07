@@ -8,18 +8,23 @@ export interface PendingRating {
   status: string;
 }
 
-// Ratings dismissed with "Maybe later" during this app session. Kept in
-// memory on purpose: a skipped rating comes back the next time the app is
-// opened (until it's submitted), but skipping it on one screen doesn't make
-// the next screen ask again straight away.
-const skippedThisSession = new Set<string>();
+// Ratings answered during this app session — skipped with "Maybe later" or
+// submitted. Kept in memory on purpose: a skipped rating comes back the next
+// time the app is opened (until it's submitted), but answering it on one
+// screen must stop every other screen asking again — several screens (the
+// tracking screen, the job chat, the home reminder) can each ask.
+const handledThisSession = new Set<string>();
 
 export function markRatingSkipped(jobId: string) {
-  skippedThisSession.add(jobId);
+  handledThisSession.add(jobId);
+}
+
+export function markRatingSubmitted(jobId: string) {
+  handledThisSession.add(jobId);
 }
 
 export function isRatingSkipped(jobId: string): boolean {
-  return skippedThisSession.has(jobId);
+  return handledThisSession.has(jobId);
 }
 
 /** The newest finished job (completed or disputed) the customer still owes a

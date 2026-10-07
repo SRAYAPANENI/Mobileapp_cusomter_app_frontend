@@ -41,7 +41,7 @@ import {
 } from 'react-native-webrtc';
 import { Audio } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { isRatingSkipped, markRatingSkipped } from '@/services/ratingReminders';
+import { isRatingSkipped, markRatingSkipped, markRatingSubmitted } from '@/services/ratingReminders';
 import { RTCIceServerConfig, SkoFyApi, TokenStore, getFreshAccessToken } from '@/services/api';
 import { CallOverlay } from '@/components/call-overlay';
 import InCallManager from 'react-native-incall-manager';
@@ -1018,6 +1018,7 @@ export default function ChatScreen() {
                       communication_rating: ratings.communication,
                       comment: ratingComment,
                     });
+                    markRatingSubmitted(jobId);
                     setRatingVisible(false);
                   } catch {
                     appAlert.show('error', 'Error', 'Failed to submit rating. Please try again.');
