@@ -22,7 +22,7 @@ import Svg, { Circle, Defs, RadialGradient, Stop, G, Ellipse } from 'react-nativ
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckCircle, TriangleAlert as AlertTriangle, X, Mic, Square, Camera, ImageIcon, Play, Languages } from 'lucide-react-native';
 import { Fonts } from '@/constants/theme';
-import { SkoFyApi } from '@/services/api';
+import { SkoFyApi, JobShapePayload } from '@/services/api';
 
 // Every AI call failure used to be shown as "Check your internet/connection"
 // regardless of actual cause — including a real 429 rate limit (a very
@@ -60,6 +60,8 @@ interface JobData {
   urgency: string;
   scheduled_at: string | null;
   notes: string;
+  shape?: JobShapePayload;
+  summary?: string;
 }
 
 interface Props {
@@ -182,12 +184,13 @@ function isPickupDropoffIntent(text: string): boolean {
   return PICKUP_DROPOFF_PHRASE_RE.test(text) || (FETCH_WORD_RE.test(text) && DELIVER_WORD_RE.test(text));
 }
 
-// Must mirror the PROFESSIONS list in skofy-backend/app/api/v1/ai.py
-const KNOWN_PROFESSIONS = new Set([
-  'Plumber', 'Electrician', 'AC Technician', 'Carpenter', 'Painter',
-  'Cleaner', 'Pest Control', 'Gardener', 'Security/CCTV', 'Mason',
-  'Handyman', 'Appliance Repair', 'Welder', 'Interior Designer',
-]);
+/** The assistant's shape, with the venue set by the customer's On-site /
+ * Remote choice on the confirm card (the server then derives service_mode). */
+function shapeForPosting(shape: JobShapePayload | undefined, serviceMode: 'ON_SITE' | 'REMOTE'): JobShapePayload {
+  const base: JobShapePayload = shape ?? { venue: 'CUSTOMER_PLACE', timing: 'ONCE', custody: 'NONE', pricing_unit: 'QUOTE' };
+  if (serviceMode === 'REMOTE') return { ...base, venue: 'ONLINE' };
+  return base.venue === 'ONLINE' ? { ...base, venue: 'CUSTOMER_PLACE' } : base;
+}
 
 export function VoicePostModal({
   visible, onClose, lat, lng, address,
@@ -721,16 +724,7 @@ export function VoicePostModal({
     // onPickupDropoffDetected simply not being wired for that entry point
     // (provider-map.tsx) — this needs to hold even if that ever changes.
     if (isFirstCustomerUtterance && !targetProvider && onPickupDropoffDetected && isPickupDropoffIntent(text)) {
-      const userMsg: ChatMessage = { role: 'user', content: text };
-      const handoffMsg: ChatMessage = {
-        role: 'assistant',
-        content: "That sounds like a pickup and delivery job — let me take you to our quick Pickup & Drop flow instead.",
-      };
-      setMessages([userMsg, handoffMsg]);
-      speakText(handoffMsg.content).then(() => setTimeout(() => {
-        onClose();
-        onPickupDropoffDetected();
-      }, 400));
+      handOffToPickupFlow([{ role: 'user', content: text }]);
       return;
     }
 
@@ -741,6 +735,21 @@ export function VoicePostModal({
     const next = [...messagesRef.current, userMsg];
     setMessages(next);
     sendToBackend(next);
+  };
+
+  // Pickups need a verified pickup point, collected by the dedicated Pickup &
+  // Drop flow — used when the first thing the customer says sounds like one,
+  // and when the assistant's job turns out to be one.
+  const handOffToPickupFlow = (history: ChatMessage[]) => {
+    const handoffMsg: ChatMessage = {
+      role: 'assistant',
+      content: "That sounds like a pickup and delivery job — let me take you to our quick Pickup & Drop flow instead.",
+    };
+    setMessages([...history, handoffMsg]);
+    speakText(handoffMsg.content).then(() => setTimeout(() => {
+      onClose();
+      onPickupDropoffDetected?.();
+    }, 400));
   };
 
   const handleBookAlternative = () => {
@@ -794,24 +803,25 @@ export function VoicePostModal({
       // restart the mic, all for a conversation the user believes they
       // already left.
       if (!isOpenRef.current) return;
-      if (res.is_complete && res.job_data && KNOWN_PROFESSIONS.has(res.job_data.profession ?? '')) {
+      if (res.is_complete && res.job_data?.shape?.venue === 'ROUTE' && !targetProvider && onPickupDropoffDetected) {
+        // Pickups need a verified pickup point, which the dedicated
+        // Pickup & Drop flow collects — hand over to it.
+        handOffToPickupFlow(messagesRef.current);
+      } else if (res.is_complete && res.job_data) {
         setJobData(res.job_data);
+        setServiceMode(res.job_data.shape?.venue === 'ONLINE' ? 'REMOTE' : 'ON_SITE');
         const closing = getClosingLine(history);
         setPhase('speaking');
         await speakText(closing);
         setPhase('confirm');
       } else {
-        // Treat an unrecognised profession the same as a coming-soon reply
-        const effectiveReply = (res.is_complete && !KNOWN_PROFESSIONS.has(res.job_data?.profession ?? ''))
-          ? `We're adding ${res.job_data?.profession ?? 'that service'} to Dodorez soon! Can I help you with something else?`
-          : res.reply;
-        const isComingSoon = /we'?re adding .+ to (?:dodorez|skofy) soon|not yet available on (?:dodorez|skofy)/i.test(effectiveReply);
+        // The server says when a request is something Dodorez can't take yet,
+        // and which real profession (if any) to offer instead — no guessing
+        // from the reply's wording, which is in the customer's language.
+        const effectiveReply = res.reply;
+        const isComingSoon = !!res.coming_soon;
         if (isComingSoon) {
-          // Extract which alternative profession the AI offered so the Yes button can name it explicitly
-          const mentioned = [...KNOWN_PROFESSIONS].find(p =>
-            effectiveReply.toLowerCase().includes(p.toLowerCase())
-          );
-          alternativeProfessionRef.current = mentioned ?? '';
+          alternativeProfessionRef.current = res.alternative_profession ?? '';
         }
         const aiMsg: ChatMessage = { role: 'assistant', content: effectiveReply, isComingSoon };
         setMessages(prev => [...prev, aiMsg]);
@@ -894,7 +904,7 @@ export function VoicePostModal({
         target_provider_id: targetProvider?.id,
         direct_request_queue: queuedProviders?.length ? queuedProviders.map(p => p.id) : undefined,
         posted_via: 'VOICE',
-        service_mode: serviceMode,
+        shape: shapeForPosting(jobData.shape, serviceMode),
       });
       setPhase('success');
       setTimeout(() => { onJobPosted?.(); onClose(); }, 1600);
@@ -1144,6 +1154,15 @@ export function VoicePostModal({
                   <Text style={s.confirmValue}>{formatScheduledAt(jobData!.scheduled_at)}</Text>
                 </View>
 
+                {/* The summary describes the assistant's understanding — hidden
+                    once the customer switches On-site / Remote away from it. */}
+                {!!jobData!.summary && (jobData!.shape?.venue === 'ONLINE') === (serviceMode === 'REMOTE') && (
+                  <View style={s.confirmRow}>
+                    <Text style={s.confirmLabel}>How</Text>
+                    <Text style={s.confirmValue} numberOfLines={3}>{jobData!.summary}</Text>
+                  </View>
+                )}
+
                 {serviceMode !== 'REMOTE' && (
                   <View style={s.confirmRow}>
                     <Text style={s.confirmLabel}>Location</Text>
@@ -1155,7 +1174,7 @@ export function VoicePostModal({
                     distance matching at all, e.g. hiring a developer). Hidden
                     for a direct booking (target provider already fixed by
                     location/profession before this modal ever opened). */}
-                {!targetProvider && (
+                {!targetProvider && (jobData!.shape?.custody ?? 'NONE') === 'NONE' && (
                   <>
                     <View style={s.confirmRow}>
                       <Text style={s.confirmLabel}>Service Type</Text>

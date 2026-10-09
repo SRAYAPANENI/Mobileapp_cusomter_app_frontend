@@ -272,6 +272,19 @@ async function _refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
+// ─── JOB SHAPE ───────────────────────────────────────────────────────────────
+// Mirrors the backend's JobShapeIn (app/schemas/job.py).
+export interface JobShapePayload {
+  venue: 'CUSTOMER_PLACE' | 'PROVIDER_PLACE' | 'ROUTE' | 'ONLINE';
+  timing: 'ONCE' | 'WINDOW' | 'STAY' | 'RECURRING';
+  custody: 'NONE' | 'ITEM' | 'LIVING_BEING' | 'HOME';
+  pricing_unit: 'VISIT' | 'HOUR' | 'DAY' | 'NIGHT' | 'ITEM' | 'FIXED' | 'QUOTE';
+  ends_at?: string | null;
+  recurrence?: Record<string, unknown> | null;
+  requirements?: string[];
+  details?: Record<string, string>;
+}
+
 // ─── TOKEN FOR LIVE CONNECTIONS ──────────────────────────────────────────────
 // request() refreshes on a 401, but a WebSocket gets no 401 — the server just
 // closes it (4401) when the token in the auth message has expired (access
@@ -554,6 +567,9 @@ export const SkoFyApi = {
     create: async (payload: {
       title: string;
       description: string;
+      // What kind of situation the job is (docs/JOB_SHAPE_DESIGN.md). When
+      // sent, the server derives job_type/service_mode from it.
+      shape?: JobShapePayload;
       skill_id?: string;
       skill_ids?: string[];
       address_id?: string;
@@ -908,7 +924,15 @@ export const SkoFyApi = {
         urgency: string;
         scheduled_at: string | null;
         notes: string;
+        // The job's shape, checked server-side, plus a plain-language summary
+        // of it ("At your place · one visit · price agreed after they see the job").
+        shape?: JobShapePayload;
+        summary?: string;
       } | null;
+      // The customer asked for something Dodorez can't take yet. The app
+      // offers `alternative_profession` (a real catalogue profession, or null).
+      coming_soon?: boolean;
+      alternative_profession?: string | null;
       // True on the turn where the assistant states its own diagnosis
       // (profession/skill inferred from the problem) and asks the customer
       // to confirm it, or asks whether they'd like to add a photo/video —
