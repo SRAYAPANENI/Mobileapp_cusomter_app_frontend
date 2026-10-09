@@ -6,7 +6,7 @@ import { usePostRequirement } from '@/context/PostRequirementContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SkoFyApi } from '@/services/api';
 import { Image } from 'expo-image';
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -122,20 +122,25 @@ export default function DescribeProblemScreen() {
           [{ resize: { width: 512 } }],
           { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
         );
-        const b64 = await FileSystem.readAsStringAsync(resized.uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
+        // expo-file-system 19's File API — the old readAsStringAsync /
+        // EncodingType throw at runtime in this version, which made every
+        // analysis with a photo fail.
+        const b64 = await new File(resized.uri).base64();
         base64Images.push(b64);
       }
 
       const result = await SkoFyApi.ai.analyzeProblem(base64Images, data.description);
       setAiResult(result);
 
-      // Pre-fill context so step2 starts with AI suggestions
+      // Pre-fill context so step2 starts with AI suggestions. An empty
+      // profession means the suggestion wasn't in the catalogue — keep
+      // whatever is selected and let the customer choose.
       updateData({
-        profession: result.profession,
-        skills: result.skills,
+        ...(result.profession ? { profession: result.profession, skills: result.skills } : {}),
         jobType: result.urgency === 'Urgent' ? 'Urgent' : 'Normal',
+        // Work that can be done remotely starts as Remote (no address, no
+        // distance limit); the customer can still switch on the summary.
+        serviceMode: result.venue === 'ONLINE' ? 'REMOTE' : 'ON_SITE',
       });
     } catch (e: any) {
       const msg = e?.message || '';

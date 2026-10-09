@@ -902,9 +902,13 @@ export const SkoFyApi = {
   ai: {
     analyzeProblem: async (images: string[], description: string): Promise<{
       problem_summary: string;
+      // '' when the suggestion wasn't a catalogue profession — the customer picks.
       profession: string;
       skills: string[];
       urgency: string;
+      // Where the work happens: ONLINE when it can be done remotely
+      // (websites, design, writing, online lessons), else CUSTOMER_PLACE.
+      venue?: 'CUSTOMER_PLACE' | 'ONLINE';
     }> => request('/ai/analyze-problem', {
       method: 'POST',
       body: JSON.stringify({ images, description }),
