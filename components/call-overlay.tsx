@@ -16,7 +16,9 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Defs, RadialGradient as SvgRadialGradient, Rect, Stop } from 'react-native-svg';
 
-export type CallState = 'idle' | 'connecting' | 'calling' | 'ringing' | 'connected';
+// 'ended': the call is over and the screen shows why (Declined, Busy, No
+// answer) for a moment before closing.
+export type CallState = 'idle' | 'connecting' | 'calling' | 'ringing' | 'connected' | 'ended';
 
 interface CallOverlayProps {
   callState: CallState;
@@ -25,6 +27,12 @@ interface CallOverlayProps {
   isMuted: boolean;
   isSpeakerOn: boolean;
   callDuration: number;
+  /** The other phone is ringing (the caller's "Calling…" becomes "Ringing…"). */
+  remoteRinging?: boolean;
+  /** The connection dropped and is being restored (network change). */
+  reconnecting?: boolean;
+  /** Why the call ended — shown while callState is 'ended'. */
+  endedLabel?: string;
   themeColors: typeof Colors.light;
   onAccept: () => void;
   onDecline: () => void;
@@ -107,7 +115,7 @@ function FloatingIcon({
 }
 
 export function CallOverlay({
-  callState, name, profileImage, isMuted, isSpeakerOn, callDuration, themeColors: _themeColors,
+  callState, name, profileImage, isMuted, isSpeakerOn, callDuration, remoteRinging, reconnecting, endedLabel, themeColors: _themeColors,
   onAccept, onDecline, onEnd, onToggleMute, onToggleSpeaker,
 }: CallOverlayProps) {
   if (callState === 'idle') return null;
@@ -115,9 +123,11 @@ export function CallOverlay({
   const isRingingOrCalling = callState === 'ringing' || callState === 'calling' || callState === 'connecting';
 
   const statusText =
+    callState === 'ended' ? (endedLabel || 'Call ended') :
     callState === 'connecting' ? 'Connecting…' :
     callState === 'ringing' ? 'Incoming call…' :
-    callState === 'calling' ? 'Calling…' :
+    callState === 'calling' ? (remoteRinging ? 'Ringing…' : 'Calling…') :
+    reconnecting ? 'Reconnecting…' :
     formatDuration(callDuration);
 
   return (
@@ -157,7 +167,9 @@ export function CallOverlay({
         <ThemedText style={styles.status}>{statusText}</ThemedText>
       </View>
 
-      {callState === 'connecting' ? (
+      {callState === 'ended' ? (
+        <View style={styles.incomingRow} />
+      ) : callState === 'connecting' ? (
         <View style={styles.incomingRow}>
           <View style={styles.actionGroup}>
             <TouchableOpacity style={[styles.circleBtn, { backgroundColor: '#EF4444' }]} onPress={onDecline}>

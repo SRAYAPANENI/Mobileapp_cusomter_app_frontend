@@ -1007,6 +1007,10 @@ export const SkoFyApi = {
     /** STUN/TURN servers for in-app calls, with short-lived credentials for
      * Dodorez's own relay (see backend app/services/ice_servers.py). */
     iceServers: async (): Promise<RTCIceServerConfig[]> => request('/calls/ice-servers') as any,
+    /** This phone is showing the incoming call — the caller's screen switches
+     * to "Ringing…". Used where there's no live socket (a push notification). */
+    ringing: async (jobId: string, callId: string) =>
+      request(`/calls/${jobId}/ringing`, { method: 'POST', body: JSON.stringify({ call_id: callId }) }),
   },
 
   ratingStatus: {

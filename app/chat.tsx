@@ -45,10 +45,14 @@ import { isRatingSkipped, markRatingSkipped, markRatingSubmitted } from '@/servi
 import { RTCIceServerConfig, SkoFyApi, TokenStore, getFreshAccessToken } from '@/services/api';
 import { CallOverlay } from '@/components/call-overlay';
 import InCallManager from 'react-native-incall-manager';
-import { cancelIncomingCallNotification, registerAcceptHandler, registerHangupHandler, registerMuteHandler, registerSpeakerHandler, setActiveChatJob, setChatCallActive, startOngoingCallNotification, stopOngoingCallNotification, updateOngoingCallControls } from '@/services/callManager';
+import { answerIosRing, cancelIncomingCallNotification, endIosCallSession, endIosRingForHangUp, markIosCallConnected, registerAcceptHandler, registerDeclineHandler, showIosIncomingCall, registerHangupHandler, registerMuteHandler, registerSpeakerHandler, setActiveChatJob, setChatCallActive, startIosOutgoingCall, startOngoingCallNotification, stopOngoingCallNotification, updateOngoingCallControls } from '@/services/callManager';
 
 // No-answer cutoff — like a real phone call, ringing/calling shouldn't go on forever.
-const CALL_TIMEOUT_MS = 45000;
+// The server ends an unanswered call after 45s and says why; this is only
+// the fallback if that message never arrives.
+const CALL_TIMEOUT_MS = 50000;
+// How long "Declined" / "Busy" / "No answer" stays on screen.
+const ENDED_SCREEN_MS = 1800;
 
 // Matches the backend's default page size — used to tell whether a fetched
 // page was "full" (there might be more behind it) or "short" (it's the end).
@@ -60,9 +64,9 @@ const MESSAGE_PAGE_SIZE = 50;
 // stuck on "Connecting…" forever with no offer ever arriving and no way out
 // (the back button is intentionally blocked while a call is active).
 const CONNECTING_TIMEOUT_MS = 15000;
-// A dropped connection (often a Wi-Fi ↔ mobile data switch) gets this long to
-// recover before the call is ended — it used to end on the first blip.
-const DISCONNECT_GRACE_MS = 10000;
+// A dropped connection (often a Wi-Fi ↔ mobile switch) is restarted (ICE
+// restart) and gets this long to come back before the call ends.
+const DISCONNECT_GRACE_MS = 20000;
 // Max wait for the TURN relay details before calling without them.
 const ICE_SERVERS_WAIT_MS = 3000;
 
@@ -87,7 +91,22 @@ function formatCallLogDuration(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-type CallState = 'idle' | 'connecting' | 'calling' | 'ringing' | 'connected';
+type CallState = 'idle' | 'connecting' | 'calling' | 'ringing' | 'connected' | 'ended';
+
+// Chat and calls are open only while the job is being done — the server
+// enforces the same rule (domain/job_contact.py). History stays readable.
+const CONTACT_OPEN_STATUSES = new Set(['ACCEPTED', 'INSPECTING', 'INVOICE_PENDING', 'IN_PROGRESS']);
+const CLOSED_TEXT = "This job is closed. Chat and calls are only available while a job is active — use Book again to work together again.";
+
+/** What the caller sees when the other side didn't pick up. */
+function endedLabelFor(reason: string | undefined, state: CallState): string | null {
+  if (state !== 'calling') return null;
+  if (reason === 'busy') return 'On another call';
+  if (reason === 'declined') return 'Declined';
+  if (reason === 'no_answer') return 'No answer';
+  if (reason === 'job_closed') return 'This job is closed';
+  return null;
+}
 
 // STUN alone failed for real cross-network testing (two different mobile
 // carriers, different cities) — calls rang/answered fine since that's just
@@ -105,7 +124,7 @@ type CallState = 'idle' | 'connecting' | 'calling' | 'ringing' | 'connected';
 const FALLBACK_ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 
 export default function ChatScreen() {
-  const { jobId, id, name: paramName, profileImage: paramProfileImage, profession: paramProfession, autoAnswer, autoCall, callId: callIdParam } = useLocalSearchParams<{
+  const { jobId, id, name: paramName, profileImage: paramProfileImage, profession: paramProfession, autoAnswer, autoCall, callId: callIdParam, returnOnEnd } = useLocalSearchParams<{
     jobId: string;
     id: string;
     name: string;
@@ -113,6 +132,7 @@ export default function ChatScreen() {
     profession: string;
     autoAnswer?: string;
     callId?: string;
+    returnOnEnd?: string;
     autoCall?: string;
   }>();
   // Notification-tap navigation (notifications.tsx) only passes jobId, not
@@ -179,7 +199,7 @@ export default function ChatScreen() {
   // handleAcceptCall directly from it would use the function (and the state
   // it closes over) from the render that set the handler up.
   const handleAcceptCallRef = useRef<() => void>(() => {});
-  const handleDeclineCallRef = useRef<() => void>(() => {});
+  const handleDeclineCallRef = useRef<(reason?: string) => void>(() => {});
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
@@ -206,7 +226,6 @@ export default function ChatScreen() {
   // call "connected" with no audio.
   const sentIceRef = useRef<any[]>([]);
   const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const ringbackSoundRef = useRef<Audio.Sound | null>(null);
   const ringtoneSoundRef = useRef<Audio.Sound | null>(null);
   const callTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // handleEndCall is redefined every render and reads callDuration/callState by
@@ -214,7 +233,7 @@ export default function ChatScreen() {
   // in an effect keyed only on [jobId] and so only ever sees the first render's
   // version. Dereferencing through this ref (kept current below) instead of
   // calling handleEndCall directly avoids logging a stale duration/connected state.
-  const handleEndCallRef = useRef<() => void>(() => {});
+  const handleEndCallRef = useRef<(reason?: string) => void>(() => {});
   // Same staleness concern as handleEndCallRef above, for the notification's
   // Mute/Speaker actions.
   const toggleMuteRef = useRef<() => void>(() => {});
@@ -225,6 +244,23 @@ export default function ChatScreen() {
   // re-render, e.g. an accidental double-tap) both see the same stale
   // 'idle' value and both place a call. This ref is updated synchronously.
   const callActionInFlightRef = useRef(false);
+  // null until loaded — treated as open meanwhile (the server still checks).
+  const [jobStatus, setJobStatus] = useState<string | null>(null);
+  const contactOpen = jobStatus === null || CONTACT_OPEN_STATUSES.has(jobStatus);
+  const refreshJobStatusRef = useRef<() => void>(() => {});
+  // "Ringing…" on the caller's screen once the other phone reports it.
+  const [remoteRinging, setRemoteRinging] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const reconnectingRef = useRef(false);
+  const [endedLabel, setEndedLabel] = useState('');
+  const endedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Only the caller restarts the connection after a network change, so
+  // both phones never renegotiate at once.
+  const isCallerRef = useRef(false);
+  const wasConnectedRef = useRef(false);
+  const restartIceRef = useRef<() => void>(() => {});
+  // The restart offer not yet answered — re-sent if the socket was down.
+  const restartOfferRef = useRef<{ sdp: string; type: string } | null>(null);
 
   // Rating modal — shown once per session when opening a COMPLETED job chat
   const [ratingVisible, setRatingVisible] = useState(false);
@@ -276,9 +312,11 @@ export default function ChatScreen() {
     useCallback(() => {
       if (jobId && socketOpen) setActiveChatJob(jobId);
       registerAcceptHandler(() => handleAcceptCallRef.current());
+      registerDeclineHandler(() => handleDeclineCallRef.current());
       return () => {
         setActiveChatJob(null);
         registerAcceptHandler(null);
+        registerDeclineHandler(null);
       };
     }, [jobId, socketOpen])
   );
@@ -345,16 +383,6 @@ export default function ChatScreen() {
     }
   };
 
-  const sendCallLogMessage = async (event: string, extra: Record<string, any> = {}) => {
-    if (!jobId) return;
-    try {
-      const sent: any = await SkoFyApi.chat.send(jobId, JSON.stringify({ event, ...extra }), 'SYSTEM');
-      setMessages(prev => [...prev, sent]);
-    } catch (err) {
-      console.error('Failed to send call log message:', err);
-    }
-  };
-
   /** False (nothing sent) while the socket is down or reconnecting. */
   const sendSignal = (payload: any): boolean => {
     const ws = wsRef.current;
@@ -366,7 +394,7 @@ export default function ChatScreen() {
   const cleanupCall = () => {
     Vibration.cancel();
     InCallManager.stopRingtone();
-    stopSound(ringbackSoundRef);
+    InCallManager.stopRingback();
     stopSound(ringtoneSoundRef);
     InCallManager.stop();
     clearCallTimeout();
@@ -375,7 +403,13 @@ export default function ChatScreen() {
     callIdRef.current = null;
     autoAnswerPendingRef.current = false;
     sentIceRef.current = [];
+    if (endedTimerRef.current) { clearTimeout(endedTimerRef.current); endedTimerRef.current = null; }
+    setRemoteRinging(false);
+    setReconnecting(false);
+    reconnectingRef.current = false;
+    restartOfferRef.current = null;
     if (jobId) stopOngoingCallNotification(jobId);
+    if (jobId) endIosCallSession(jobId);
     registerHangupHandler(null);
     registerMuteHandler(null);
     registerSpeakerHandler(null);
@@ -408,13 +442,18 @@ export default function ChatScreen() {
       const state = pc.connectionState;
       if (state === 'connected') {
         clearDisconnectTimer();
-      } else if (state === 'disconnected') {
-        clearDisconnectTimer();
-        disconnectTimerRef.current = setTimeout(() => handleEndCallRef.current(), DISCONNECT_GRACE_MS);
-      } else if (state === 'failed') {
-        // End it properly — call_end tells the other phone, which used to
-        // keep showing the call until its own connection noticed.
-        handleEndCallRef.current();
+        reconnectingRef.current = false;
+        setReconnecting(false);
+      } else if (state === 'disconnected' || state === 'failed') {
+        // Restart the connection on the new network instead of hanging up
+        // (it used to end 10s after the first blip). Ends only if it can't
+        // come back within the grace period — call_end then tells the other phone.
+        reconnectingRef.current = true;
+        setReconnecting(true);
+        restartIceRef.current();
+        if (!disconnectTimerRef.current) {
+          disconnectTimerRef.current = setTimeout(() => handleEndCallRef.current(), DISCONNECT_GRACE_MS);
+        }
       }
     });
     return pc;
@@ -422,6 +461,10 @@ export default function ChatScreen() {
 
   const handleStartCall = async () => {
     if (!jobId || callState !== 'idle' || callActionInFlightRef.current) return;
+    if (!contactOpen) {
+      appAlert.show('info', 'Job closed', CLOSED_TEXT);
+      return;
+    }
     // The offer travels over the socket — without it the other phone never
     // hears about the call, so don't play ringback to nobody.
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
@@ -429,6 +472,10 @@ export default function ChatScreen() {
       return;
     }
     callActionInFlightRef.current = true;
+    if (endedTimerRef.current) { clearTimeout(endedTimerRef.current); endedTimerRef.current = null; }
+    isCallerRef.current = true;
+    wasConnectedRef.current = false;
+    setRemoteRinging(false);
     callIdRef.current = newCallId();
     sentIceRef.current = [];
     try {
@@ -445,10 +492,19 @@ export default function ChatScreen() {
       outgoingOfferRef.current = { sdp: offer.sdp!, type: offer.type };
       sendSignal({ type: 'call_offer', sdp: offer.sdp, sdpType: offer.type });
       setCallState('calling');
-      playLoopingSound(ringbackSoundRef, require('@/assets/sounds/ringback.wav'));
-      sendCallLogMessage('call_started');
+      // Now, not after the next render: the server's "busy" can arrive first.
+      callStateRef.current = 'calling';
+      // Ringback through the call's own audio route (it used to play as
+      // media, quiet or from the wrong speaker once the phone was in call mode).
+      InCallManager.startRingback('_DTMF_');
+      // From the moment of dialing, not on connect: keeps Android from
+      // pausing the app while the other phone rings, so the callee's
+      // call_ready ("send me the call again") is still answered.
+      if (jobId) startOngoingCallNotification(jobId, name || 'Provider', 'calling');
+      registerHangupHandler(() => handleEndCallRef.current());
+      if (jobId) startIosOutgoingCall(jobId, name || 'Provider');
       clearCallTimeout();
-      callTimeoutRef.current = setTimeout(() => handleEndCall(), CALL_TIMEOUT_MS);
+      callTimeoutRef.current = setTimeout(() => handleEndCallRef.current('no_answer'), CALL_TIMEOUT_MS);
     } catch (err) {
       console.error('Failed to start call:', err);
       // Used to just say "check app permissions" with no way to act on it —
@@ -466,7 +522,10 @@ export default function ChatScreen() {
   const handleAcceptCall = async () => {
     const offer = incomingOfferRef.current;
     if (!offer) return;
+    if (jobId && answerIosRing(jobId)) return; // comes back here once CallKit has answered
     autoAnswerPendingRef.current = false;
+    isCallerRef.current = false;
+    wasConnectedRef.current = true;
     Vibration.cancel();
     InCallManager.stopRingtone();
     stopSound(ringtoneSoundRef);
@@ -496,6 +555,7 @@ export default function ChatScreen() {
       sendSignal({ type: 'call_answer', sdp: answer.sdp, sdpType: answer.type });
       setCallState('connected');
       if (jobId) startOngoingCallNotification(jobId, name || 'Provider');
+      if (jobId) markIosCallConnected(jobId);
       registerHangupHandler(() => handleEndCallRef.current());
       registerMuteHandler(() => toggleMuteRef.current());
       registerSpeakerHandler(() => toggleSpeakerRef.current());
@@ -510,21 +570,64 @@ export default function ChatScreen() {
     }
   };
 
-  const handleDeclineCall = () => {
+  // reason: 'no_answer' when it's our own ring timeout, not a decline. Typed
+  // loosely because the overlay's buttons pass their press event here.
+  const handleDeclineCall = (reason?: unknown) => {
     clearCallTimeout();
     if (jobId) cancelIncomingCallNotification(jobId);
-    sendSignal({ type: 'call_end' });
-    sendCallLogMessage('call_ended', { duration_seconds: 0, connected: false });
+    sendSignal({ type: 'call_end', ...(typeof reason === 'string' ? { reason } : {}) });
     cleanupCall();
   };
 
-  const handleEndCall = () => {
+  const refreshJobStatus = () => {
+    if (!jobId) return;
+    SkoFyApi.jobs.get(jobId)
+      .then((job: any) => { if (job?.status) setJobStatus(job.status); })
+      // No longer part of this job (e.g. it reopened to another provider).
+      .catch((err: any) => { if (err?.error_code === 'FORBIDDEN') setJobStatus('CLOSED'); });
+  };
+  refreshJobStatusRef.current = refreshJobStatus;
+  useEffect(() => { refreshJobStatus(); }, [jobId]);
+
+  const handleEndCall = (reason?: unknown) => {
     clearCallTimeout();
-    sendSignal({ type: 'call_end' });
-    sendCallLogMessage('call_ended', { duration_seconds: callDuration, connected: callState === 'connected' });
+    sendSignal({ type: 'call_end', ...(typeof reason === 'string' ? { reason } : {}) });
     cleanupCall();
   };
   handleEndCallRef.current = handleEndCall;
+
+  const restartIce = async () => {
+    const pc = peerConnectionRef.current;
+    if (!pc || !isCallerRef.current || callStateRef.current !== 'connected') return;
+    // One restart at a time: a pending one is just sent again (the socket
+    // may have been down when it was made — see onopen).
+    const pending = restartOfferRef.current;
+    if (pc.signalingState === 'have-local-offer' && pending) {
+      sendSignal({ type: 'call_renegotiate', sdp: pending.sdp, sdpType: pending.type });
+      return;
+    }
+    if (pc.signalingState !== 'stable') return;
+    try {
+      const offer = await pc.createOffer({ iceRestart: true } as any);
+      await pc.setLocalDescription(offer);
+      restartOfferRef.current = { sdp: offer.sdp!, type: offer.type };
+      sendSignal({ type: 'call_renegotiate', sdp: offer.sdp, sdpType: offer.type });
+    } catch (err) {
+      console.warn('ICE restart failed:', err);
+    }
+  };
+  restartIceRef.current = restartIce;
+
+  // Opened automatically for an incoming call from another screen: an
+  // unanswered call goes back to where the user was.
+  const prevCallStateRef = useRef<CallState>(callState);
+  useEffect(() => {
+    const prev = prevCallStateRef.current;
+    prevCallStateRef.current = callState;
+    if (returnOnEnd === 'true' && callState === 'idle' && prev !== 'idle' && !wasConnectedRef.current && router.canGoBack()) {
+      router.back();
+    }
+  }, [callState]);
 
   const toggleMute = () => {
     const track = localStreamRef.current?.getAudioTracks()[0];
@@ -615,6 +718,9 @@ export default function ChatScreen() {
         ws.send(JSON.stringify({ type: 'auth', token }));
         reconnectDelay = 1000;
         setSocketOpen(true);
+        // A network change often drops the socket and the call together —
+        // the restart couldn't be sent while it was down.
+        if (reconnectingRef.current) restartIceRef.current();
         // autoAnswer being set AT ALL (true or false) means this screen was
         // opened via a call notification action — the original offer was
         // sent while we had no socket listening, so it was lost; the caller
@@ -647,6 +753,7 @@ export default function ChatScreen() {
           const data = JSON.parse(event.data);
           if (data.type === 'chat_message') {
             setMessages(prev => [...prev, data.payload]);
+            if (data.payload?.message_type === 'SYSTEM') refreshJobStatusRef.current();
             return;
           }
           if (data.type === 'call_offer') {
@@ -674,11 +781,12 @@ export default function ChatScreen() {
               localStreamRef.current?.getTracks().forEach(t => t.stop());
               localStreamRef.current = null;
               outgoingOfferRef.current = null;
-              stopSound(ringbackSoundRef);
+              InCallManager.stopRingback();
               clearCallTimeout();
               callActionInFlightRef.current = false;
               yieldedToTheirCall = true;
             }
+            if (endedTimerRef.current) { clearTimeout(endedTimerRef.current); endedTimerRef.current = null; }
             incomingOfferRef.current = { sdp: data.sdp, type: data.sdpType };
             callIdRef.current = data.call_id ?? null;
             if ((autoAnswerPendingRef.current && isNotifiedCall) || yieldedToTheirCall) {
@@ -691,9 +799,17 @@ export default function ChatScreen() {
               // even when media volume is muted/low — expo-av's Audio.Sound
               // (used previously) plays on the media stream, which is why
               // the in-app ring was silent while the notification's wasn't.
-              InCallManager.startRingtone('_DEFAULT_', RING_PATTERN);
+              // The phone's own ringtone: on Android '_DEFAULT_' is the ringtone
+              // set for normal calls; on iOS only CallKit can play the user's
+              // ringtone, so the call rings there.
+              const ringingOnCallKit = showIosIncomingCall({
+                jobId, callerId: data.from ?? '', callerName: paramName || 'Your provider', callId: data.call_id ?? undefined,
+              });
+              if (!ringingOnCallKit) InCallManager.startRingtone('_DEFAULT_', RING_PATTERN);
+              sendSignal({ type: 'call_ring' });
+              wasConnectedRef.current = false;
               clearCallTimeout();
-              callTimeoutRef.current = setTimeout(() => handleDeclineCall(), CALL_TIMEOUT_MS);
+              callTimeoutRef.current = setTimeout(() => handleDeclineCallRef.current('no_answer'), CALL_TIMEOUT_MS);
             }
             return;
           }
@@ -703,7 +819,7 @@ export default function ChatScreen() {
             if (isOtherCall) return;
             const pc = peerConnectionRef.current;
             if (!pc) return;
-            stopSound(ringbackSoundRef);
+            InCallManager.stopRingback();
             clearCallTimeout();
             await pc.setRemoteDescription(new RTCSessionDescription({ sdp: data.sdp, type: data.sdpType }));
             for (const candidate of pendingIceRef.current) {
@@ -711,8 +827,10 @@ export default function ChatScreen() {
             }
             pendingIceRef.current = [];
             outgoingOfferRef.current = null;
+            wasConnectedRef.current = true;
             setCallState('connected');
             if (jobId) startOngoingCallNotification(jobId, name || 'Provider');
+            if (jobId) markIosCallConnected(jobId);
             registerHangupHandler(() => handleEndCallRef.current());
             registerMuteHandler(() => toggleMuteRef.current());
             registerSpeakerHandler(() => toggleSpeakerRef.current());
@@ -722,10 +840,40 @@ export default function ChatScreen() {
             if (isOtherCall) return;
             const pc = peerConnectionRef.current;
             if (pc && pc.remoteDescription) {
-              await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+              // After a network change the new candidates can arrive just
+              // before the restart's offer — keep them for after it.
+              try { await pc.addIceCandidate(new RTCIceCandidate(data.candidate)); }
+              catch { pendingIceRef.current.push(data.candidate); }
             } else {
               pendingIceRef.current.push(data.candidate);
             }
+            return;
+          }
+          if (data.type === 'call_ring') {
+            if (!isOtherCall && callStateRef.current === 'calling') setRemoteRinging(true);
+            return;
+          }
+          if (data.type === 'call_renegotiate') {
+            // The caller restarted the connection on a new network.
+            if (isOtherCall) return;
+            const pc = peerConnectionRef.current;
+            if (!pc) return;
+            await pc.setRemoteDescription(new RTCSessionDescription({ sdp: data.sdp, type: data.sdpType }));
+            for (const candidate of pendingIceRef.current) {
+              try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
+            }
+            pendingIceRef.current = [];
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            sendSignal({ type: 'call_renegotiate_answer', sdp: answer.sdp, sdpType: answer.type });
+            return;
+          }
+          if (data.type === 'call_renegotiate_answer') {
+            if (isOtherCall) return;
+            const pc = peerConnectionRef.current;
+            if (!pc || pc.signalingState !== 'have-local-offer') return; // a duplicate answer
+            await pc.setRemoteDescription(new RTCSessionDescription({ sdp: data.sdp, type: data.sdpType }));
+            restartOfferRef.current = null;
             return;
           }
           if (data.type === 'call_ready') {
@@ -737,7 +885,20 @@ export default function ChatScreen() {
           }
           if (data.type === 'call_end') {
             if (isOtherCall) return;
+            if (jobId) endIosRingForHangUp(jobId);
+            const label = endedLabelFor(data.reason, callStateRef.current);
             cleanupCall();
+            if (label) {
+              setEndedLabel(label);
+              setCallState('ended');
+              endedTimerRef.current = setTimeout(() => { endedTimerRef.current = null; setCallState('idle'); }, ENDED_SCREEN_MS);
+            }
+            return;
+          }
+          if (data.type === 'job_status') {
+            // The job just changed (completed, disputed…) — a closed job's
+            // chat and calls shut at once.
+            if (typeof data.status === 'string') setJobStatus(data.status);
             return;
           }
           if (data.type === 'presence_update') {
@@ -798,6 +959,10 @@ export default function ChatScreen() {
       // failure meant a dropped network request looked identical to a
       // successful send, with no way to tell the message never went anywhere.
       setInputText(text);
+      if ((err as any)?.error_code === 'JOB_CLOSED' || (err as any)?.error_code === 'FORBIDDEN') {
+        refreshJobStatus();
+        return;
+      }
       appAlert.show('error', 'Message Not Sent', 'Check your connection and try again.');
     }
   };
@@ -807,13 +972,20 @@ export default function ChatScreen() {
 
   const renderMessage = ({ item }: { item: ChatMessage }) => {
     if (item.message_type === 'SYSTEM') {
-      let log: { event?: string; duration_seconds?: number; connected?: boolean; reason?: string } = {};
+      let log: { event?: string; duration_seconds?: number; connected?: boolean; reason?: string; outcome?: string } = {};
       try { log = JSON.parse(item.message); } catch {}
       const isMine = item.sender_id === myUserId;
       const otherName = name || 'them';
       let label = 'Voice call';
       let LogIcon = Phone;
-      if (log.event === 'call_started') {
+      if (log.event === 'call') {
+        // Written by the server, one per call; the sender is the caller.
+        if (log.outcome === 'completed') label = `Voice call · ${formatCallLogDuration(log.duration_seconds ?? 0)}`;
+        else if (log.outcome === 'declined') label = isMine ? `${otherName} declined your call` : `You declined a call from ${otherName}`;
+        else if (log.outcome === 'busy') label = isMine ? `${otherName} was on another call` : `Missed call from ${otherName}`;
+        else if (log.outcome === 'cancelled') label = isMine ? 'Call cancelled' : `Missed call from ${otherName}`;
+        else label = isMine ? `${otherName} didn't answer` : `Missed call from ${otherName}`;
+      } else if (log.event === 'call_started') {
         label = isMine ? `You called ${otherName}` : `${otherName} called you`;
       } else if (log.event === 'call_ended') {
         label = log.connected
@@ -904,8 +1076,8 @@ export default function ChatScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.menuButton} onPress={handleStartCall} disabled={callState !== 'idle'}>
-          <Phone size={20} color={callState === 'idle' ? '#000' : '#9CA3AF'} />
+        <TouchableOpacity style={styles.menuButton} onPress={handleStartCall} disabled={callState !== 'idle' || !contactOpen}>
+          <Phone size={20} color={callState === 'idle' && contactOpen ? '#000' : '#9CA3AF'} />
         </TouchableOpacity>
       </View>
 
@@ -916,6 +1088,9 @@ export default function ChatScreen() {
         isMuted={isMuted}
         isSpeakerOn={isSpeakerOn}
         callDuration={callDuration}
+        remoteRinging={remoteRinging}
+        reconnecting={reconnecting}
+        endedLabel={endedLabel}
         themeColors={themeColors}
         onAccept={handleAcceptCall}
         onDecline={handleDeclineCall}
@@ -949,23 +1124,29 @@ export default function ChatScreen() {
         ) : null}
       />
 
-      <View style={[styles.inputContainer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        <TextInput
-          style={styles.input}
-          placeholder="Type a message..."
-          placeholderTextColor="#9CA3AF"
-          value={inputText}
-          onChangeText={setInputText}
-          multiline
-        />
-        <TouchableOpacity
-          style={[styles.sendButton, inputText.trim() === '' && styles.sendButtonDisabled]}
-          onPress={handleSendMessage}
-          disabled={inputText.trim() === ''}
-        >
-          <Send size={20} color={inputText.trim() === '' ? '#9CA3AF' : '#fff'} />
-        </TouchableOpacity>
-      </View>
+      {contactOpen ? (
+        <View style={[styles.inputContainer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+          <TextInput
+            style={styles.input}
+            placeholder="Type a message..."
+            placeholderTextColor="#9CA3AF"
+            value={inputText}
+            onChangeText={setInputText}
+            multiline
+          />
+          <TouchableOpacity
+            style={[styles.sendButton, inputText.trim() === '' && styles.sendButtonDisabled]}
+            onPress={handleSendMessage}
+            disabled={inputText.trim() === ''}
+          >
+            <Send size={20} color={inputText.trim() === '' ? '#9CA3AF' : '#fff'} />
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={[styles.closedBanner, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+          <ThemedText style={styles.closedBannerText}>{CLOSED_TEXT}</ThemedText>
+        </View>
+      )}
       {appAlert.element}
 
       {/* Mutual rating modal — shown once when opening a completed job chat */}
@@ -1189,6 +1370,19 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   statusIcon: {
     marginLeft: 4,
+  },
+  closedBanner: {
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    backgroundColor: t.card,
+    borderTopWidth: 1,
+    borderTopColor: t.borderSubtle,
+  },
+  closedBannerText: {
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+    color: '#6B7280',
   },
   inputContainer: {
     flexDirection: 'row',

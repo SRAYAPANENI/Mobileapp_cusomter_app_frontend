@@ -4,7 +4,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AppLock } from '@/services/appLock';
-import { isCallScreenActive, setCallActiveHandler } from '@/services/callManager';
+import { isCallScreenActive, setAppLocked, setCallActiveHandler } from '@/services/callManager';
 import { Fingerprint } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import { AppState, AppStateStatus, InteractionManager, StyleSheet, TouchableOpacity } from 'react-native';
@@ -23,6 +23,8 @@ export default function AppLockGate({ children }: { children: React.ReactNode })
 
   const [ready, setReady] = useState(false);
   const [locked, setLocked] = useState(false);
+  // Lets an incoming call know not to open the call screen past the lock.
+  useEffect(() => { if (ready) setAppLocked(locked); }, [locked, ready]);
   const [authenticating, setAuthenticating] = useState(false);
 
   const appState = useRef<AppStateStatus>(AppState.currentState);
@@ -31,7 +33,9 @@ export default function AppLockGate({ children }: { children: React.ReactNode })
   useEffect(() => {
     (async () => {
       const isEnabled = await AppLock.isEnabled();
-      setLocked(isEnabled);
+      // Not over a call that's already being answered (a cold start from the
+      // call notification) — locking would unmount the call screen and hang up.
+      setLocked(isEnabled && !isCallScreenActive());
       setReady(true);
     })();
   }, []);

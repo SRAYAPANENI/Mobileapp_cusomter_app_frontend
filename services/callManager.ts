@@ -1,16 +1,19 @@
 import notifee, { AndroidForegroundServiceType, AndroidImportance, AndroidStyle, AndroidVisibility, EventType } from '@notifee/react-native';
 import messaging from '@react-native-firebase/messaging';
 import { router } from 'expo-router';
-import { AppState, NativeEventEmitter, NativeModules, Platform } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
+import { Alert, AppRegistry, AppState, NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import RNCallKeep from 'react-native-callkeep';
 import VoipPushNotification from 'react-native-voip-push-notification';
+import { RTCAudioSession } from 'react-native-webrtc';
 import { SkoFyApi, getFreshAccessToken } from './api';
+import { AppLock } from './appLock';
 
 // Android-only native module (see CallStyleModule.kt/CallActionModule.kt) that
 // shows the incoming-call notification using NotificationCompat.CallStyle —
 // the only way to get real colored green/red Accept/Decline buttons; Notifee's
 // generic notification actions can only ever render as plain text.
-const { CallStyleModule, CallActionModule } = NativeModules;
+const { CallStyleModule, CallActionModule, CallScreenModule } = NativeModules;
 const callActionEmitter = CallActionModule ? new NativeEventEmitter(CallActionModule) : null;
 
 // Created natively at app start (plugins/with-call-ringtone-channel.js — the
@@ -20,6 +23,12 @@ const callActionEmitter = CallActionModule ? new NativeEventEmitter(CallActionMo
 // is then a no-op against the native one.
 const CALL_CHANNEL_ID = 'incoming_calls_v7';
 const ONGOING_CALL_CHANNEL_ID = 'ongoing_calls_v1';
+
+// The ring stops by itself even if the caller's "cancelled" push never
+// arrives — it used to ring until touched. A little longer than the
+// server's no-answer timeout (45s) and the apps' fallback (CALL_TIMEOUT_MS, 50s), so
+// normally the caller ends it first and this is only the safety net.
+const RING_TIMEOUT_MS = 55000;
 
 interface IncomingCallData {
   jobId: string;
@@ -92,8 +101,8 @@ function markAnswering() {
   setTimeout(() => { isAnsweringCall = false; }, 8000);
 }
 
-function openCallScreen(call: IncomingCallData, autoAnswer: boolean) {
-  markAnswering();
+function openCallScreen(call: IncomingCallData, autoAnswer: boolean, returnOnEnd = false) {
+  if (autoAnswer) markAnswering();
   // This job's chat is already on screen: it's ringing in place (or in the
   // call). Pushing another copy on top was the duplicate call screen — answer
   // in the open one instead.
@@ -110,6 +119,7 @@ function openCallScreen(call: IncomingCallData, autoAnswer: boolean) {
       profession: 'Incoming Call',
       autoAnswer: autoAnswer ? 'true' : 'false',
       ...(call.callId ? { callId: call.callId } : {}),
+      ...(returnOnEnd ? { returnOnEnd: 'true' } : {}),
     },
   } as any));
 }
@@ -117,7 +127,8 @@ function openCallScreen(call: IncomingCallData, autoAnswer: boolean) {
 // Fire-and-forget: opens a short-lived socket just to relay the decline,
 // since the app may not otherwise have any active connection to this job
 // right now (that's exactly why we needed the push in the first place).
-async function sendDecline(jobId: string) {
+// With the call id, a late decline can't end a newer call on the caller's side.
+async function sendDecline(jobId: string, callId?: string) {
   try {
     const url = await SkoFyApi.chat.getSocketUrl(jobId);
     const ws = new WebSocket(url);
@@ -126,7 +137,7 @@ async function sendDecline(jobId: string) {
       ws.onopen = async () => {
         const token = await getFreshAccessToken();
         ws.send(JSON.stringify({ type: 'auth', token }));
-        ws.send(JSON.stringify({ type: 'call_end' }));
+        ws.send(JSON.stringify({ type: 'call_end', ...(callId ? { call_id: callId } : {}) }));
         setTimeout(done, 300);
       };
       ws.onerror = done;
@@ -156,14 +167,19 @@ async function ensureCallChannel() {
 // ringing) without the backend needing to know who's ringing whom.
 const ringingJobIds = new Set<string>();
 
+function reportRinging(call: IncomingCallData) {
+  if (call.callId) SkoFyApi.calls.ringing(call.jobId, call.callId).catch(() => {});
+}
+
 async function showIncomingCallNotification(data: IncomingCallData) {
   ringingJobIds.add(data.jobId);
+  reportRinging(data);
   // CallStyleModule gives real colored Accept/Decline buttons via Android's
   // native CallStyle template; falls back to Notifee's plain-action version
   // on iOS (practically unused there — iOS calls arrive via PushKit/CallKit,
   // never this path) or if the native module somehow isn't available.
   if (Platform.OS === 'android' && CallStyleModule) {
-    await CallStyleModule.showIncoming(data.jobId, data.callerName);
+    await CallStyleModule.showIncoming(data.jobId, data.callerName, data.callerId || '', data.callId || '');
     return;
   }
   await ensureCallChannel();
@@ -187,6 +203,7 @@ async function showIncomingCallNotification(data: IncomingCallData) {
       ongoing: true,
       autoCancel: false,
       loopSound: true,
+      timeoutAfter: RING_TIMEOUT_MS,
     },
   });
 }
@@ -198,6 +215,7 @@ async function showIncomingCallNotification(data: IncomingCallData) {
  * push that slipped in before the mount effect ran). */
 export function cancelIncomingCallNotification(jobId: string) {
   ringingJobIds.delete(jobId);
+  endIosCallKitCalls(jobId, CXEndedReason.AnsweredElsewhere);
   if (Platform.OS === 'android' && CallStyleModule) {
     CallStyleModule.cancel(jobId);
     return;
@@ -250,6 +268,25 @@ export function isCallScreenActive(): boolean {
 let onCallBecameActive: (() => void) | null = null;
 export function setCallActiveHandler(fn: (() => void) | null) {
   onCallBecameActive = fn;
+}
+
+// Whether the App Lock screen is showing (AppLockGate keeps this current).
+// A ringing call opens the full-screen incoming call only when it isn't —
+// otherwise it rings as a notification, and answering is what unlocks.
+// null until AppLockGate has decided (a cold start from a call notification
+// gets here before it has) — then the App Lock setting itself decides.
+let appLocked: boolean | null = null;
+export function setAppLocked(locked: boolean) {
+  appLocked = locked;
+}
+
+async function isAppLocked(): Promise<boolean> {
+  if (appLocked !== null) return appLocked;
+  try {
+    return await AppLock.isEnabled();
+  } catch {
+    return true;
+  }
 }
 
 /** Call from chat.tsx whenever its own callState changes (see the CallState
@@ -481,7 +518,7 @@ function parseIncomingCall(remoteData: Record<string, any> | undefined): Incomin
 function handlePress(data: IncomingCallData, actionId: string | undefined) {
   ringingJobIds.delete(data.jobId);
   if (actionId === 'decline') {
-    sendDecline(data.jobId);
+    sendDecline(data.jobId, data.callId);
   } else if (actionId === 'accept') {
     navigateToCall(data, true);
   } else {
@@ -509,6 +546,14 @@ let acceptHandler: (() => void) | null = null;
 
 export function registerAcceptHandler(fn: (() => void) | null) {
   acceptHandler = fn;
+}
+
+// The open chat screen's decline — used when the CallKit screen's Decline is
+// pressed for the call that chat is ringing for (see showIosIncomingCall).
+let declineHandler: (() => void) | null = null;
+
+export function registerDeclineHandler(fn: (() => void) | null) {
+  declineHandler = fn;
 }
 
 /** Same idea as registerHangupHandler, for the notification's Mute/Speaker
@@ -589,7 +634,7 @@ function handleNotifeeEvent(type: EventType, detail: any) {
   if (type === EventType.DISMISSED) {
     if (data) {
       ringingJobIds.delete(data.jobId);
-      sendDecline(data.jobId);
+      sendDecline(data.jobId, data.callId);
     }
     return;
   }
@@ -643,16 +688,28 @@ export async function handleInitialNotification(): Promise<boolean> {
   }
 }
 
-function dispatchCallAction({ action, jobId, callerName }: { action: string; jobId: string; callerName: string }) {
-  const data: IncomingCallData = { jobId, callerId: '', callerName };
+/** True if it opened the call screen (the splash route then skips its own redirect). */
+async function dispatchCallAction({ action, jobId, callerName, callerId, callId }: {
+  action: string; jobId: string; callerName: string; callerId?: string; callId?: string;
+}): Promise<boolean> {
+  const data: IncomingCallData = { jobId, callerId: callerId || '', callerName, callId: callId || undefined };
+  if (action.endsWith('OPEN_RINGING') && await isAppLocked()) {
+    // The full-screen call (locked phone) or a tap, with App Lock on: keep
+    // ringing as a notification — only Answer may open the app.
+    return false;
+  }
+  ringingJobIds.delete(jobId);
+  cancelIncomingCallNotification(jobId);
   if (action.endsWith('ACCEPT_CALL')) {
     navigateToCall(data, true);
-  } else if (action.endsWith('DECLINE_CALL')) {
-    sendDecline(jobId);
-  } else if (action.endsWith('OPEN_RINGING')) {
-    navigateToCall(data, false);
+    return true;
   }
-  cancelIncomingCallNotification(jobId);
+  if (action.endsWith('OPEN_RINGING')) {
+    navigateToCall(data, false);
+    return true;
+  }
+  if (action.endsWith('DECLINE_CALL')) sendDecline(jobId, callId || undefined);
+  return false;
 }
 
 /** Call once from initCallManager — listens for Accept/Decline taps on the
@@ -674,8 +731,7 @@ export async function handleInitialCallAction(): Promise<boolean> {
   try {
     const initial = await CallActionModule.getInitialAction();
     if (!initial) return false;
-    dispatchCallAction(initial);
-    return true;
+    return await dispatchCallAction(initial);
   } catch {
     return false;
   }
@@ -711,7 +767,13 @@ export function registerForegroundServiceTask() {
 // without needing to force an out-of-band re-render.
 let currentOngoingControls = { isMuted: false, isSpeakerOn: false };
 
-export async function startOngoingCallNotification(jobId: string, callerName: string) {
+/** `phase` 'calling' starts it the moment the caller dials ("Calling…", Hang
+ * Up only) so Android doesn't pause the app while the other phone rings —
+ * the callee's "send me the call again" request would otherwise go
+ * unanswered. 'connected' switches it to the timer with Mute/Speaker.
+ * Android only: on iOS the CallKit call is the system's call UI. */
+export async function startOngoingCallNotification(jobId: string, callerName: string, phase: 'calling' | 'connected' = 'connected') {
+  if (Platform.OS !== 'android') return;
   await notifee.createChannel({
     id: ONGOING_CALL_CHANNEL_ID,
     name: 'Ongoing Calls',
@@ -727,7 +789,7 @@ export async function startOngoingCallNotification(jobId: string, callerName: st
     notifee.displayNotification({
       id,
       title: `Call with ${callerName}`,
-      body: `Ongoing call · ${formatElapsed(elapsedSeconds)}`,
+      body: phase === 'calling' ? 'Calling…' : `Ongoing call · ${formatElapsed(elapsedSeconds)}`,
       data: { ongoingCallJobId: jobId } as any,
       android: {
         channelId: ONGOING_CALL_CHANNEL_ID,
@@ -736,19 +798,21 @@ export async function startOngoingCallNotification(jobId: string, callerName: st
         ongoing: true,
         autoCancel: false,
         pressAction: { id: 'default', launchActivity: 'default' },
-        actions: [
-          { title: currentOngoingControls.isMuted ? 'Unmute' : 'Mute', pressAction: { id: 'mute' } },
-          { title: currentOngoingControls.isSpeakerOn ? 'Speaker Off' : 'Speaker', pressAction: { id: 'speaker' } },
-          { title: 'Hang Up', pressAction: { id: 'hangup' } },
-        ],
+        actions: phase === 'calling'
+          ? [{ title: 'Hang Up', pressAction: { id: 'hangup' } }]
+          : [
+            { title: currentOngoingControls.isMuted ? 'Unmute' : 'Mute', pressAction: { id: 'mute' } },
+            { title: currentOngoingControls.isSpeakerOn ? 'Speaker Off' : 'Speaker', pressAction: { id: 'speaker' } },
+            { title: 'Hang Up', pressAction: { id: 'hangup' } },
+          ],
         importance: AndroidImportance.LOW,
         color: '#FFCE48',
       },
     });
 
+  if (ongoingTimer) { clearInterval(ongoingTimer); ongoingTimer = null; }
   await render(0);
-
-  if (ongoingTimer) clearInterval(ongoingTimer);
+  if (phase === 'calling') return;
   ongoingTimer = setInterval(() => {
     render(Math.floor((Date.now() - startedAt) / 1000));
   }, 1000);
@@ -809,6 +873,77 @@ function endIosCallKitCalls(jobId: string, reason: number) {
   }
 }
 
+// The call CallKit is showing for the call in progress — kept for the whole
+// call, not ended on answer: ending it straight away made iOS shut the call's
+// audio session, so a call answered from the lock screen had no audio.
+let iosCallSession: { uuid: string; jobId: string; outgoing: boolean } | null = null;
+
+function newCallUuid(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
+/** iOS: rings a call that arrived over the open chat's socket through
+ * CallKit, so it uses the iPhone's own ringtone — iOS doesn't let an app
+ * read or play the ringtone the user picked. Answer/Decline on that screen
+ * go back to the open chat (acceptHandler / declineHandler). False on Android
+ * or if CallKit isn't set up — the caller then rings in-app instead. */
+export function showIosIncomingCall(call: IncomingCallData): boolean {
+  if (Platform.OS !== 'ios' || !callKeepReady) return false;
+  const uuid = newCallUuid();
+  const timer = setTimeout(() => {
+    if (iosCallKitCalls.delete(uuid)) RNCallKeep.reportEndCallWithUUID(uuid, CXEndedReason.Unanswered);
+  }, IOS_UNANSWERED_TIMEOUT_MS);
+  iosCallKitCalls.set(uuid, { call, timer });
+  RNCallKeep.displayIncomingCall(uuid, call.callerName, call.callerName, 'generic', false);
+  return true;
+}
+
+/** The open chat's Accept, while CallKit is also ringing for this job:
+ * answer through CallKit so it keeps holding the call (audio keeps flowing
+ * if the phone is then locked). Its 'answerCall' event comes back to the
+ * chat's accept handler, which then finds no ring left and answers. True if
+ * it handed the answer to CallKit — the caller must stop there. */
+export function answerIosRing(jobId: string): boolean {
+  if (Platform.OS !== 'ios') return false;
+  for (const [uuid, { call }] of iosCallKitCalls) {
+    if (call.jobId !== jobId) continue;
+    RNCallKeep.answerIncomingCall(uuid);
+    return true;
+  }
+  return false;
+}
+
+/** The caller hung up while CallKit was ringing for it — stop that ring
+ * only (not the Android notification or other jobs' rings). */
+export function endIosRingForHangUp(jobId: string) {
+  endIosCallKitCalls(jobId, CXEndedReason.RemoteEnded);
+}
+
+/** Reports the caller's own outgoing call to CallKit — the system then knows
+ * a call is in progress (green status bar, a cellular call goes to hold). */
+export function startIosOutgoingCall(jobId: string, calleeName: string) {
+  if (Platform.OS !== 'ios' || !callKeepReady) return;
+  const uuid = newCallUuid();
+  iosCallSession = { uuid, jobId, outgoing: true };
+  RNCallKeep.startCall(uuid, calleeName, calleeName, 'generic', false);
+}
+
+export function markIosCallConnected(jobId: string) {
+  if (Platform.OS !== 'ios' || iosCallSession?.jobId !== jobId) return;
+  if (iosCallSession.outgoing) RNCallKeep.reportConnectedOutgoingCallWithUUID(iosCallSession.uuid);
+}
+
+/** Call when the call ends in the app — closes the CallKit call too. */
+export function endIosCallSession(jobId: string) {
+  if (Platform.OS !== 'ios' || iosCallSession?.jobId !== jobId) return;
+  const { uuid } = iosCallSession;
+  iosCallSession = null; // first, so the 'endCall' event this triggers is ignored
+  RNCallKeep.endCall(uuid);
+}
+
 function setupCallKeepForIOS() {
   if (callKeepReady || Platform.OS !== 'ios') return;
   callKeepReady = true;
@@ -839,17 +974,40 @@ function setupCallKeepForIOS() {
       if (iosCallKitCalls.delete(callUUID)) RNCallKeep.reportEndCallWithUUID(callUUID, CXEndedReason.Unanswered);
     }, IOS_UNANSWERED_TIMEOUT_MS);
     iosCallKitCalls.set(callUUID, { call, timer });
+    reportRinging(call);
   });
   RNCallKeep.addEventListener('answerCall', ({ callUUID }: any) => {
     const entry = takeIosCallKitCall(callUUID);
-    if (entry) navigateToCall(entry.call, true);
-    RNCallKeep.endCall(callUUID);
+    if (!entry) { RNCallKeep.endCall(callUUID); return; }
+    iosCallSession = { uuid: callUUID, jobId: entry.call.jobId, outgoing: false };
+    navigateToCall(entry.call, true);
   });
   RNCallKeep.addEventListener('endCall', ({ callUUID }: any) => {
-    // Already removed when answered or ended by the app itself — only a
-    // user's Decline on the CallKit screen gets here with an entry.
+    // Declined on the CallKit ringing screen.
     const entry = takeIosCallKitCall(callUUID);
-    if (entry) sendDecline(entry.call.jobId);
+    if (entry) {
+      // Ringing in the open chat: decline there, so it hangs up its own call.
+      if (entry.call.jobId === activeChatJobId && declineHandler) declineHandler();
+      else sendDecline(entry.call.jobId, entry.call.callId);
+      return;
+    }
+    // Hung up from the system call UI (lock screen, Dynamic Island) during
+    // the call — end it in the app too.
+    const session = iosCallSession;
+    if (session && session.uuid === callUUID) {
+      const { jobId } = session;
+      iosCallSession = null;
+      if (hangupHandler) hangupHandler();
+      else if (declineHandler) declineHandler(); // still connecting in the open chat
+      else sendDecline(jobId);
+    }
+  });
+  // CallKit owns the audio session during a call: hand it to WebRTC when the
+  // system activates it, and take it back when it's released.
+  RNCallKeep.addEventListener('didActivateAudioSession', () => RTCAudioSession.audioSessionDidActivate());
+  RNCallKeep.addEventListener('didDeactivateAudioSession', () => RTCAudioSession.audioSessionDidDeactivate());
+  RNCallKeep.addEventListener('didPerformSetMutedCallAction', ({ muted, callUUID }: any) => {
+    if (iosCallSession?.uuid === callUUID && muted !== currentOngoingControls.isMuted) muteHandler?.();
   });
 
   // PKPushRegistry lives natively (AppDelegate.swift, plugins/with-pushkit-voip.js)
@@ -866,6 +1024,14 @@ function setupCallKeepForIOS() {
     SkoFyApi.fcm.registerToken(token, 'IOS', 'VOIP').catch((err) => console.warn('registerVoipToken failed', err));
   });
   VoipPushNotification.registerVoipToken();
+}
+
+/** Decline pressed on the native call notification while the app isn't
+ * running — CallActionReceiver starts this as a headless JS task. */
+export function registerCallDeclineTask() {
+  AppRegistry.registerHeadlessTask('DodorezCallDecline', () => async (data: any) => {
+    if (data?.jobId) await sendDecline(data.jobId, data.callId || undefined);
+  });
 }
 
 /** Must be called as early as possible (before the app's component tree even
@@ -1003,11 +1169,38 @@ export function registerBackgroundHandler() {
   registerForegroundServiceTask();
 }
 
+const FULL_SCREEN_PROMPTED_KEY = 'dodorez_full_screen_calls_prompted_at';
+const FULL_SCREEN_REPROMPT_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Android 14+ doesn't let apps that aren't dialers show a full-screen call
+ * over the lock screen until the user turns it on — without it an incoming
+ * call is only a small banner. Asks at most once a week. */
+async function checkFullScreenCallPermission() {
+  if (Platform.OS !== 'android' || !CallScreenModule) return;
+  try {
+    if (await CallScreenModule.canUseFullScreenIntent()) return;
+    const last = Number(await SecureStore.getItemAsync(FULL_SCREEN_PROMPTED_KEY)) || 0;
+    if (Date.now() - last < FULL_SCREEN_REPROMPT_MS) return;
+    await SecureStore.setItemAsync(FULL_SCREEN_PROMPTED_KEY, String(Date.now()));
+    Alert.alert(
+      'Show calls on your lock screen',
+      "Turn on full-screen notifications for Dodorez so calls ring like a phone call, even when your phone is locked.",
+      [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Open settings', onPress: () => CallScreenModule.openFullScreenIntentSettings() },
+      ],
+    );
+  } catch (err) {
+    console.warn('Full-screen call permission check failed:', err);
+  }
+}
+
 /** Call once from the root layout — sets up CallKeep (iOS) and the
  * foreground push/notification-press listeners. */
 export function initCallManager() {
   setupCallKeepForIOS();
   initCallActionListener();
+  checkFullScreenCallPermission();
 
   // Android 13+ blocks all notifications by default until the app explicitly
   // requests this at runtime — declaring POST_NOTIFICATIONS in the manifest
@@ -1131,6 +1324,13 @@ export function initCallManager() {
     // ringing UI is handling it, showing the notification too would just be
     // a redundant, confusing second prompt for the same call.
     if (call.jobId === activeChatJobId) return;
+    // App open on another screen: show the full-screen incoming call right
+    // away, like a phone call — it used to be only a small banner. It rings
+    // in-app once the screen has fetched the call (call_ready).
+    if (Platform.OS === 'android' && AppState.currentState === 'active' && appLocked === false && !isCallScreenActive()) {
+      openCallScreen(call, false, true);
+      return;
+    }
     await showIncomingCallNotification(call);
   });
 
