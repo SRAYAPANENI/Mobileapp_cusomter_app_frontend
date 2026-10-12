@@ -373,7 +373,7 @@ export default function ProviderDetailsScreen() {
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Quick Stats */}
         <Animated.View entering={FadeInUp.delay(300)} style={styles.statsRow}>
           <View style={styles.statItem}>

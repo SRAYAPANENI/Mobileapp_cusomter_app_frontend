@@ -760,7 +760,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Profile Info */}
         <Animated.View entering={FadeInUp.duration(600)} style={styles.profileSection}>
           <View style={styles.avatarContainer}>
@@ -1269,7 +1269,7 @@ export default function ProfileScreen() {
             <ThemedText style={styles.headerTitle}>Terms & Conditions</ThemedText>
             <View style={{ width: 24 }} />
           </View>
-          <ScrollView contentContainerStyle={{ padding: 20 }}>
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20 }}>
             <ThemedText style={{ fontSize: 18, lineHeight: 24, fontFamily: Fonts.poppinsBold, marginBottom: 12 }}>1. Agreement</ThemedText>
             <ThemedText style={{ color: '#4B5563', lineHeight: 24, marginBottom: 20 }}>
               By using Dodorez, you agree to connect with various service providers. We act as a platform for discovery...

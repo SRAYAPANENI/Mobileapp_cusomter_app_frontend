@@ -99,7 +99,7 @@ export default function HelpSupportScreen() {
         <Headphones size={24} color="#111827" />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Search */}
         <View style={styles.searchContainer}>
           <Search size={20} color="#9CA3AF" />

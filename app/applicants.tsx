@@ -476,7 +476,7 @@ export default function ApplicantsScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-      <FlatList
+      <FlatList keyboardShouldPersistTaps="handled"
         data={applicants}
         renderItem={({ item, index }) => (
           <ApplicantCard

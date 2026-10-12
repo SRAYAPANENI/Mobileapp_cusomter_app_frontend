@@ -33,7 +33,6 @@ import {
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
@@ -42,6 +41,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+// The keyboard-controller version: works with KeyboardProvider (app/_layout.tsx)
+// on Android — React Native's own one shifted the layout as the keyboard
+// closed, so a tap meant for a button could miss it.
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import CountryPicker, { Country, CountryCode } from 'react-native-country-picker-modal';
 import Animated, {
   FadeIn,
@@ -385,7 +388,7 @@ export default function RegisterScreen() {
     <ThemedView style={styles.container}>
       <AnimatedBackground />
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior="padding"
         style={{ flex: 1 }}
       >
         <View style={styles.topProgressBarContainer}>

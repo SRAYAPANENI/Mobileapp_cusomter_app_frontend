@@ -233,7 +233,7 @@ export default function LoginScreen() {
         behavior="padding"
         style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <AnimatedBrandMark offsetX={40} />
             <ThemedText type="title" style={styles.title}>Welcome Back</ThemedText>

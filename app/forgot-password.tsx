@@ -138,7 +138,7 @@ export default function ForgotPasswordScreen() {
     <ThemedView style={styles.container}>
       <AnimatedBackground />
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <ArrowLeft size={24} color={themeColors.text} />
           </TouchableOpacity>

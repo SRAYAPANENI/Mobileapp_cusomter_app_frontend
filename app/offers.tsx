@@ -121,7 +121,7 @@ export default function OffersScreen() {
           <ThemedText style={styles.emptyText}>No offers available right now.</ThemedText>
         </View>
       ) : (
-        <FlatList
+        <FlatList keyboardShouldPersistTaps="handled"
           data={offers}
           renderItem={renderOffer}
           keyExtractor={item => item.id}

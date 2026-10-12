@@ -278,7 +278,7 @@ export default function VerifyProblemScreen() {
         behavior="padding"
         style={{ flex: 1 }}
       >
-        <ScrollView
+        <ScrollView keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
@@ -320,7 +320,7 @@ export default function VerifyProblemScreen() {
                 <ThemedText style={styles.editLink}>Change</ThemedText>
               </TouchableOpacity>
             </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+            <ScrollView keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
               <View style={[styles.chip, { backgroundColor: themeColors.brand, borderColor: themeColors.brand }]}>
                 <ThemedText style={[styles.chipText, { color: '#000', fontFamily: Fonts.poppinsBold }]}>
                   {data.profession}
@@ -460,7 +460,7 @@ export default function VerifyProblemScreen() {
               />
             </View>
 
-            <FlatList
+            <FlatList keyboardShouldPersistTaps="handled"
               data={filteredProfessions}
               keyExtractor={item => item}
               renderItem={({ item }) => (

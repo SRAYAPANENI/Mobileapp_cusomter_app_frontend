@@ -109,7 +109,7 @@ export function TimePickerModal({
           <View style={styles.timePickerContainer}>
             <View style={styles.pickerColumn}>
               <ThemedText style={styles.pickerLabel}>Hour</ThemedText>
-              <ScrollView ref={hourScrollRef} showsVerticalScrollIndicator={false} style={styles.columnScroll}>
+              <ScrollView keyboardShouldPersistTaps="handled" ref={hourScrollRef} showsVerticalScrollIndicator={false} style={styles.columnScroll}>
                 {HOURS.map(h => (
                   <TouchableOpacity
                     key={h}
@@ -124,7 +124,7 @@ export function TimePickerModal({
 
             <View style={styles.pickerColumn}>
               <ThemedText style={styles.pickerLabel}>Minute</ThemedText>
-              <ScrollView ref={minuteScrollRef} showsVerticalScrollIndicator={false} style={styles.columnScroll}>
+              <ScrollView keyboardShouldPersistTaps="handled" ref={minuteScrollRef} showsVerticalScrollIndicator={false} style={styles.columnScroll}>
                 {MINUTES.map(m => (
                   <TouchableOpacity
                     key={m}

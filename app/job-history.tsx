@@ -297,7 +297,7 @@ export default function JobHistoryScreen() {
           </ThemedText>
         </View>
       ) : (
-        <FlatList
+        <FlatList keyboardShouldPersistTaps="handled"
           data={history}
           renderItem={renderItem}
           keyExtractor={item => item.id}

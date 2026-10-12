@@ -116,7 +116,7 @@ export default function OfferDetailScreen() {
           <ThemedText style={styles.emptyText}>This offer isn't available anymore.</ThemedText>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           {offer.image_url ? (
             <Image source={{ uri: offer.image_url }} style={styles.banner} contentFit="cover" />
           ) : (

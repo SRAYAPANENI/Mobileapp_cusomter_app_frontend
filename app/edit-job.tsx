@@ -228,7 +228,7 @@ export default function EditJobScreen() {
       </View>
 
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           {wasExpired && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEF3C7', borderRadius: 10, padding: 10, marginBottom: 16 }}>
               <CalendarIcon size={16} color="#B45309" />

@@ -370,7 +370,7 @@ export default function MyJobsScreen() {
           </View>
         )
       ) : (
-        <FlatList
+        <FlatList keyboardShouldPersistTaps="handled"
           data={filteredJobs}
           renderItem={({ item, index }) => (
             <JobCard item={item} index={index} onCancelPress={setCancelJobId} onReportIssue={setDisputeJobId} />

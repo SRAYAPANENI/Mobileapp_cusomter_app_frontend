@@ -180,7 +180,7 @@ export default function DescribeProblemScreen() {
         behavior="padding"
         style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
           {/* Header */}
           <View style={styles.header}>
@@ -235,7 +235,7 @@ export default function DescribeProblemScreen() {
             </View>
 
             {data.media.length > 0 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaPreviewList}>
+              <ScrollView keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaPreviewList}>
                 {data.media.map((item, index) => (
                   <View key={index} style={styles.previewCard}>
                     <Image source={{ uri: item.uri }} style={styles.previewImage} contentFit="cover" />

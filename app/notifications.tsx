@@ -226,7 +226,7 @@ export default function NotificationsScreen() {
           <ActivityIndicator size="large" color="#FFCE48" />
         </View>
       ) : (
-        <SectionList
+        <SectionList keyboardShouldPersistTaps="handled"
           sections={sections}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}

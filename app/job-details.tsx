@@ -230,7 +230,7 @@ export default function JobDetailsScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.mainCard}>
           <View style={styles.titleRow}>
             <ThemedText style={styles.title}>{job.title}</ThemedText>

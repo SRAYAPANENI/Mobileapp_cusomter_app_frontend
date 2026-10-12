@@ -476,7 +476,7 @@ export default function ProviderMapScreen() {
             )}
           </View>
           {professions.length > 1 && (
-            <ScrollView
+            <ScrollView keyboardShouldPersistTaps="handled"
               horizontal
               showsHorizontalScrollIndicator={false}
               style={s.chipsScroll}
@@ -515,7 +515,7 @@ export default function ProviderMapScreen() {
         pointerEvents={selected ? 'auto' : 'none'}
       >
         {selected && (
-          <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
             <View style={s.sheetHandle} />
 
             {/* Close button */}

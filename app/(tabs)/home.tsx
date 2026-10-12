@@ -1205,7 +1205,7 @@ export default function HomeScreen() {
   const renderQuickNeedsSection = () => (
     <Reanimated.View entering={FadeInUp.delay(330)} style={styles.skillTilesSection}>
       <ThemedText style={styles.sectionLabel}>Super Fast</ThemedText>
-      <ScrollView
+      <ScrollView keyboardShouldPersistTaps="handled"
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.skillTilesRow}
@@ -1241,7 +1241,7 @@ export default function HomeScreen() {
   const renderSkillTiles = () => (
     <Reanimated.View entering={FadeInUp.delay(350)} style={styles.skillTilesSection}>
       <ThemedText style={styles.sectionLabel}>Explore Services</ThemedText>
-      <ScrollView
+      <ScrollView keyboardShouldPersistTaps="handled"
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.skillTilesRow}
@@ -1266,7 +1266,7 @@ export default function HomeScreen() {
       <View style={styles.dealsSectionHeader}>
         <ThemedText style={[styles.sectionLabel, { marginBottom: 0 }]}>Book Again</ThemedText>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dealsList}>
+      <ScrollView keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dealsList}>
         {regularProviders.map((p) => (
           <TouchableOpacity
             key={p.provider_id}
@@ -1454,7 +1454,7 @@ export default function HomeScreen() {
     if (activeJobs.length === 0) return null;
     return (
       <Reanimated.View entering={FadeInUp.delay(500)} style={styles.floatingJobCard}>
-        <FlatList
+        <FlatList keyboardShouldPersistTaps="handled"
           data={activeJobs}
           keyExtractor={j => j.id}
           renderItem={renderJobCard}
@@ -1532,7 +1532,7 @@ export default function HomeScreen() {
       <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
 
       {/* ── Main scrollable content ── */}
-      <ScrollView
+      <ScrollView keyboardShouldPersistTaps="handled"
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -1691,7 +1691,7 @@ export default function HomeScreen() {
                 <ThemedText style={styles.viewAllLink}>View All</ThemedText>
               </TouchableOpacity>
             </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dealsList}>
+            <ScrollView keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dealsList}>
               {offers.map((o, index) => {
                 const color = OFFER_CARD_COLORS[index % OFFER_CARD_COLORS.length];
                 return (

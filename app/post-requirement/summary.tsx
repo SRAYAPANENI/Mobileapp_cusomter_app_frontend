@@ -152,7 +152,7 @@ export default function JobSummaryScreen() {
   return (
     <ThemedView style={styles.container}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
-        <ScrollView
+        <ScrollView keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >

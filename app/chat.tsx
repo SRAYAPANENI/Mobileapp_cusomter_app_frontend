@@ -18,7 +18,6 @@ import {
   BackHandler,
   FlatList,
   Keyboard,
-  KeyboardAvoidingView,
   Linking,
   Modal,
   Platform,
@@ -28,8 +27,12 @@ import {
   TextInput,
   TouchableOpacity,
   Vibration,
-  View
+  View,
 } from 'react-native';
+// The keyboard-controller version: works with KeyboardProvider (app/_layout.tsx)
+// on Android — React Native's own one shifted the layout as the keyboard
+// closed, so a tap meant for a button could miss it.
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useAppAlert } from '@/components/app-alert';
 import Animated, { FadeInLeft, FadeInRight } from 'react-native-reanimated';
 import {
@@ -1052,7 +1055,7 @@ export default function ChatScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior="padding"
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
       <View style={styles.header}>
@@ -1099,7 +1102,7 @@ export default function ChatScreen() {
         onToggleSpeaker={toggleSpeaker}
       />
 
-      <FlatList
+      <FlatList keyboardShouldPersistTaps="handled"
         ref={flatListRef}
         data={messages}
         renderItem={renderMessage}
@@ -1155,7 +1158,7 @@ export default function ChatScreen() {
           <View style={styles.ratingSheet}>
             <Text style={styles.ratingTitle}>Rate your experience</Text>
             <Text style={styles.ratingSubtitle}>How did the service go?</Text>
-            <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%' }}>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ width: '100%' }}>
               {(['behaviour', 'skill', 'punctuality', 'communication'] as const).map((dim) => (
                 <View key={dim} style={styles.ratingRow}>
                   <Text style={styles.ratingDimLabel}>{dim.charAt(0).toUpperCase() + dim.slice(1)}</Text>

@@ -1283,7 +1283,7 @@ export function VoicePostModal({
             )}
 
             {/* Chat bubbles */}
-            <ScrollView ref={scrollRef} style={s.chat} contentContainerStyle={s.chatContent} showsVerticalScrollIndicator={false}>
+            <ScrollView keyboardShouldPersistTaps="handled" ref={scrollRef} style={s.chat} contentContainerStyle={s.chatContent} showsVerticalScrollIndicator={false}>
               {messages.map((m, i) => (
                 <View key={i} style={m.role === 'user' ? s.bubbleWrapUser : s.bubbleWrapAI}>
                   <View style={[s.bubble, m.role === 'user' ? s.bubbleUser : s.bubbleAI]}>
