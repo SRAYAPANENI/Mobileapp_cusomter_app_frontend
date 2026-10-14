@@ -22,17 +22,8 @@ import {
 } from 'lucide-react-native';
 import { SkoFyApi } from '@/services/api';
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  Dimensions,
-  FlatList,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { Dimensions, FlatList, Modal, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { FadeIn, FadeInUp, SlideInUp } from 'react-native-reanimated';
 

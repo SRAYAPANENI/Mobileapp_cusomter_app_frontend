@@ -21,17 +21,8 @@ import {
   Navigation
 } from 'lucide-react-native';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import {
-  Dimensions,
-  Linking,
-  Platform,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  View
-} from 'react-native';
+import { Dimensions, Linking, Platform, ScrollView, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { SlideInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

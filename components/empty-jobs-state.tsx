@@ -1,4 +1,5 @@
 import { Fonts } from '@/constants/theme';
+import { MAX_FONT_SCALE } from '@/components/scaled-text';
 import React, { useEffect, useRef, useState } from 'react';
 import { TouchableOpacity, View } from 'react-native';
 import Animated, {
@@ -57,7 +58,7 @@ function ZFloat({ left, top, size, delay, driftX = 6 }: {
   }));
 
   return (
-    <Animated.Text style={[{
+    <Animated.Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[{
       fontSize: size,
       fontFamily: Fonts.poppinsBold,
       color: '#F59E0B',

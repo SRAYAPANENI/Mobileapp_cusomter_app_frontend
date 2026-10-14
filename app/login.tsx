@@ -11,17 +11,8 @@ import * as Location from 'expo-location';
 import { router, useFocusEffect } from 'expo-router';
 import { AlertTriangle, ChevronDown, Eye, EyeOff, LogOut } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  BackHandler,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
-} from 'react-native';
+import { BackHandler, Modal, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Text, TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import CountryPicker, { Country, CountryCode } from 'react-native-country-picker-modal';
 import Animated, { FadeIn, FadeInUp, FadeOut, Layout } from 'react-native-reanimated';
@@ -287,7 +278,7 @@ export default function LoginScreen() {
                     </TouchableOpacity>
                     <TextInput
                       style={getInputStyle('phone')}
-                      placeholder="Enter mobile number"
+                      placeholder="Mobile number"
                       placeholderTextColor={themeColors.icon}
                       keyboardType="numeric"
                       numberOfLines={1}
@@ -377,7 +368,7 @@ export default function LoginScreen() {
                     </TouchableOpacity>
                     <TextInput
                       style={[getInputStyle('phone-pw'), { flex: 1 }]}
-                      placeholder="Enter mobile number"
+                      placeholder="Mobile number"
                       placeholderTextColor={themeColors.icon}
                       keyboardType="numeric"
                       numberOfLines={1}
@@ -541,13 +532,14 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  // Kept compact so the number field beside it has room on narrow screens.
   countryPickerButton: {
     flexDirection: 'row',
     alignItems: 'center',
     height: 60,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     borderRadius: 16,
-    gap: 10,
+    gap: 6,
   },
   countryPickerContent: {
     flexDirection: 'row',
@@ -579,9 +571,10 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   input: {
     flex: 1,
+    minWidth: 0,
     height: 60,
     borderRadius: 16,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     fontSize: 16,
     lineHeight: 22,
     fontFamily: Fonts.poppins,

@@ -8,14 +8,8 @@ import { SkoFyApi } from '@/services/api';
 import { router } from 'expo-router';
 import { ArrowLeft, ChevronDown, Eye, EyeOff, ShieldCheck } from 'lucide-react-native';
 import React, { useState } from 'react';
-import {
-  Platform,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import CountryPicker, { Country, CountryCode } from 'react-native-country-picker-modal';
 import Animated, { FadeInDown, Layout } from 'react-native-reanimated';
@@ -193,7 +187,7 @@ export default function ForgotPasswordScreen() {
                     </TouchableOpacity>
                     <TextInput
                       style={getInputStyle('phone')}
-                      placeholder="Enter mobile number"
+                      placeholder="Mobile number"
                       placeholderTextColor={themeColors.icon}
                       keyboardType="numeric"
                       value={phoneNumber}

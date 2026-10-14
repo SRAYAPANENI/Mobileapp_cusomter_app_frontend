@@ -13,17 +13,8 @@ import {
   Send
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Keyboard,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ActivityIndicator, FlatList, Keyboard, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { TextInput } from '@/components/scaled-text';
 // The keyboard-controller version: works with KeyboardProvider (app/_layout.tsx)
 // on Android — React Native's own one shifted the layout as the keyboard
 // closed, so a tap meant for a button could miss it.

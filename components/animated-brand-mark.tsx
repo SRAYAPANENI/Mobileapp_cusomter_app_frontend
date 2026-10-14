@@ -3,7 +3,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Image } from 'expo-image';
 import { MapPin } from 'lucide-react-native';
 import React, { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Text } from '@/components/scaled-text';
 import Animated, {
   FadeInDown,
   useAnimatedStyle,

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Modal, View, TouchableOpacity, TextInput, Platform, StyleSheet } from 'react-native';
+import { Modal, View, TouchableOpacity, Platform, StyleSheet } from 'react-native';
+import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from './themed-text';

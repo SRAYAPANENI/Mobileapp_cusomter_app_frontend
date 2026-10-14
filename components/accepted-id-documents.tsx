@@ -2,7 +2,8 @@ import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Check, ChevronDown, ChevronUp, IdCard, Lock, X } from 'lucide-react-native';
 import React, { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Text } from '@/components/scaled-text';
 
 // Which documents Dodorez accepts for identity verification (US launch).
 // Kept here, one list, so the registration and profile screens say the same.

@@ -1,6 +1,7 @@
 import { Sparkles } from 'lucide-react-native';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { LayoutChangeEvent, PanResponder, StyleSheet, Text, View } from 'react-native';
+import { LayoutChangeEvent, PanResponder, StyleSheet, View } from 'react-native';
+import { Text } from '@/components/scaled-text';
 import ScratchChip from './scratch-chip';
 
 interface ScratchCardProps {

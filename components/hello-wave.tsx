@@ -1,8 +1,9 @@
 import Animated from 'react-native-reanimated';
+import { MAX_FONT_SCALE } from '@/components/scaled-text';
 
 export function HelloWave() {
   return (
-    <Animated.Text
+    <Animated.Text maxFontSizeMultiplier={MAX_FONT_SCALE}
       style={{
         fontSize: 28,
         lineHeight: 32,

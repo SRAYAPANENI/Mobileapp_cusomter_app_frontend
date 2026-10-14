@@ -67,24 +67,8 @@ import Reanimated, {
   withTiming,
 } from 'react-native-reanimated';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  BackHandler,
-  Dimensions,
-  FlatList,
-  Linking,
-  Modal,
-  Platform,
-  Animated as RNAnimated,
-  Easing as RNEasing,
-  RefreshControl,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
-} from 'react-native';
+import { ActivityIndicator, BackHandler, Dimensions, FlatList, Linking, Modal, Platform, Animated as RNAnimated, Easing as RNEasing, RefreshControl, ScrollView, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Text } from '@/components/scaled-text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Conditionally import MapView only for native platforms

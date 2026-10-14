@@ -110,7 +110,8 @@
       ],
       "./plugins/with-call-foreground-service.js",
       "./plugins/with-call-ringtone-channel.js",
-      "./plugins/with-call-screen.js"
+      "./plugins/with-call-screen.js",
+      "./plugins/with-webrtc-audio.js"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -1,11 +1,6 @@
 import React, { useState } from 'react';
-import {
-  Modal,
-  StyleSheet,
-  View,
-  TouchableOpacity,
-  TextInput,
-} from 'react-native';
+import { Modal, StyleSheet, View, TouchableOpacity } from 'react-native';
+import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { ThemedText } from '../themed-text';
 import { Fonts } from '@/constants/theme';

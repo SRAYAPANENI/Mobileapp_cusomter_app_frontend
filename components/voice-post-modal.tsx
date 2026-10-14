@@ -1,18 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  Animated as RNAnimated,
-  Easing as RNEasing,
-  Image,
-  Linking,
-  Modal,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { Animated as RNAnimated, Easing as RNEasing, Image, Linking, Modal, ScrollView, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Text, TextInput } from '@/components/scaled-text';
 import * as Speech from 'expo-speech';
 import * as SecureStore from 'expo-secure-store';
 import * as Location from 'expo-location';
