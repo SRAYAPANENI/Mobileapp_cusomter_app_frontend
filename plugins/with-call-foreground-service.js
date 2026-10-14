@@ -20,7 +20,8 @@ module.exports = function withCallForegroundService(config) {
       $: {
         'android:name': NOTIFEE_SERVICE,
         'android:exported': 'false',
-        'android:foregroundServiceType': 'phoneCall',
+        // microphone: keeps the call's audio when the app is in the background.
+        'android:foregroundServiceType': 'phoneCall|microphone',
         'tools:replace': 'android:foregroundServiceType',
       },
     });

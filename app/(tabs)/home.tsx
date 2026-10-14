@@ -16,6 +16,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { RatingReminder } from '@/components/rating-reminder';
 import { BASE_URL, SkoFyApi } from '@/services/api';
 import { readHomeCache, writeHomeCache } from '@/services/homeCache';
+import { providerShortTitle } from '@/services/providerName';
+import { ProfessionIcon } from '@/components/profession-icon';
 import type { OfferResponse } from '@/types/offer';
 import { discountText, OFFER_CARD_COLORS } from '@/utils/offer-format';
 import { Image } from 'expo-image';
@@ -110,6 +112,7 @@ interface ServiceProvider {
   latitude: number;
   longitude: number;
   name: string;
+  profession?: string | null;
 }
 
 // A provider this customer has booked more than once — Repeat Provider
@@ -578,7 +581,7 @@ export default function HomeScreen() {
         const providers = await SkoFyApi.dashboard.getNearbyProviders(lat, lon);
         const mapped = providers
           .filter(p => p.lat != null && p.lng != null)
-          .map(p => ({ id: p.provider_id, latitude: p.lat!, longitude: p.lng!, name: p.name }));
+          .map(p => ({ id: p.provider_id, latitude: p.lat!, longitude: p.lng!, name: p.name, profession: p.profession ?? null }));
         setServiceProviders(mapped);
         // Only a non-empty result counts as "live data arrived" for the
         // cache-priming race guard — if this came back empty, letting a
@@ -1084,9 +1087,9 @@ export default function HomeScreen() {
         {isWaiting && job.directRequestProvider && (
           <View style={styles.directRequestRow}>
             <ThemedText style={styles.directRequestText} numberOfLines={1}>
-              Waiting on {job.directRequestProvider.name.split(' ')[0]}
+              Waiting on {providerShortTitle(job.directRequestProvider.name, (job.directRequestProvider as any).profession)}
               {job.directRequestQueue.length > 0
-                ? ` · then ${job.directRequestQueue.map(p => p.name.split(' ')[0]).join(', ')}`
+                ? ` · then ${job.directRequestQueue.map(p => providerShortTitle(p.name, (p as any).profession)).join(', ')}`
                 : ''}
             </ThemedText>
             <TouchableOpacity
@@ -1664,7 +1667,7 @@ export default function HomeScreen() {
                   key={p.id}
                   style={[styles.nearbyAvatar, { marginLeft: i > 0 ? -10 : 0, zIndex: 3 - i }]}
                 >
-                  <Text style={styles.nearbyAvatarText}>{(p.name[0] ?? '?').toUpperCase()}</Text>
+                  <ProfessionIcon profession={p.profession} size={14} />
                 </View>
               ))}
               {serviceProviders.length > 3 && (

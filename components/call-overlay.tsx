@@ -31,6 +31,9 @@ interface CallOverlayProps {
   remoteRinging?: boolean;
   /** The connection dropped and is being restored (network change). */
   reconnecting?: boolean;
+  /** 'connecting' after Accept (vs. opened from the notification body,
+   * still fetching a call the user hasn't answered). */
+  answered?: boolean;
   /** Why the call ended — shown while callState is 'ended'. */
   endedLabel?: string;
   themeColors: typeof Colors.light;
@@ -115,15 +118,22 @@ function FloatingIcon({
 }
 
 export function CallOverlay({
-  callState, name, profileImage, isMuted, isSpeakerOn, callDuration, remoteRinging, reconnecting, endedLabel, themeColors: _themeColors,
+  callState, answered = true, name, profileImage, isMuted, isSpeakerOn, callDuration, remoteRinging, reconnecting, endedLabel, themeColors: _themeColors,
   onAccept, onDecline, onEnd, onToggleMute, onToggleSpeaker,
 }: CallOverlayProps) {
   if (callState === 'idle') return null;
 
-  const isRingingOrCalling = callState === 'ringing' || callState === 'calling' || callState === 'connecting';
+  // Opened from the notification body: the call is still being fetched and
+  // hasn't been answered — an incoming call, not the in-call screen.
+  const fetching = callState === 'connecting' && !answered;
+  const isRingingOrCalling = callState === 'ringing' || callState === 'calling' || fetching;
+  // Answered, the call still on its way (a second or two): the in-call
+  // screen straight away, like WhatsApp — Mute/Speaker wait for the audio.
+  const linking = callState === 'connecting' && answered;
 
   const statusText =
     callState === 'ended' ? (endedLabel || 'Call ended') :
+    fetching ? 'Incoming call…' :
     callState === 'connecting' ? 'Connecting…' :
     callState === 'ringing' ? 'Incoming call…' :
     callState === 'calling' ? (remoteRinging ? 'Ringing…' : 'Calling…') :
@@ -169,13 +179,13 @@ export function CallOverlay({
 
       {callState === 'ended' ? (
         <View style={styles.incomingRow} />
-      ) : callState === 'connecting' ? (
+      ) : fetching ? (
         <View style={styles.incomingRow}>
           <View style={styles.actionGroup}>
             <TouchableOpacity style={[styles.circleBtn, { backgroundColor: '#EF4444' }]} onPress={onDecline}>
               <PhoneOff size={28} color="#fff" />
             </TouchableOpacity>
-            <ThemedText style={styles.actionLabel}>Cancel</ThemedText>
+            <ThemedText style={styles.actionLabel}>Decline</ThemedText>
           </View>
         </View>
       ) : callState === 'ringing' ? (
@@ -195,26 +205,28 @@ export function CallOverlay({
         </View>
       ) : (
         <View style={styles.activeRow}>
-          <View style={styles.actionGroup}>
+          <View style={[styles.actionGroup, linking && { opacity: 0.4 }]}>
             <TouchableOpacity
               style={[styles.smallCircleBtn, isMuted && { backgroundColor: BRAND }]}
               onPress={onToggleMute}
+              disabled={linking}
             >
               {isMuted ? <MicOff size={22} color="#000" /> : <Mic size={22} color="#fff" />}
             </TouchableOpacity>
             <ThemedText style={styles.actionLabelSmall}>Mute</ThemedText>
           </View>
-          <View style={styles.actionGroup}>
+          <View style={[styles.actionGroup, linking && { opacity: 0.4 }]}>
             <TouchableOpacity
               style={[styles.smallCircleBtn, isSpeakerOn && { backgroundColor: BRAND }]}
               onPress={onToggleSpeaker}
+              disabled={linking}
             >
               <Volume2 size={22} color={isSpeakerOn ? '#000' : '#fff'} />
             </TouchableOpacity>
             <ThemedText style={styles.actionLabelSmall}>Speaker</ThemedText>
           </View>
           <View style={styles.actionGroup}>
-            <TouchableOpacity style={[styles.circleBtn, { backgroundColor: '#EF4444' }]} onPress={onEnd}>
+            <TouchableOpacity style={[styles.circleBtn, { backgroundColor: '#EF4444' }]} onPress={linking ? onDecline : onEnd}>
               <PhoneOff size={28} color="#fff" />
             </TouchableOpacity>
             <ThemedText style={styles.actionLabel}>End</ThemedText>

@@ -2,7 +2,7 @@ import notifee, { AndroidForegroundServiceType, AndroidImportance, AndroidStyle,
 import messaging from '@react-native-firebase/messaging';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
-import { Alert, AppRegistry, AppState, NativeEventEmitter, NativeModules, Platform } from 'react-native';
+import { Alert, AppRegistry, AppState, Linking, NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import RNCallKeep from 'react-native-callkeep';
 import VoipPushNotification from 'react-native-voip-push-notification';
 import { RTCAudioSession } from 'react-native-webrtc';
@@ -36,6 +36,8 @@ interface IncomingCallData {
   callerName: string;
   /** Which call this is — the opened screen auto-answers only this one. */
   callId?: string;
+  /** The caller's profile photo, for the call screens. */
+  callerImage?: string;
 }
 
 // Deterministic per-job id — without this, every push created a brand new
@@ -101,15 +103,71 @@ function markAnswering() {
   setTimeout(() => { isAnsweringCall = false; }, 8000);
 }
 
+// Call screens already opened, by call — one Accept can reach the app by
+// several routes on a cold start (the notification library's background and
+// startup handlers, the native call notification, the pending call below).
+// Each used to push its own copy of the call screen: one got the call, the
+// other sat on "Connecting…" and came back when the user pressed back.
+// By job; the same call when the ids match or either route had no id.
+const openedCallScreens = new Map<string, { callId?: string; at: number }>();
+const CALL_SCREEN_DEDUPE_MS = 60000;
+
+// Accept pressed for a call whose screen is open but hasn't got the call yet
+// (still fetching it): answered as soon as it arrives instead of ringing.
+let acceptRequest: { jobId: string; at: number } | null = null;
+const ACCEPT_REQUEST_MS = 30000;
+
+/** True (once) if Accept was pressed for this job's call before its screen
+ * had the call. Answering clears it either way. */
+export function takeAcceptRequest(jobId: string): boolean {
+  const req = acceptRequest;
+  if (req?.jobId !== jobId) return false;
+  acceptRequest = null;
+  return Date.now() - req.at < ACCEPT_REQUEST_MS;
+}
+
+/** The chat screen's call is over: a call that had no id can't be told
+ * apart from the next one, so forget it — the next call opens normally. */
+export function forgetCallScreen(jobId: string) {
+  if (!openedCallScreens.get(jobId)?.callId) openedCallScreens.delete(jobId);
+}
+
+// Calls that ended on this phone. A late route (a notification tap, the
+// pending call, the native screen) must not open a screen for one of them —
+// it sat on "Incoming call…" for a call that was over.
+const endedCallIds = new Map<string, number>();
+const ENDED_CALL_MEMORY_MS = 10 * 60 * 1000;
+
+/** chat.tsx: this call is over on this phone. */
+export function markCallEnded(callId: string | null | undefined) {
+  if (!callId) return;
+  const now = Date.now();
+  for (const [id, at] of endedCallIds) if (now - at > ENDED_CALL_MEMORY_MS) endedCallIds.delete(id);
+  endedCallIds.set(callId, now);
+}
+
 function openCallScreen(call: IncomingCallData, autoAnswer: boolean, returnOnEnd = false) {
-  if (autoAnswer) markAnswering();
-  // This job's chat is already on screen: it's ringing in place (or in the
-  // call). Pushing another copy on top was the duplicate call screen — answer
-  // in the open one instead.
-  if (call.jobId === activeChatJobId) {
-    if (autoAnswer) acceptHandler?.();
+  // Not a call (no job), or one that already ended here: nothing to open.
+  if (!call.jobId || (call.callId && endedCallIds.has(call.callId))) {
+    if (pendingCall?.call.jobId === call.jobId) pendingCall = null;
     return;
   }
+  if (autoAnswer) markAnswering();
+  const now = Date.now();
+  for (const [k, v] of openedCallScreens) if (now - v.at > CALL_SCREEN_DEDUPE_MS) openedCallScreens.delete(k);
+  if (pendingCall?.call.jobId === call.jobId) pendingCall = null;
+  const opened = openedCallScreens.get(call.jobId);
+  const sameCall = !!opened && (!opened.callId || !call.callId || opened.callId === call.callId);
+  // This job's chat is already on screen (ringing in place or in the call),
+  // or this call's screen was just opened: answer there, never a second copy.
+  if (call.jobId === activeChatJobId || sameCall) {
+    if (autoAnswer) {
+      acceptRequest = { jobId: call.jobId, at: now };
+      acceptHandler?.();
+    }
+    return;
+  }
+  openedCallScreens.set(call.jobId, { callId: call.callId, at: now });
   safeNavigate(() => router.push({
     pathname: '/chat',
     params: {
@@ -119,6 +177,7 @@ function openCallScreen(call: IncomingCallData, autoAnswer: boolean, returnOnEnd
       profession: 'Incoming Call',
       autoAnswer: autoAnswer ? 'true' : 'false',
       ...(call.callId ? { callId: call.callId } : {}),
+      ...(call.callerImage ? { profileImage: call.callerImage } : {}),
       ...(returnOnEnd ? { returnOnEnd: 'true' } : {}),
     },
   } as any));
@@ -167,6 +226,43 @@ async function ensureCallChannel() {
 // ringing) without the backend needing to know who's ringing whom.
 const ringingJobIds = new Set<string>();
 
+// The one call this phone is placing — a second chat screen (two quick taps
+// on a Call button on a slow network) used to place a second call.
+let outgoingCallToken: string | null = null;
+
+/** A token if no other screen is placing a call, else null. */
+export function claimOutgoingCall(): string | null {
+  if (outgoingCallToken) return null;
+  outgoingCallToken = `${Date.now()}-${Math.random()}`;
+  return outgoingCallToken;
+}
+
+export function releaseOutgoingCall(token: string | null) {
+  if (token && outgoingCallToken === token) outgoingCallToken = null;
+}
+
+let lastCallTapAt = 0;
+/** Call buttons that open the chat to call: ignore a repeat tap for 2s. */
+export function callTapAllowed(): boolean {
+  const now = Date.now();
+  if (now - lastCallTapAt < 2000) return false;
+  lastCallTapAt = now;
+  return true;
+}
+
+/** Rings for a call shown on the app's own call screen. Android: the phone's
+ * ringtone through Android's ringtone player (false if this build lacks the
+ * native module — the caller falls back). */
+export function startInAppRingtone(): boolean {
+  if (Platform.OS !== 'android' || !CallStyleModule?.startRingtone) return false;
+  CallStyleModule.startRingtone();
+  return true;
+}
+
+export function stopInAppRingtone() {
+  if (Platform.OS === 'android') CallStyleModule?.stopRingtone?.();
+}
+
 function reportRinging(call: IncomingCallData) {
   if (call.callId) SkoFyApi.calls.ringing(call.jobId, call.callId).catch(() => {});
 }
@@ -179,7 +275,7 @@ async function showIncomingCallNotification(data: IncomingCallData) {
   // on iOS (practically unused there — iOS calls arrive via PushKit/CallKit,
   // never this path) or if the native module somehow isn't available.
   if (Platform.OS === 'android' && CallStyleModule) {
-    await CallStyleModule.showIncoming(data.jobId, data.callerName, data.callerId || '', data.callId || '');
+    await CallStyleModule.showIncoming(data.jobId, data.callerName, data.callerId || '', data.callId || '', data.callerImage || '');
     return;
   }
   await ensureCallChannel();
@@ -187,7 +283,9 @@ async function showIncomingCallNotification(data: IncomingCallData) {
     id: notificationIdFor(data.jobId),
     title: 'Incoming call',
     body: `${data.callerName} is calling…`,
-    data: data as any,
+    // Notifee accepts only string values — a call without a photo or id
+    // (undefined) would make it refuse the whole notification.
+    data: Object.fromEntries(Object.entries(data).filter(([, v]) => typeof v === 'string')) as any,
     android: {
       channelId: CALL_CHANNEL_ID,
       importance: AndroidImportance.HIGH,
@@ -512,6 +610,7 @@ function parseIncomingCall(remoteData: Record<string, any> | undefined): Incomin
     callerId: remoteData.caller_id,
     callerName: remoteData.caller_name,
     callId: remoteData.call_id || undefined,
+    callerImage: remoteData.caller_image || undefined,
   };
 }
 
@@ -628,6 +727,9 @@ function handleNotifeeEvent(type: EventType, detail: any) {
   }
 
   const data = detail.notification?.data as IncomingCallData | undefined;
+  // Only an incoming call's own notification reaches the call handling
+  // below — anything else (no job on it) used to open an empty call screen.
+  if (!data?.jobId) return;
 
   // A swipe-dismiss without ever pressing Accept/Decline must still tell the
   // caller — otherwise their "Calling…" screen just hangs forever with no signal.
@@ -689,10 +791,10 @@ export async function handleInitialNotification(): Promise<boolean> {
 }
 
 /** True if it opened the call screen (the splash route then skips its own redirect). */
-async function dispatchCallAction({ action, jobId, callerName, callerId, callId }: {
-  action: string; jobId: string; callerName: string; callerId?: string; callId?: string;
+async function dispatchCallAction({ action, jobId, callerName, callerId, callId, callerImage }: {
+  action: string; jobId: string; callerName: string; callerId?: string; callId?: string; callerImage?: string;
 }): Promise<boolean> {
-  const data: IncomingCallData = { jobId, callerId: callerId || '', callerName, callId: callId || undefined };
+  const data: IncomingCallData = { jobId, callerId: callerId || '', callerName, callId: callId || undefined, callerImage: callerImage || undefined };
   if (action.endsWith('OPEN_RINGING') && await isAppLocked()) {
     // The full-screen call (locked phone) or a tap, with App Lock on: keep
     // ringing as a notification — only Answer may open the app.
@@ -737,14 +839,7 @@ export async function handleInitialCallAction(): Promise<boolean> {
   }
 }
 
-let ongoingTimer: ReturnType<typeof setInterval> | null = null;
 let resolveOngoingService: (() => void) | null = null;
-
-function formatElapsed(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
-}
 
 /** Registers the long-running task notifee keeps the process alive for while
  * the "ongoing call" notification is showing — must be called at module load,
@@ -774,59 +869,90 @@ let currentOngoingControls = { isMuted: false, isSpeakerOn: false };
  * Android only: on iOS the CallKit call is the system's call UI. */
 export async function startOngoingCallNotification(jobId: string, callerName: string, phase: 'calling' | 'connected' = 'connected') {
   if (Platform.OS !== 'android') return;
+  // Already showing for this call (dialing → connected): update it in place.
+  // Restarting the foreground service instead — from the background, where a
+  // call often connects — is something Android refuses for a microphone
+  // service, and the call's audio went with it.
+  if (ongoingCall?.jobId === jobId) {
+    if (phase === 'connected' && ongoingCall.phase !== 'connected') {
+      ongoingCall = { ...ongoingCall, phase, connectedAt: Date.now() };
+      await renderOngoingCall(false);
+    }
+    return;
+  }
   await notifee.createChannel({
     id: ONGOING_CALL_CHANNEL_ID,
     name: 'Ongoing Calls',
     importance: AndroidImportance.LOW,
     visibility: AndroidVisibility.PUBLIC,
   });
-
-  const id = `ongoing-call-${jobId}`;
-  const startedAt = Date.now();
   currentOngoingControls = { isMuted: false, isSpeakerOn: false };
+  ongoingCall = { jobId, callerName, phase, connectedAt: phase === 'connected' ? Date.now() : null };
+  // Started once, while the app is on screen (dialing or answering).
+  await renderOngoingCall(true);
+}
 
-  const render = (elapsedSeconds: number) =>
-    notifee.displayNotification({
-      id,
-      title: `Call with ${callerName}`,
-      body: phase === 'calling' ? 'Calling…' : `Ongoing call · ${formatElapsed(elapsedSeconds)}`,
-      data: { ongoingCallJobId: jobId } as any,
+// The call shown in the ongoing-call notification. Its timer is Android's own
+// chronometer — no per-second re-render, which restarted the foreground
+// service every second.
+let ongoingCall: { jobId: string; callerName: string; phase: 'calling' | 'connected'; connectedAt: number | null } | null = null;
+
+async function renderOngoingCall(startService: boolean) {
+  const call = ongoingCall;
+  if (!call) return;
+  const connected = call.phase === 'connected';
+  try {
+    await notifee.displayNotification({
+      id: `ongoing-call-${call.jobId}`,
+      title: `Call with ${call.callerName}`,
+      body: connected ? 'Ongoing call' : 'Calling…',
+      data: { ongoingCallJobId: call.jobId } as any,
       android: {
         channelId: ONGOING_CALL_CHANNEL_ID,
-        asForegroundService: true,
-        foregroundServiceTypes: [AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_PHONE_CALL],
+        // Only the first display starts the service; later ones update the
+        // same notification, which keeps the service running.
+        asForegroundService: startService,
+        // Microphone too: Android silences the mic of an app in the
+        // background unless its foreground service declares it — the other
+        // person heard nothing until the app was reopened.
+        foregroundServiceTypes: startService ? [
+          AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_PHONE_CALL,
+          AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_MICROPHONE,
+        ] : undefined,
         ongoing: true,
         autoCancel: false,
+        onlyAlertOnce: true,
+        ...(connected && call.connectedAt ? { showChronometer: true, timestamp: call.connectedAt } : {}),
         pressAction: { id: 'default', launchActivity: 'default' },
-        actions: phase === 'calling'
-          ? [{ title: 'Hang Up', pressAction: { id: 'hangup' } }]
-          : [
+        actions: connected
+          ? [
             { title: currentOngoingControls.isMuted ? 'Unmute' : 'Mute', pressAction: { id: 'mute' } },
             { title: currentOngoingControls.isSpeakerOn ? 'Speaker Off' : 'Speaker', pressAction: { id: 'speaker' } },
             { title: 'Hang Up', pressAction: { id: 'hangup' } },
-          ],
+          ]
+          : [{ title: 'Hang Up', pressAction: { id: 'hangup' } }],
         importance: AndroidImportance.LOW,
         color: '#FFCE48',
       },
     });
-
-  if (ongoingTimer) { clearInterval(ongoingTimer); ongoingTimer = null; }
-  await render(0);
-  if (phase === 'calling') return;
-  ongoingTimer = setInterval(() => {
-    render(Math.floor((Date.now() - startedAt) / 1000));
-  }, 1000);
+  } catch (err) {
+    console.warn('Ongoing call notification failed:', err);
+  }
 }
 
 /** Call from chat.tsx whenever mute/speaker changes (from the in-app buttons
  * or from the notification's own actions) so the notification's labels stay
  * in sync with whichever side last toggled them. */
 export function updateOngoingCallControls(isMuted: boolean, isSpeakerOn: boolean) {
+  if (currentOngoingControls.isMuted === isMuted && currentOngoingControls.isSpeakerOn === isSpeakerOn) return;
   currentOngoingControls = { isMuted, isSpeakerOn };
+  // The Mute/Speaker labels change now — they used to wait for the next
+  // once-a-second re-render.
+  if (ongoingCall?.phase === 'connected') renderOngoingCall(false);
 }
 
 export async function stopOngoingCallNotification(jobId: string) {
-  if (ongoingTimer) { clearInterval(ongoingTimer); ongoingTimer = null; }
+  if (ongoingCall?.jobId === jobId) ongoingCall = null;
   // notifee.stopForegroundService() is the actual sanctioned way to tear this
   // down — just resolving the task's own Promise (the old approach here) left
   // the notification stuck on screen, which also looked like "Hang Up doesn't
@@ -1175,12 +1301,12 @@ const FULL_SCREEN_REPROMPT_MS = 7 * 24 * 60 * 60 * 1000;
 /** Android 14+ doesn't let apps that aren't dialers show a full-screen call
  * over the lock screen until the user turns it on — without it an incoming
  * call is only a small banner. Asks at most once a week. */
-async function checkFullScreenCallPermission() {
-  if (Platform.OS !== 'android' || !CallScreenModule) return;
+async function checkFullScreenCallPermission(): Promise<boolean> {
+  if (Platform.OS !== 'android' || !CallScreenModule) return false;
   try {
-    if (await CallScreenModule.canUseFullScreenIntent()) return;
+    if (await CallScreenModule.canUseFullScreenIntent()) return false;
     const last = Number(await SecureStore.getItemAsync(FULL_SCREEN_PROMPTED_KEY)) || 0;
-    if (Date.now() - last < FULL_SCREEN_REPROMPT_MS) return;
+    if (Date.now() - last < FULL_SCREEN_REPROMPT_MS) return false;
     await SecureStore.setItemAsync(FULL_SCREEN_PROMPTED_KEY, String(Date.now()));
     Alert.alert(
       'Show calls on your lock screen',
@@ -1190,8 +1316,37 @@ async function checkFullScreenCallPermission() {
         { text: 'Open settings', onPress: () => CallScreenModule.openFullScreenIntentSettings() },
       ],
     );
+    return true;
   } catch (err) {
     console.warn('Full-screen call permission check failed:', err);
+    return false;
+  }
+}
+
+// Phone makers whose settings stop a call from showing on the lock screen,
+// or from ringing at all with the app closed, until the user allows it —
+// WhatsApp is allowed by default there, other apps aren't.
+const STRICT_MAKERS = ['xiaomi', 'redmi', 'poco', 'oppo', 'realme', 'oneplus', 'vivo', 'iqoo', 'huawei', 'honor'];
+const MAKER_PROMPTED_KEY = 'dodorez_maker_call_settings_prompted';
+
+/** Once per install, on those phones: where to allow calls to ring and show. */
+async function checkMakerCallSettings() {
+  if (Platform.OS !== 'android') return;
+  const maker = String((Platform.constants as any)?.Manufacturer ?? '').toLowerCase();
+  if (!STRICT_MAKERS.some((name) => maker.includes(name))) return;
+  try {
+    if (await SecureStore.getItemAsync(MAKER_PROMPTED_KEY)) return;
+    await SecureStore.setItemAsync(MAKER_PROMPTED_KEY, String(Date.now()));
+    Alert.alert(
+      'Let calls ring when your phone is locked',
+      'This phone limits apps by default. In Dodorez’s settings, turn on “Show on lock screen”, “Pop-up windows” (or “Display over other apps”) and “Auto-start”, and set battery to “No restrictions”.',
+      [
+        { text: 'Later', style: 'cancel' },
+        { text: 'Open settings', onPress: () => Linking.openSettings() },
+      ],
+    );
+  } catch (err) {
+    console.warn('Call settings prompt failed:', err);
   }
 }
 
@@ -1200,7 +1355,8 @@ async function checkFullScreenCallPermission() {
 export function initCallManager() {
   setupCallKeepForIOS();
   initCallActionListener();
-  checkFullScreenCallPermission();
+  // One prompt per launch at most.
+  checkFullScreenCallPermission().then((asked) => { if (!asked) checkMakerCallSettings(); });
 
   // Android 13+ blocks all notifications by default until the app explicitly
   // requests this at runtime — declaring POST_NOTIFICATIONS in the manifest

@@ -2,8 +2,8 @@ import AnimatedBackground from '@/components/animated-background';
 import AnimatedBrandMark from '@/components/animated-brand-mark';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { router } from 'expo-router';
-import React, { useEffect, useRef } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { TokenStore, clearStaleSessionAfterReinstall } from '@/services/api';
 import { handleInitialCallAction, handleInitialNotification } from '@/services/callManager';
@@ -14,6 +14,19 @@ export default function SplashScreen() {
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const opacity = useRef(new Animated.Value(0)).current;
+
+  // Opened straight into a call (Accept on a locked phone, a call
+  // notification), this splash stayed under the call screen with its own
+  // redirect skipped — so when the call ended and the app came back here,
+  // it sat on the splash for good. Coming back to it: carry on into the app.
+  const focusCountRef = useRef(0);
+  useFocusEffect(useCallback(() => {
+    focusCountRef.current += 1;
+    if (focusCountRef.current === 1) return;
+    clearStaleSessionAfterReinstall().then(() => TokenStore.getAccessToken()).then(token => {
+      router.replace(token ? '/home' : '/login');
+    });
+  }, []));
 
   useEffect(() => {
     Animated.timing(opacity, { toValue: 1, duration: 800, useNativeDriver: true }).start();

@@ -15,9 +15,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
-import { ChevronLeft, LocateFixed, Navigation2, RefreshCw, Search, Star, X } from 'lucide-react-native';
+import { ChevronLeft, Lock, LocateFixed, Navigation2, RefreshCw, Search, Star, X } from 'lucide-react-native';
+import { ProfessionIcon } from '@/components/profession-icon';
 import { Fonts } from '@/constants/theme';
 import { SkoFyApi } from '@/services/api';
+import { NAME_AFTER_HIRING, providerShortTitle, providerTitle, isNameHidden } from '@/services/providerName';
 import { VoicePostModal } from '@/components/voice-post-modal';
 
 let MapView: any;
@@ -390,8 +392,10 @@ export default function ProviderMapScreen() {
             : secsSinceSeen > 1800
               ? '#EF4444'                        // red    — not seen >30m
               : '#F97316';                       // orange — busy / recent
-          const firstName = p.name.split(' ')[0];
-          const prof = p.profession ?? 'Provider';
+          // Name withheld before hiring: the pin says what they do instead.
+          const hidden = isNameHidden(p.name);
+          const firstName = providerShortTitle(p.name, p.profession);
+          const prof = hidden ? '' : (p.profession ?? 'Provider');
           const ago = timeAgo(p.last_seen);
 
           return (
@@ -409,7 +413,7 @@ export default function ProviderMapScreen() {
                   <Image source={{ uri: p.profile_image_url }} style={s.markerAvatarImg} />
                 ) : (
                   <View style={[s.markerAvatarClip, { backgroundColor: color }]}>
-                    <Text style={s.markerAvatarInitial}>{(p.name[0] ?? '?').toUpperCase()}</Text>
+                    <ProfessionIcon profession={p.profession} size={20} />
                   </View>
                 )}
               </View>
@@ -418,7 +422,7 @@ export default function ProviderMapScreen() {
               <View style={s.markerCard}>
                 <View style={s.markerCardTail} />
                 <Text style={s.markerName} numberOfLines={1}>{firstName}</Text>
-                <Text style={s.markerProf} numberOfLines={1}>{prof}</Text>
+                {!!prof && <Text style={s.markerProf} numberOfLines={1}>{prof}</Text>}
                 <Text style={s.markerTime} numberOfLines={1}>{ago}</Text>
               </View>
             </TouchableOpacity>
@@ -530,14 +534,21 @@ export default function ProviderMapScreen() {
                   {selected.profile_image_url ? (
                     <Image source={{ uri: selected.profile_image_url }} style={s.sheetAvatarImg} />
                   ) : (
-                    <Text style={s.sheetAvatarInitial}>{(selected.name[0] ?? '?').toUpperCase()}</Text>
+                    <ProfessionIcon profession={selected.profession} size={30} />
                   )}
                 </View>
               </View>
 
               <View style={s.sheetInfo}>
-                <Text style={s.sheetName}>{selected.name}</Text>
-                <Text style={s.sheetProfession}>{selected.profession ?? 'Service Provider'}</Text>
+                <Text style={s.sheetName}>{providerTitle(selected.name, selected.profession)}</Text>
+                {isNameHidden(selected.name) ? (
+                  <View style={s.hiddenNameRow}>
+                    <Lock size={11} color="#6B7280" />
+                    <Text style={s.sheetProfession}>{NAME_AFTER_HIRING}</Text>
+                  </View>
+                ) : (
+                  <Text style={s.sheetProfession}>{selected.profession ?? 'Service Provider'}</Text>
+                )}
                 <View style={s.sheetStatusRow}>
                   <View style={[s.statusDot, { backgroundColor: selected.is_available ? '#10B981' : '#F97316' }]} />
                   <Text style={[s.statusText, { color: selected.is_available ? '#10B981' : '#F97316' }]}>
@@ -619,12 +630,12 @@ export default function ProviderMapScreen() {
                     inList && s.directBtnTextActive,
                   ]}>
                     {!selected.is_available
-                      ? `${selected.name.split(' ')[0]} is currently busy`
+                      ? (isNameHidden(selected.name) ? 'Currently busy' : `${providerShortTitle(selected.name)} is currently busy`)
                       : inList
-                      ? `Remove ${selected.name.split(' ')[0]} from request`
+                      ? 'Remove from request'
                       : full
                       ? `Request is full (max ${MAX_SHORTLIST})`
-                      : `Add ${selected.name.split(' ')[0]} to request`}
+                      : 'Add to request'}
                   </Text>
                 </TouchableOpacity>
               );
@@ -645,7 +656,7 @@ export default function ProviderMapScreen() {
             {shortlist.map((p, idx) => (
               <View key={p.provider_id} style={s.shortlistChip}>
                 {idx > 0 && <Text style={s.shortlistChipArrow}>→</Text>}
-                <Text style={s.shortlistChipText} numberOfLines={1}>{p.name.split(' ')[0]}</Text>
+                <Text style={s.shortlistChipText} numberOfLines={1}>{providerShortTitle(p.name, p.profession)}</Text>
                 <TouchableOpacity onPress={() => toggleShortlist(p)} hitSlop={8}>
                   <X size={11} color="#6B7280" />
                 </TouchableOpacity>
@@ -890,6 +901,7 @@ const s = StyleSheet.create({
   sheetInfo: { flex: 1, gap: 2 },
   sheetName: { fontSize: 20, lineHeight: 25, fontFamily: Fonts.poppinsBold, color: '#111827' },
   sheetProfession: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppins, color: '#6B7280' },
+  hiddenNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   sheetStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
   statusText: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsSemiBold },

@@ -2,6 +2,7 @@ import { EmptyJobsState } from '@/components/empty-jobs-state';
 import { NoInternetState } from '@/components/no-internet-state';
 import { Skeleton } from '@/components/skeleton';
 import { SkoFyBottomBar } from '@/components/skofy-bottom-bar';
+import { AcceptedIdDocuments } from '@/components/accepted-id-documents';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
@@ -1031,17 +1032,19 @@ export default function ProfileScreen() {
           <ThemedText style={styles.sectionTitle}>Identity Verification</ThemedText>
         </View>
         <View style={styles.infoList}>
+          {/* While adding or changing an ID: which documents are accepted. */}
+          {isEditing && <AcceptedIdDocuments />}
           {/* ID Number */}
           <View style={styles.infoItem}>
             <CreditCard size={20} color="#6B7280" />
             <View style={styles.infoContent}>
-              <ThemedText style={styles.infoLabel}>Government ID Number</ThemedText>
+              <ThemedText style={styles.infoLabel}>ID number</ThemedText>
               {isEditing ? (
                 <TextInput
                   style={styles.editableInput}
                   value={userData.idNumber}
                   onChangeText={text => setUserData(prev => ({ ...prev, idNumber: text }))}
-                  placeholder="Enter your ID number"
+                  placeholder="e.g. your driver's license number"
                   placeholderTextColor={themeColors.icon}
                 />
               ) : (
@@ -1056,7 +1059,7 @@ export default function ProfileScreen() {
           <View style={{ marginTop: 20, borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 16 }}>
             <ThemedText style={[styles.infoLabel, { marginBottom: 4 }]}>ID Document Photos</ThemedText>
             <ThemedText style={{ fontSize: 11, lineHeight: 17, fontFamily: Fonts.poppins, color: '#9CA3AF', marginBottom: 14 }}>
-              Upload front, back, and any additional page (up to 3)
+              Front and back of your ID, plus any extra page (up to 3 photos)
             </ThemedText>
             <View style={{ flexDirection: 'row', gap: 10 }}>
               {(['Front', 'Back', 'Extra'] as const).map((label, idx) => {

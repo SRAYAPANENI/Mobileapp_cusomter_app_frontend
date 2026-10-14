@@ -8,6 +8,7 @@ import { SkoFyApi, BASE_URL, TokenStore, getFreshAccessToken } from '@/services/
 import { kmToMiles } from '@/services/units';
 import { GOOGLE_PLACES_API_KEY } from '@/services/google-places';
 import { Image } from 'expo-image';
+import { callTapAllowed } from '@/services/callManager';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
   ChevronLeft,
@@ -777,7 +778,7 @@ export default function TrackProviderScreen() {
     // This used to dial the provider's raw phone number through the device's
     // native dialer — switched to the in-app VoIP call so it actually goes
     // through our calling system (push notifications, call logs, etc.).
-    if (!jobId || !provider) return;
+    if (!jobId || !provider || !callTapAllowed()) return;
     router.push({
       pathname: '/chat' as any,
       params: {

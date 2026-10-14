@@ -33,7 +33,9 @@ import {
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
+import { ProfessionIcon } from '@/components/profession-icon';
 import { SkoFyApi } from '@/services/api';
+import { NAME_AFTER_HIRING, providerInitial, providerShortTitle, providerTitle, isNameHidden } from '@/services/providerName';
 import { Applicant } from '@/data/applicantsData';
 import { useHirePayment } from '@/hooks/use-hire-payment';
 
@@ -85,11 +87,17 @@ function ApplicantCard({
               }
             })}
       >
-        <Image
-          source={{ uri: item.profileImage }}
-          style={styles.profileImage}
-          contentFit="cover"
-        />
+        {item.profileImage ? (
+          <Image
+            source={{ uri: item.profileImage }}
+            style={styles.profileImage}
+            contentFit="cover"
+          />
+        ) : (
+          <View style={[styles.profileImage, { backgroundColor: '#1F2937', alignItems: 'center', justifyContent: 'center' }]}>
+            <ProfessionIcon profession={(item as any).trade} size={28} />
+          </View>
+        )}
         <View style={styles.headerInfo}>
           <View style={styles.nameRow}>
             <ThemedText style={styles.nameText}>{item.name}</ThemedText>
@@ -206,17 +214,22 @@ function ApplicantCard({
     </Animated.View>
   );
 }
-function mapApiApplicant(a: any): Applicant & { applicationId: string; providerId: string } {
-  const name = a.provider_name ?? a.name ?? 'Provider';
+function mapApiApplicant(a: any): Applicant & { applicationId: string; providerId: string; trade: string | null } {
+  // Withheld until hired (server-side): the card shows the profession and
+  // "Name shared after hiring" instead.
+  const rawName = a.provider_name ?? a.name;
+  const nameHidden = isNameHidden(rawName);
+  const name = providerTitle(rawName, a.profession);
   const hci = a.hci_score ?? 70;
   return {
     id: a.application_id,
     applicationId: a.application_id,
     providerId: a.provider_id,
     name,
-    profileImage: a.provider_image ?? a.profile_image_url
-      ?? `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=FFCE48&color=000`,
-    profession: a.profession ?? 'Service Provider',
+    // '' = no photo: the card shows their trade's icon instead.
+    profileImage: a.provider_image ?? a.profile_image_url ?? '',
+    trade: a.profession ?? null,
+    profession: nameHidden ? NAME_AFTER_HIRING : (a.profession ?? 'Service Provider'),
     expertise: hci >= 80 ? 'Expert' : hci >= 50 ? 'Intermediate' : 'Beginner',
     distance: a.distance_km ? `${kmToMiles(Number(a.distance_km)).toFixed(1)} mi away` : 'Nearby',
     skillMatch: Math.min(100, Math.round(hci)),

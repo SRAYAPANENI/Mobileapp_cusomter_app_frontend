@@ -3,7 +3,9 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { ProfessionIcon } from '@/components/profession-icon';
 import { SkoFyApi } from '@/services/api';
+import { NAME_AFTER_HIRING, providerInitial, providerShortTitle, providerTitle, isNameHidden } from '@/services/providerName';
 import { useHirePayment } from '@/hooks/use-hire-payment';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -274,11 +276,14 @@ export default function ProviderDetailsScreen() {
     );
   }
 
+  const profession = profile.skills?.[0] ?? 'Service Provider';
+  // The name is withheld until this customer hires them (server-side).
+  const nameHidden = isNameHidden(profile.name);
   const PROVIDER_DATA = {
-    name: profile.name,
-    profession: profile.skills?.[0] ?? 'Service Provider',
+    name: providerTitle(profile.name, profession),
+    profession: nameHidden ? NAME_AFTER_HIRING : profession,
     profileImage: profile.profile_image_url
-      ?? `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name)}&background=FFCE48&color=000`,
+      ?? `https://ui-avatars.com/api/?name=${encodeURIComponent(providerInitial(profile.name, profession))}&background=FFCE48&color=000`,
     rating: profile.avg_rating ?? 0,
     jobsCompleted: profile.jobs_completed ?? 0,
     memberSince: formatMemberSince(profile.member_since),
@@ -340,11 +345,18 @@ export default function ProviderDetailsScreen() {
 
       {/* Header with Overlay */}
       <View style={styles.header}>
-        <Image
-          source={{ uri: PROVIDER_DATA.profileImage }}
-          style={styles.headerBackground}
-          contentFit="cover"
-        />
+        {profile.profile_image_url ? (
+          <Image
+            source={{ uri: PROVIDER_DATA.profileImage }}
+            style={styles.headerBackground}
+            contentFit="cover"
+          />
+        ) : (
+          // No photo: their trade, large, instead of a giant letter.
+          <View style={[styles.headerBackground, { backgroundColor: '#1F2937', alignItems: 'center', justifyContent: 'center' }]}>
+            <ProfessionIcon profession={profession} size={96} color="rgba(255,255,255,0.35)" />
+          </View>
+        )}
         <View style={styles.overlay} />
 
         <View style={styles.headerTop}>
@@ -420,7 +432,7 @@ export default function ProviderDetailsScreen() {
 
               <ThemedText style={[styles.sectionTitle, { marginTop: 20 }]}>Skills</ThemedText>
               <View style={styles.skillsGrid}>
-                {PROVIDER_DATA.skills.map(skill => (
+                {PROVIDER_DATA.skills.map((skill: string) => (
                   <View key={skill} style={styles.skillBadge}>
                     <ThemedText style={styles.skillText}>{skill}</ThemedText>
                   </View>
@@ -623,7 +635,7 @@ export default function ProviderDetailsScreen() {
         <View style={[styles.footer, { bottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 20) + 12 }]}>
           <TouchableOpacity style={styles.hireButton} onPress={handleHire} disabled={hiring}>
             <ThemedText style={styles.hireButtonText}>
-              {hiring ? 'Hiring...' : `Hire ${PROVIDER_DATA.name.split(' ')[0]}`}
+              {hiring ? 'Hiring...' : nameHidden ? 'Hire' : `Hire ${providerShortTitle(profile.name)}`}
             </ThemedText>
           </TouchableOpacity>
         </View>
@@ -646,7 +658,9 @@ export default function ProviderDetailsScreen() {
             </View>
             <ThemedText style={styles.successTitle}>Hired Successfully!</ThemedText>
             <ThemedText style={styles.successSubtitle}>
-              You have hired {PROVIDER_DATA.name} for your requirement.
+              {nameHidden
+                ? `You have hired this ${profession.toLowerCase()} for your requirement. You'll see their name in My Jobs.`
+                : `You have hired ${PROVIDER_DATA.name} for your requirement.`}
             </ThemedText>
             {!!feeStatusMessage && (
               <ThemedText style={[styles.successSubtitle, { marginTop: 4, fontSize: 13, color: '#6B7280' }]}>
