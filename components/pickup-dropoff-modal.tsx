@@ -9,6 +9,8 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Text, TextInput } from '@/components/scaled-text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PickupOptions } from '@/components/pickup-options';
+import { PickupPurchase, PickupTiming, pickupJobFields, purchaseError, timingError } from '@/services/pickupOptions';
 
 type MediaItem = { uri: string; type: 'image' | 'video' };
 
@@ -52,6 +54,11 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
   const [resolvingSkill, setResolvingSkill] = useState(false);
   const [skillResolveError, setSkillResolveError] = useState(false);
   const [media, setMedia] = useState<MediaItem[]>([]);
+  // When, who pays for the goods, and how to find the door (PickupOptions).
+  const [timing, setTiming] = useState<PickupTiming>({ kind: 'ASAP' });
+  const [purchase, setPurchase] = useState<PickupPurchase>('PREPAID');
+  const [limitText, setLimitText] = useState('');
+  const [dropoffNotes, setDropoffNotes] = useState('');
 
   useEffect(() => {
     if (!visible) return;
@@ -61,6 +68,7 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
     setPickupPlaceId(null); setPickupPlaceType(null);
     setPickupLat(null); setPickupLng(null);
     setMedia([]);
+    setTiming({ kind: 'ASAP' }); setPurchase('PREPAID'); setLimitText(''); setDropoffNotes('');
     SkoFyApi.jobs.getPickupPlaceTypes().then(setAllowedPickupTypes).catch(() => {});
     resolveSkill();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -118,7 +126,8 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
 
   const hasValidPickup = pickupLat != null && pickupLng != null &&
     !!pickupPlaceType && allowedPickupTypes.includes(pickupPlaceType);
-  const canPost = hasValidPickup && description.trim().length > 0 &&
+  const optionsError = timingError(timing) ?? purchaseError(purchase, limitText);
+  const canPost = hasValidPickup && description.trim().length > 0 && !optionsError &&
     !!skillId && !resolvingSkill && dropoffLat != null && dropoffLng != null;
 
   // Both images and videos in one picker — same mediaTypes list step1.tsx
@@ -160,7 +169,7 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
         title: trimmed.length > 80 ? `${trimmed.slice(0, 77)}...` : trimmed,
         description: trimmed,
         skill_id: skillId,
-        urgency: 'MEDIUM',
+        ...pickupJobFields({ timing, purchase, limitText, notes: dropoffNotes, dropoffAddress }),
         lat: pickupLat!, lng: pickupLng!,
         job_type: 'PICKUP_DROPOFF',
         dropoff_lat: dropoffLat!, dropoff_lng: dropoffLng!,
@@ -246,6 +255,18 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
               />
             </View>
 
+            <PickupOptions
+              timing={timing}
+              onTimingChange={setTiming}
+              purchase={purchase}
+              onPurchaseChange={setPurchase}
+              limitText={limitText}
+              onLimitTextChange={setLimitText}
+              notes={dropoffNotes}
+              onNotesChange={setDropoffNotes}
+              editable={phase === 'confirm'}
+            />
+
             <View style={s.fieldWrap}>
               <Text style={s.fieldLabel}>Add photos or a video (optional)</Text>
               <View style={s.mediaRow}>
@@ -284,6 +305,9 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
             </TouchableOpacity>
           )}
 
+          {phase === 'confirm' && hasValidPickup && description.trim().length > 0 && optionsError && (
+            <Text style={s.fieldError}>{optionsError}</Text>
+          )}
           {phase === 'confirm' && (
             <TouchableOpacity
               style={[s.postButton, !canPost && s.postButtonDisabled]}

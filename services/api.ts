@@ -594,10 +594,20 @@ export const SkoFyApi = {
       dropoff_lng?: number;
       pickup_place_id?: string;
       pickup_place_type?: string;
+      // Pickup & Drop: the drop-off as typed, how to find the door, and who
+      // pays for the goods (services/pickupOptions.ts).
+      dropoff_address?: string;
+      dropoff_notes?: string;
+      pickup_purchase?: 'PREPAID' | 'BUY_FOR_ME';
+      purchase_limit?: number | null;
       // "ON_SITE" (default) or "REMOTE" — no physical location/distance
       // matching at all (e.g. hiring a developer/consultant).
       service_mode?: 'ON_SITE' | 'REMOTE';
     }) => request('/jobs', { method: 'POST', body: JSON.stringify(payload) }),
+
+    /** Pickup & Drop: the code the customer gives the provider at the drop-off. */
+    getDeliveryCode: async (jobId: string): Promise<{ code: string | null; expires_in_seconds: number | null }> =>
+      request(`/jobs/${jobId}/delivery/code`),
 
     /** The server-side allowlist of Google Places types a PICKUP_DROPOFF
      * job's pickup location may be — the actual enforcement happens on the

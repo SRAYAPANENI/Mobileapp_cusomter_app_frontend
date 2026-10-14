@@ -183,6 +183,31 @@ const STATUS_LABELS: Record<string, string> = {
   DISPUTED: 'Disputed',
 };
 
+// A one-time code the customer reads out to the provider: the arrival code on
+// in-person jobs, the drop-off code on deliveries.
+function CodeCard({ title, code, body, styles }: {
+  title: string; code: string; body: string; styles: ReturnType<typeof makeStyles>;
+}) {
+  return (
+    <View style={styles.otpCard}>
+      <View style={styles.otpCardHeader}>
+        <View style={styles.otpIconBadge}>
+          <ShieldCheck size={16} color="#111827" />
+        </View>
+        <ThemedText style={styles.otpCardTitle}>{title}</ThemedText>
+      </View>
+      <View style={styles.otpDigitsRow}>
+        {code.split('').map((digit, idx) => (
+          <View key={idx} style={styles.otpDigitBox}>
+            <ThemedText style={styles.otpDigitText}>{digit}</ThemedText>
+          </View>
+        ))}
+      </View>
+      <ThemedText style={styles.inspectionCardBody}>{body}</ThemedText>
+    </View>
+  );
+}
+
 export default function TrackProviderScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
@@ -232,6 +257,8 @@ export default function TrackProviderScreen() {
   // is only ever set here, after the provider inspects in person.
   const [inspectionFeeStatus, setInspectionFeeStatus] = useState<'PENDING_CAPTURE' | 'HELD' | 'FAILED' | null>(null);
   const [inspectionOtp, setInspectionOtp] = useState<{ otp: string | null; expires_in_seconds: number | null }>({ otp: null, expires_in_seconds: null });
+  // Pickup & Drop: the code the customer gives the provider at the drop-off.
+  const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
   // Pickup & Drop — the customer isn't physically at the pickup point (it's
   // a store), so the OTP card above can't apply to this job kind; a photo of
   // what was picked up substitutes for it instead.
@@ -467,7 +494,8 @@ export default function TrackProviderScreen() {
   // while it's actually relevant, not once the job is under way.
   useEffect(() => {
     if (!jobId) return;
-    if (!['ACCEPTED', 'INSPECTING', 'INVOICE_PENDING'].includes(jobStatus)) return;
+    const deliveryOnItsWay = jobStatus === 'IN_PROGRESS' && jobKind === 'PICKUP_DROPOFF';
+    if (!['ACCEPTED', 'INSPECTING', 'INVOICE_PENDING'].includes(jobStatus) && !deliveryOnItsWay) return;
     let cancelled = false;
 
     const poll = async () => {
@@ -496,6 +524,10 @@ export default function TrackProviderScreen() {
         if (jobStatus === 'INVOICE_PENDING') {
           const job = await SkoFyApi.jobs.get(jobId).catch(() => null);
           if (!cancelled && job) setInvoice((job as any)?.invoice ?? null);
+        }
+        if (deliveryOnItsWay) {
+          const result = await SkoFyApi.jobs.getDeliveryCode(jobId).catch(() => null);
+          if (!cancelled && result) setDeliveryCode(result.code);
         }
       } catch {
         // transient — keep showing last known values
@@ -998,9 +1030,13 @@ export default function TrackProviderScreen() {
               can request the on-site inspection OTP. */}
           {jobStatus === 'ACCEPTED' && inspectionFeeStatus !== 'HELD' && (
             <View style={styles.inspectionCard}>
-              <ThemedText style={styles.inspectionCardTitle}>Pay Visiting Fee</ThemedText>
+              <ThemedText style={styles.inspectionCardTitle}>
+                {jobKind === 'PICKUP_DROPOFF' ? 'Pay Delivery Fee' : 'Pay Visiting Fee'}
+              </ThemedText>
               <ThemedText style={styles.inspectionCardBody}>
-                Pay the visiting fee so your provider can start inspecting the job once they arrive.
+                {jobKind === 'PICKUP_DROPOFF'
+                  ? 'Pay the delivery fee so your provider can head to the store.'
+                  : 'Pay the visiting fee so your provider can start inspecting the job once they arrive.'}
               </ThemedText>
               <TouchableOpacity
                 style={styles.completeJobBtn}
@@ -1019,24 +1055,12 @@ export default function TrackProviderScreen() {
               Pickup & Drop — the customer isn't at the pickup point to hand
               over a code, see the pickup-photo card below instead. */}
           {jobStatus === 'ACCEPTED' && jobKind !== 'PICKUP_DROPOFF' && inspectionFeeStatus === 'HELD' && inspectionOtp.otp && (
-            <View style={styles.otpCard}>
-              <View style={styles.otpCardHeader}>
-                <View style={styles.otpIconBadge}>
-                  <ShieldCheck size={16} color="#111827" />
-                </View>
-                <ThemedText style={styles.otpCardTitle}>Give this code to your provider</ThemedText>
-              </View>
-              <View style={styles.otpDigitsRow}>
-                {inspectionOtp.otp.split('').map((digit, idx) => (
-                  <View key={idx} style={styles.otpDigitBox}>
-                    <ThemedText style={styles.otpDigitText}>{digit}</ThemedText>
-                  </View>
-                ))}
-              </View>
-              <ThemedText style={styles.inspectionCardBody}>
-                Your provider needs this code to start inspecting the job.
-              </ThemedText>
-            </View>
+            <CodeCard
+              title="Give this code to your provider"
+              code={inspectionOtp.otp}
+              body="Your provider needs this code to start inspecting the job."
+              styles={styles}
+            />
           )}
           {jobStatus === 'ACCEPTED' && jobKind !== 'PICKUP_DROPOFF' && inspectionFeeStatus === 'HELD' && !inspectionOtp.otp && (
             <View style={styles.inspectionCard}>
@@ -1055,7 +1079,7 @@ export default function TrackProviderScreen() {
                 <Image source={{ uri: pickupPhotoUrl }} style={styles.pickupPhoto} contentFit="cover" />
               )}
               <ThemedText style={styles.inspectionCardBody}>
-                Your provider has picked up your order and will deliver it shortly.
+                Your provider has your order. Review and pay the final price, and they'll bring it to you.
               </ThemedText>
             </View>
           )}
@@ -1065,6 +1089,24 @@ export default function TrackProviderScreen() {
                 Waiting for your provider to arrive and confirm pickup.
               </ThemedText>
             </View>
+          )}
+
+          {jobStatus === 'IN_PROGRESS' && jobKind === 'PICKUP_DROPOFF' && (
+            deliveryCode ? (
+              <CodeCard
+                title="Your drop-off code"
+                code={deliveryCode}
+                body="Give this code to your provider when they hand over your order."
+                styles={styles}
+              />
+            ) : (
+              <View style={styles.inspectionCard}>
+                <ThemedText style={styles.inspectionCardTitle}>On the way to you</ThemedText>
+                <ThemedText style={styles.inspectionCardBody}>
+                  When your provider arrives, they'll ask for a code — it will show here.
+                </ThemedText>
+              </View>
+            )
           )}
 
           {jobStatus === 'INSPECTING' && (

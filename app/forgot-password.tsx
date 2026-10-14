@@ -11,7 +11,8 @@ import React, { useState } from 'react';
 import { Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import CountryPicker, { Country, CountryCode } from 'react-native-country-picker-modal';
+import type { CountryCode } from 'react-native-country-picker-modal';
+import { UsPhonePrefix, US_CALLING_CODE, US_PHONE_INPUT_MAX, formatUsPhone, usPhoneDigits } from '@/components/us-phone-prefix';
 import Animated, { FadeInDown, Layout } from 'react-native-reanimated';
 
 // Only US numbers actually validate server-side (_validate_phone in
@@ -36,9 +37,9 @@ export default function ForgotPasswordScreen() {
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const { setIsLoading, showFeedback } = useAppContext();
 
-  const [countryCode, setCountryCode] = useState<CountryCode>('US');
-  const [callingCode, setCallingCode] = useState('1');
-  const [isCountryPickerVisible, setIsCountryPickerVisible] = useState(false);
+  // US launch: US numbers only — the server accepts only +1 numbers.
+  const countryCode: CountryCode = 'US';
+  const callingCode = US_CALLING_CODE;
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isCodeSent, setIsCodeSent] = useState(false);
 
@@ -51,12 +52,6 @@ export default function ForgotPasswordScreen() {
 
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
 
-  const onSelectCountry = (country: Country) => {
-    setCountryCode(country.cca2);
-    setCallingCode(country.callingCode[0]);
-    setIsCountryPickerVisible(false);
-    setPhoneNumber('');
-  };
 
   const requiredPhoneLength = PHONE_NUMBER_LENGTH[countryCode] ?? 10;
 
@@ -155,46 +150,20 @@ export default function ForgotPasswordScreen() {
                 <View style={styles.inputWrapper}>
                   <ThemedText style={styles.label}>Mobile Number</ThemedText>
                   <View style={styles.phoneInputContainer}>
-                    <TouchableOpacity
-                      style={[styles.countryPickerButton, {
-                        backgroundColor: themeColors.inputBackground,
-                        borderColor: isCountryPickerVisible ? themeColors.brand : (themeColors as any).inputBorder,
-                        borderWidth: 1,
-                      }]}
-                      onPress={() => setIsCountryPickerVisible(true)}
-                    >
-                      <CountryPicker
-                        countryCode={countryCode}
-                        withFilter={true}
-                        withFlag={true}
-                        withEmoji={false}
-                        withCallingCode={false}
-                        withCountryNameButton={false}
-                        withAlphaFilter={true}
-                        onSelect={onSelectCountry}
-                        visible={isCountryPickerVisible}
-                        onClose={() => setIsCountryPickerVisible(false)}
-                        containerButtonStyle={{ padding: 0, margin: 0 }}
-                        theme={{
-                          backgroundColor: themeColors.background,
-                          onBackgroundTextColor: themeColors.text,
-                          fontSize: 16,
-                          fontFamily: Fonts.poppins,
-                        }}
-                      />
-                      <ThemedText style={styles.callingCodeText}>+{callingCode}</ThemedText>
-                      <ChevronDown size={14} color={themeColors.icon} />
-                    </TouchableOpacity>
+                    <UsPhonePrefix
+                      style={[styles.countryPickerButton, { backgroundColor: themeColors.inputBackground, borderColor: (themeColors as any).inputBorder, borderWidth: 1 }]}
+                      textStyle={styles.callingCodeText}
+                    />
                     <TextInput
                       style={getInputStyle('phone')}
                       placeholder="Mobile number"
                       placeholderTextColor={themeColors.icon}
                       keyboardType="numeric"
-                      value={phoneNumber}
-                      onChangeText={(text) => setPhoneNumber(text.replace(/[^0-9]/g, ''))}
+                      value={formatUsPhone(phoneNumber)}
+                      onChangeText={(text) => setPhoneNumber(usPhoneDigits(text))}
                       onFocus={() => setFocusedInput('phone')}
                       onBlur={() => setFocusedInput(null)}
-                      maxLength={requiredPhoneLength}
+                      maxLength={US_PHONE_INPUT_MAX}
                     />
                   </View>
                 </View>
