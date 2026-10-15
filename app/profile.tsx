@@ -12,8 +12,7 @@ import { GooglePlacesService, GooglePlaceSuggestion } from '@/services/google-pl
 import { SkoFyApi } from '@/services/api';
 import { clearHomeCache } from '@/services/homeCache';
 import { AppLock } from '@/services/appLock';
-import { getCurrentVoipToken } from '@/services/callManager';
-import messaging from '@react-native-firebase/messaging';
+import { signOutDevice } from '@/services/callManager';
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -1215,19 +1214,10 @@ export default function ProfileScreen() {
 
               <TouchableOpacity style={styles.settingItem} onPress={async () => {
                 setIsSettingsOpen(false);
-                // Best-effort — a failure fetching these shouldn't block
-                // logout, it would just mean the backend deletes the token
-                // by user_id next login instead of right now (see
-                // auth_service.py's logout docstring for why this exists at
-                // all: without it, a logged-out device kept ringing for
-                // incoming calls indefinitely).
-                const fcmToken = await messaging().getToken().catch(() => undefined);
-                const voipToken = getCurrentVoipToken() ?? undefined;
-                await SkoFyApi.auth.logout(fcmToken, voipToken).catch((err) => {
-                  // Local logout proceeds regardless — this is just telling
-                  // the server to invalidate the refresh token server-side.
-                  console.error('Server-side logout failed:', err);
-                });
+                // Server drops this phone's tokens; the phone also has
+                // Firebase forget its token and stops any ringing, so a
+                // failed server call can't leave it ringing after logout.
+                await signOutDevice();
                 // Defense in depth on top of the cache's own per-account
                 // userId check — a different customer logging in on this
                 // same device should never have any chance of seeing

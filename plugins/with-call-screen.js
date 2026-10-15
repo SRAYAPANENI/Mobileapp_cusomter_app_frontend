@@ -299,6 +299,13 @@ class CallStyleModule(private val reactContext: ReactApplicationContext) : React
     CallNotifications.cancel(reactContext, jobId)
   }
 
+  /** Stops whatever is ringing, whichever call it is — on logout. */
+  @ReactMethod
+  fun cancelAll() {
+    CallNotifications.cancel(reactContext, CallRingerService.currentJobId ?: "")
+    InAppRinger.stop()
+  }
+
   /** The phone's ringtone for a call ringing on the app's own call screen. */
   @ReactMethod
   fun startRingtone() {

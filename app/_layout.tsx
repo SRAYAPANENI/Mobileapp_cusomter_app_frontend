@@ -26,7 +26,7 @@ export const unstable_settings = {
 
 import { AppProvider } from '@/context/AppContext';
 import { PostRequirementProvider } from '@/context/PostRequirementContext';
-import { initCallManager, registerFcmToken } from '@/services/callManager';
+import { clearPushForSignOut, initCallManager, registerFcmToken } from '@/services/callManager';
 import { STRIPE_PUBLISHABLE_KEY, TokenStore, setSessionExpiredHandler } from '@/services/api';
 import { clearHomeCache } from '@/services/homeCache';
 import { NetworkStatusBanner } from '@/components/network-status-banner';
@@ -74,6 +74,9 @@ export default function RootLayout() {
       if (token) registerFcmToken();
     });
     setSessionExpiredHandler(() => {
+      // The login is gone, so this phone must stop ringing for it: Firebase
+      // forgets the token (login registers a fresh one) and any ringing stops.
+      clearPushForSignOut().catch(() => {});
       // The home-screen cache is keyed to the account that was logged in —
       // a session dying here (token revoked, or the account itself no
       // longer exists) means whatever's cached no longer has a confirmed

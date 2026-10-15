@@ -6,7 +6,7 @@ import { Alert, AppRegistry, AppState, Linking, NativeEventEmitter, NativeModule
 import RNCallKeep from 'react-native-callkeep';
 import VoipPushNotification from 'react-native-voip-push-notification';
 import { RTCAudioSession } from 'react-native-webrtc';
-import { SkoFyApi, getFreshAccessToken } from './api';
+import { SkoFyApi, TokenStore, getFreshAccessToken } from './api';
 import { AppLock } from './appLock';
 import { openJobScreen } from './jobScreens';
 
@@ -72,7 +72,13 @@ let pendingCall: { call: IncomingCallData; autoAnswer: boolean; at: number } | n
 const PENDING_CALL_MAX_AGE_MS = 30000;
 
 AppState.addEventListener('change', (state) => {
-  if (state !== 'active' || !pendingCall) return;
+  if (state !== 'active') return;
+  if (!pendingCall) {
+    // Back from settings, or a lock-screen call that came as a banner only:
+    // check again whether full-screen calls are allowed.
+    setTimeout(() => { checkFullScreenCallPermission().catch(() => {}); }, 1500);
+    return;
+  }
   const { call, autoAnswer, at } = pendingCall;
   pendingCall = null;
   if (Date.now() - at < PENDING_CALL_MAX_AGE_MS) openCallScreen(call, autoAnswer);
@@ -975,7 +981,7 @@ export function getCurrentVoipToken(): string | null {
 }
 
 // CallKit's CXCallEndedReason values.
-const CXEndedReason = { RemoteEnded: 2, Unanswered: 3, AnsweredElsewhere: 4 } as const;
+const CXEndedReason = { Failed: 1, RemoteEnded: 2, Unanswered: 3, AnsweredElsewhere: 4 } as const;
 // Matches the caller's own no-answer timeout (CALL_TIMEOUT_MS in chat.tsx).
 const IOS_UNANSWERED_TIMEOUT_MS = 60000;
 
@@ -1085,9 +1091,15 @@ function setupCallKeepForIOS() {
     android: { alertTitle: '', alertDescription: '', cancelButton: '', okButton: '' },
   }).catch((err) => console.warn('Failed to set up CallKeep (iOS):', err));
 
-  RNCallKeep.addEventListener('didDisplayIncomingCall', ({ callUUID, payload }: any) => {
+  RNCallKeep.addEventListener('didDisplayIncomingCall', async ({ callUUID, payload }: any) => {
     const call = parseIncomingCall(payload);
     if (!call) return;
+    // Apple requires every VoIP push to show as a call; for a logged-out
+    // phone, end it at once.
+    if (!(await hasSession())) {
+      RNCallKeep.reportEndCallWithUUID(callUUID, CXEndedReason.Failed);
+      return;
+    }
     // AppDelegate must report every VoIP push to CallKit, even for a call
     // this job's open chat is already ringing for in-app — end that
     // duplicate straight away instead of showing two incoming-call screens.
@@ -1163,8 +1175,52 @@ export function registerCallDeclineTask() {
 
 /** Must be called as early as possible (before the app's component tree even
  * mounts) so Android's headless JS can run it when the app is killed. */
+// ── Signing this phone out of push ──────────────────────────────────────────
+// A logged-out phone used to keep ringing: logout only asked the server to
+// forget the token, and if that request failed (no network, an expired
+// login) or the session simply expired, the token stayed registered.
+
+/** False only when the phone definitely has no login. A failed read counts as
+ * logged in, so a storage hiccup can never silence a real call. */
+async function hasSession(): Promise<boolean> {
+  try {
+    return !!(await TokenStore.getAccessToken()) || !!(await TokenStore.getRefreshToken());
+  } catch {
+    return true;
+  }
+}
+
+/** Stops any ringing, removes every notification, and has Firebase forget
+ * this phone's push token — after that no push can reach it, whatever the
+ * server still holds. Login registers a fresh token. */
+export async function clearPushForSignOut(): Promise<void> {
+  pendingCall = null;
+  for (const jobId of Array.from(ringingJobIds)) cancelIncomingCallNotification(jobId);
+  if (Platform.OS === 'android') CallStyleModule?.cancelAll?.();
+  stopInAppRingtone();
+  await notifee.cancelAllNotifications().catch(() => {});
+  await notifee.stopForegroundService().catch(() => {});
+  await messaging().deleteToken().catch((err) => console.warn('FCM deleteToken failed', err));
+}
+
+/** Logout: the server drops this phone's tokens and the login, then the
+ * phone clears its own push state — either alone is enough to stop calls. */
+export async function signOutDevice(): Promise<void> {
+  const fcmToken = await messaging().getToken().catch(() => undefined);
+  const voipToken = getCurrentVoipToken() ?? undefined;
+  await SkoFyApi.auth.logout(fcmToken, voipToken).catch((err) => {
+    console.error('Server-side logout failed:', err);
+  });
+  await clearPushForSignOut();
+}
+
 export function registerBackgroundHandler() {
   messaging().setBackgroundMessageHandler(async (remoteMessage) => {
+    // Nobody logged in: never ring or notify, and stop this token for good.
+    if (!(await hasSession())) {
+      await messaging().deleteToken().catch(() => {});
+      return;
+    }
     if (remoteMessage.data?.type === 'call_cancelled') {
       handleCallCancelled(remoteMessage.data.job_id as string, (remoteMessage.data.caller_name as string) || 'them');
       return;
@@ -1297,13 +1353,18 @@ export function registerBackgroundHandler() {
 }
 
 const FULL_SCREEN_PROMPTED_KEY = 'dodorez_full_screen_calls_prompted_at';
-const FULL_SCREEN_REPROMPT_MS = 7 * 24 * 60 * 60 * 1000;
+// Once a day while it's off: a week was too long — tapping "Not now" once
+// left a Samsung ringing as a banner only, with nothing to explain why.
+const FULL_SCREEN_REPROMPT_MS = 24 * 60 * 60 * 1000;
 
 /** Android 14+ doesn't let apps that aren't dialers show a full-screen call
  * over the lock screen until the user turns it on — without it an incoming
- * call is only a small banner. Asks at most once a week. */
+ * call is only a small banner. Samsung often has it off for apps installed
+ * outside the Play Store. Checked on launch and whenever the app comes back
+ * to the front; asks at most once a day, never during a call. */
 async function checkFullScreenCallPermission(): Promise<boolean> {
   if (Platform.OS !== 'android' || !CallScreenModule) return false;
+  if (pendingCall || ongoingCall || isAnsweringCall || chatCallActive) return false;
   try {
     if (await CallScreenModule.canUseFullScreenIntent()) return false;
     const last = Number(await SecureStore.getItemAsync(FULL_SCREEN_PROMPTED_KEY)) || 0;
@@ -1311,7 +1372,7 @@ async function checkFullScreenCallPermission(): Promise<boolean> {
     await SecureStore.setItemAsync(FULL_SCREEN_PROMPTED_KEY, String(Date.now()));
     Alert.alert(
       'Show calls on your lock screen',
-      "Turn on full-screen notifications for Dodorez so calls ring like a phone call, even when your phone is locked.",
+      "Calls to Dodorez only show as a small notification while your phone is locked. Turn on \u201cFull screen notifications\u201d (\u201cAllow full screen notifications\u201d on Samsung) so they ring like a phone call.",
       [
         { text: 'Not now', style: 'cancel' },
         { text: 'Open settings', onPress: () => CallScreenModule.openFullScreenIntentSettings() },
@@ -1365,6 +1426,7 @@ export function initCallManager() {
   notifee.requestPermission().catch((err) => console.error('Failed to request notification permission:', err));
 
   messaging().onMessage(async (remoteMessage) => {
+    if (!(await hasSession())) return;
     if (remoteMessage.data?.type === 'call_cancelled') {
       handleCallCancelled(remoteMessage.data.job_id as string, (remoteMessage.data.caller_name as string) || 'them');
       return;
