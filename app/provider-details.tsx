@@ -650,7 +650,7 @@ export default function ProviderDetailsScreen() {
       >
         <View style={styles.modalOverlay}>
           <Animated.View
-            entering={FadeInDown.springify()}
+            entering={FadeInDown}
             style={styles.successCard}
           >
             <View style={styles.successIconContainer}>

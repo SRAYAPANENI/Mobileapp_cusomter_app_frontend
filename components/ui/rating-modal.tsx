@@ -5,7 +5,7 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { ThemedText } from '../themed-text';
 import { Fonts } from '@/constants/theme';
 import { Star, CheckCircle2 } from 'lucide-react-native';
-import Animated, { FadeInDown, SlideInDown } from 'react-native-reanimated';
+import Animated, { SlideInDown, FadeIn } from 'react-native-reanimated';
 
 export interface RatingDimensions {
   skill_rating: number;
@@ -68,7 +68,7 @@ export function RatingModal({ visible, onClose, onSubmit, providerName, onSkip }
     <Modal visible={visible} transparent animationType="fade" onRequestClose={isSubmitted ? onClose : onSkip}>
       <KeyboardAvoidingView style={styles.overlay} behavior="padding" automaticOffset>
         {!isSubmitted ? (
-          <Animated.View entering={SlideInDown.springify()} style={styles.card}>
+          <Animated.View entering={SlideInDown.duration(260)} style={styles.card}>
             <ThemedText style={styles.title}>Rate Your Experience</ThemedText>
             <ThemedText style={styles.subtitle}>
               How was your service with {providerName}?
@@ -131,7 +131,7 @@ export function RatingModal({ visible, onClose, onSubmit, providerName, onSkip }
             </TouchableOpacity>
           </Animated.View>
         ) : (
-          <Animated.View entering={FadeInDown.springify()} style={styles.successCard}>
+          <Animated.View entering={FadeIn.duration(200)} style={styles.successCard}>
             <View style={styles.successIconContainer}>
               <CheckCircle2 size={60} color="#10B981" />
             </View>

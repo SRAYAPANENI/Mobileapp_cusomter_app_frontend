@@ -226,7 +226,7 @@ export default function LoginScreen() {
             <ThemedText style={styles.subtitle}>Login to start posting needs</ThemedText>
           </View>
 
-          <Animated.View layout={Layout.springify()} style={styles.form}>
+          <Animated.View layout={Layout.duration(200)} style={styles.form}>
             {loginMethod === 'otp' ? (
               <Animated.View key="otp-form" entering={FadeIn.duration(400)} exiting={FadeOut.duration(300)}>
                 <View style={styles.inputWrapper}>

@@ -1026,6 +1026,10 @@ export const SkoFyApi = {
       return data?.unread_count ?? 0;
     },
     readAll: async () => request('/notifications/read-all', { method: 'POST' }),
+    /** "Clear all": hides every notification from the list for good (kept on
+     * the server for support). Marking read alone brought them all back. */
+    clearAll: async (upTo?: string) =>
+      request('/notifications/clear-all', { method: 'POST', body: JSON.stringify({ up_to: upTo ?? null }) }),
   },
 
   // ── Job rating status ─────────────────────────────────────────────────────

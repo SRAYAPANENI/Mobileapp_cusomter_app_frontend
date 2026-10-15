@@ -65,7 +65,7 @@ function ApplicantCard({
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(index * 100).springify()}
+      entering={FadeInDown.delay(index * 100)}
       style={styles.card}
     >
       <TouchableOpacity
@@ -536,7 +536,7 @@ export default function ApplicantsScreen() {
       >
         <View style={styles.modalOverlay}>
           <Animated.View
-            entering={FadeInDown.springify()}
+            entering={FadeInDown}
             style={styles.successCard}
           >
             <View style={styles.successIconContainer}>

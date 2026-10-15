@@ -110,7 +110,7 @@ export default function AnimatedBrandMark({
               <PingRing size={ringSize} color={themeColors.brand} delay={0} />
               <PingRing size={ringSize} color={themeColors.brand} delay={1100} />
             </View>
-            <Animated.View entering={FadeInDown.duration(600).springify()}>
+            <Animated.View entering={FadeInDown.duration(600)}>
               <Image
                 source={require('@/assets/images/logo-mark.png')}
                 style={{ width: size, height: size }}

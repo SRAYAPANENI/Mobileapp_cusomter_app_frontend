@@ -13,7 +13,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated';
 import { ThemedText } from './themed-text';
 
 export type AlertType = 'success' | 'error' | 'warning' | 'info' | 'copied';
@@ -106,9 +105,12 @@ export function AppAlert({
   }, [visible, autoDismissMs]);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onDismiss}>
-      <Animated.View entering={FadeIn.duration(200)} style={styles.overlay}>
-        <Animated.View entering={ZoomIn.springify().damping(14)} style={[styles.card, { borderTopColor: cfg.borderColor }]}>
+    // One steady fade, from the Modal alone. The card used to spring in from
+    // nothing (overshooting, so it bounced up and down) while the backdrop
+    // faded in a second time on top of the Modal's own fade.
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onDismiss}>
+      <View style={styles.overlay}>
+        <View style={[styles.card, { borderTopColor: cfg.borderColor }]}>
           <View style={[styles.iconCircle, { backgroundColor: cfg.iconBg }]}>
             <IconComp size={32} color={cfg.iconColor} />
           </View>
@@ -129,7 +131,9 @@ export function AppAlert({
                       : styles.secondaryButton,
                     defaultButtons.length > 1 && { flex: 1 },
                   ]}
-                  onPress={() => { btn.onPress?.(); onDismiss?.(); }}
+                  // Close first: a button that opens the next alert used to have
+                  // it hidden again straight away, so it blinked or vanished.
+                  onPress={() => { onDismiss?.(); btn.onPress?.(); }}
                   activeOpacity={0.8}
                 >
                   <ThemedText
@@ -144,8 +148,8 @@ export function AppAlert({
               );
             })}
           </View>
-        </Animated.View>
-      </Animated.View>
+        </View>
+      </View>
     </Modal>
   );
 }

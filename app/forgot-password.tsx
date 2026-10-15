@@ -144,7 +144,7 @@ export default function ForgotPasswordScreen() {
             </ThemedText>
           </View>
 
-          <Animated.View layout={Layout.springify()} style={styles.form}>
+          <Animated.View layout={Layout.duration(200)} style={styles.form}>
             {!isCodeSent ? (
               <Animated.View entering={FadeInDown.duration(400)}>
                 <View style={styles.inputWrapper}>

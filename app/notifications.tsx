@@ -3,6 +3,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SkoFyApi } from '@/services/api';
+import { useAppAlert } from '@/components/app-alert';
 import { Image } from 'expo-image';
 import { router, useFocusEffect } from 'expo-router';
 import {
@@ -108,6 +109,12 @@ function groupByDate(items: NotifItem[]) {
   return Object.entries(map).map(([title, data]) => ({ title, data }));
 }
 
+/** The newest notification shown — "Clear all" clears up to it, so one that
+ * arrives while the user is deciding isn't cleared unseen. */
+function newestCreatedAt(list: { created_at: string }[]): string | undefined {
+  return list.reduce<string | undefined>((max, n) => (!max || new Date(n.created_at) > new Date(max) ? n.created_at : max), undefined);
+}
+
 export default function NotificationsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
@@ -117,6 +124,29 @@ export default function NotificationsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [viewerImage, setViewerImage] = useState<string | null>(null);
+
+  const appAlert = useAppAlert();
+
+  const clearAll = () => {
+    if (items.length === 0) return;
+    appAlert.show('warning', 'Clear all notifications?', "They'll be removed from this list. This can't be undone.", [
+      { text: 'Cancel', variant: 'secondary' },
+      {
+        text: 'Clear all',
+        variant: 'primary',
+        onPress: async () => {
+          const before = items;
+          setItems([]);
+          try {
+            await SkoFyApi.notifications.clearAll(newestCreatedAt(before));
+          } catch {
+            setItems(before);
+            appAlert.show('error', 'Could not clear', 'Please check your connection and try again.');
+          }
+        },
+      },
+    ]);
+  };
 
   const load = useCallback(async () => {
     try {
@@ -219,7 +249,14 @@ export default function NotificationsScreen() {
           <ChevronLeft size={24} color="#111827" />
         </TouchableOpacity>
         <ThemedText style={styles.headerTitle}>Notifications</ThemedText>
-        <View style={{ width: 40 }} />
+        {/* Same width as the back button, so the title stays centred. */}
+        <TouchableOpacity
+          style={[styles.clearButton, items.length === 0 && { opacity: 0 }]}
+          onPress={clearAll}
+          disabled={items.length === 0}
+        >
+          <ThemedText style={styles.clearText} numberOfLines={1}>Clear all</ThemedText>
+        </TouchableOpacity>
       </View>
 
       {loading ? (
@@ -250,6 +287,7 @@ export default function NotificationsScreen() {
           }
         />
       )}
+      {appAlert.element}
     </ThemedView>
   );
 }
@@ -268,6 +306,8 @@ function makeStyles(t: typeof Colors.light) {
       borderBottomWidth: 1,
       borderBottomColor: t.borderSubtle,
     },
+    clearButton: { minWidth: 40, height: 40, justifyContent: 'center', alignItems: 'flex-end' },
+    clearText: { fontSize: 12.5, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: '#EF4444' },
     backButton: {
       width: 40, height: 40, borderRadius: 20,
       backgroundColor: t.inputFilled, justifyContent: 'center', alignItems: 'center',

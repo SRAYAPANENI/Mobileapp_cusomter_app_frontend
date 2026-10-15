@@ -194,11 +194,10 @@ export default function ProviderMapScreen() {
 
   // Sheet slide animation
   useEffect(() => {
-    Animated.spring(sheetY, {
+    Animated.timing(sheetY, {
       toValue: selected ? 0 : 600,
+      duration: 260,
       useNativeDriver: true,
-      tension: 70,
-      friction: 12,
     }).start();
   }, [selected]);
 

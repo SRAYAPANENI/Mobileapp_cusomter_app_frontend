@@ -63,7 +63,6 @@ import Reanimated, {
   FadeInUp,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -785,13 +784,13 @@ export default function HomeScreen() {
           RNAnimated.timing(pulseAnim, { toValue: 1, duration: 1000, easing: RNEasing.inOut(RNEasing.ease), useNativeDriver: true }),
         ])
       ).start();
-      fabScale.value = withSpring(1);
+      fabScale.value = withTiming(1, { duration: 250 });
       cardGlow.value = withTiming(0.4, { duration: 300 });
     } else if (activeJob && activeJob.applicantCount > 0) {
       pulseAnim.stopAnimation();
       pulseAnim.setValue(1);
-      // One-time spring bounce when applicants arrive — NOT infinite
-      fabScale.value = withSpring(1.15, { damping: 6 });
+      // A one-time, smooth grow when applicants arrive (it used to bounce).
+      fabScale.value = withTiming(1.1, { duration: 300 });
       cardGlow.value = withTiming(0.8, { duration: 500 });
     }
   }, [activeJob?.applicantCount]);

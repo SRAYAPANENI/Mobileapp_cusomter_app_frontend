@@ -405,7 +405,9 @@ export default function SupportChatScreen() {
         </View>
       ) : stage === 'resolved' ? (
         <View style={styles.categoryContainer}>
-          <TouchableOpacity style={styles.selfHelpYesBtn} onPress={() => router.back()} activeOpacity={0.85}>
+          {/* Its own style: selfHelpYesBtn's flex:1 (for the side-by-side row)
+              collapsed this lone button to a thin strip with no label. */}
+          <TouchableOpacity style={styles.doneBtn} onPress={() => router.back()} activeOpacity={0.85}>
             <ThemedText style={styles.selfHelpYesBtnText}>Done</ThemedText>
           </TouchableOpacity>
         </View>
@@ -496,6 +498,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   selfHelpNoBtnText: { fontSize: 13, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary },
   selfHelpYesBtn: { flex: 1, borderRadius: 22, paddingVertical: 12, alignItems: 'center', backgroundColor: '#FFCE48' },
   selfHelpYesBtnText: { fontSize: 13, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  doneBtn: { borderRadius: 22, paddingVertical: 14, alignItems: 'center', backgroundColor: '#FFCE48' },
   attachButton: { width: 40, height: 44, justifyContent: 'center', alignItems: 'center', marginRight: 8 },
   input: { flex: 1, backgroundColor: t.inputFilled, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, paddingTop: 10, maxHeight: 100, fontFamily: Fonts.poppins, fontSize: 14, color: t.textPrimary },
   sendButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFCE48', justifyContent: 'center', alignItems: 'center', marginLeft: 12 },

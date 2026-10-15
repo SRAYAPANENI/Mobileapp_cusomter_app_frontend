@@ -137,8 +137,9 @@ export function ActiveJobStatusBanner() {
     if (!changed || !banners.length) return;
 
     Animated.sequence([
-      Animated.timing(bounceAnim, { toValue: 1.15, duration: 160, useNativeDriver: true }),
-      Animated.spring(bounceAnim, { toValue: 1, friction: 4, useNativeDriver: true }),
+      // A gentle pulse on a new update — it used to spring and wobble.
+      Animated.timing(bounceAnim, { toValue: 1.05, duration: 160, useNativeDriver: true }),
+      Animated.timing(bounceAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
     ]).start();
 
     userToggledRef.current = false;

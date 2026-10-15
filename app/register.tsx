@@ -45,7 +45,7 @@ import Animated, {
   FadeInLeft,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 
 export default function RegisterScreen() {
@@ -174,7 +174,7 @@ export default function RegisterScreen() {
   };
 
   useEffect(() => {
-    progressValue.value = withSpring(calculateProgress(), { damping: 15 });
+    progressValue.value = withTiming(calculateProgress(), { duration: 350 });
   }, [formData, isOtpVerified, addressType, idDocumentImages, agreedToTerms, agreedToPrivacy, isAddingRole]);
 
   const progressBarStyle = useAnimatedStyle(() => ({
@@ -403,7 +403,7 @@ export default function RegisterScreen() {
           </View>
 
           {/* Section: Personal Details */}
-          <Animated.View entering={FadeInLeft.delay(200).springify()} style={styles.section}>
+          <Animated.View entering={FadeInLeft.delay(200)} style={styles.section}>
             <View style={styles.sectionHeader}>
               <ThemedText style={styles.sectionLabel}>Personal Details</ThemedText>
 
@@ -639,7 +639,7 @@ export default function RegisterScreen() {
           </Animated.View>
 
           {/* Section: Contact Information */}
-          <Animated.View entering={FadeInLeft.delay(400).springify()} style={styles.section}>
+          <Animated.View entering={FadeInLeft.delay(400)} style={styles.section}>
             <ThemedText style={styles.sectionLabel}>Contact Information</ThemedText>
 
             <View style={[styles.inputGroup, { marginTop: 16 }]}>
@@ -832,7 +832,7 @@ export default function RegisterScreen() {
           </Animated.View>
 
           {/* Section: Identity Verification */}
-          <Animated.View entering={FadeInLeft.delay(600).springify()} style={styles.section}>
+          <Animated.View entering={FadeInLeft.delay(600)} style={styles.section}>
             <View style={styles.sectionHeaderRow}>
               <ShieldCheck size={20} color={themeColors.brand} />
               <View>
@@ -917,7 +917,7 @@ export default function RegisterScreen() {
           </Animated.View>
 
           {/* Section: Consent & Compliance */}
-          <Animated.View entering={FadeInLeft.delay(800).springify()} style={styles.section}>
+          <Animated.View entering={FadeInLeft.delay(800)} style={styles.section}>
             <ThemedText style={styles.sectionLabel}>Consent & Compliance</ThemedText>
 
             <View style={{ marginTop: 8 }}>
