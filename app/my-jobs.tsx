@@ -239,7 +239,7 @@ function mapApiJob(j: any): Job {
     MEDIUM: 'Normal', LOW: 'Booked Slot',
   };
   const statusMap: Record<string, { status: Job['status']; label: string; color: string }> = {
-    POSTED:      { status: 'Open',      label: 'Waiting for bids', color: '#10B981' },
+    POSTED:      { status: 'Open',      label: 'Waiting for applicants', color: '#10B981' },
     DISTRIBUTED: { status: 'Open',      label: 'Finding providers', color: '#F59E0B' },
     ACCEPTED:    { status: 'Ongoing',   label: 'Provider hired',   color: '#3B82F6' },
     // Bidding is retired — price is only ever set after the provider
@@ -288,8 +288,8 @@ export default function MyJobsScreen() {
   // "Completed" was previously missing entirely — a job fell out of every
   // tab's filter the moment it finished, with no way to ever come back and
   // see it again (no history view at all for a completed job).
-  const TABS = ['Waiting for Bids', 'Ongoing', 'Completed', 'Cancelled'] as const;
-  const [activeTab, setActiveTab] = useState<typeof TABS[number]>('Waiting for Bids');
+  const TABS = ['Open', 'Ongoing', 'Completed', 'Cancelled'] as const;
+  const [activeTab, setActiveTab] = useState<typeof TABS[number]>('Open');
   const [cancelJobId, setCancelJobId] = useState<string | null>(null);
   const [disputeJobId, setDisputeJobId] = useState<string | null>(null);
 
@@ -316,7 +316,7 @@ export default function MyJobsScreen() {
   }, []));
 
   const filteredJobs = jobs.filter(j => {
-    if (activeTab === 'Waiting for Bids') return j.status === 'Open';
+    if (activeTab === 'Open') return j.status === 'Open';
     if (activeTab === 'Ongoing') return j.status === 'Ongoing';
     if (activeTab === 'Completed') return j.status === 'Completed';
     return j.status === 'Cancelled' || j.status === 'Expired';

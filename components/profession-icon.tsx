@@ -41,7 +41,7 @@ const TRADE_ICONS: [string[], LucideIcon][] = [
   [['nurse', 'care', 'physio', 'doctor', 'elder'], Stethoscope],
   [['baby', 'nanny', 'child'], Baby],
   [['mason', 'construct', 'civil', 'tile', 'renovat', 'contractor'], HardHat],
-  [['consult', 'account', 'legal', 'tax'], Briefcase],
+  [['consult', 'advis', 'business', 'bookkeep', 'account', 'legal', 'tax'], Briefcase],
 ];
 
 export function iconForProfession(profession?: string | null): LucideIcon {

@@ -17,7 +17,7 @@ import {
   Zap
 } from 'lucide-react-native';
 import { useAppAlert } from '@/components/app-alert';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -38,6 +38,13 @@ export default function JobSummaryScreen() {
   const { data, updateData, resetData } = usePostRequirement();
   const alert = useAppAlert();
   const [isPosting, setIsPosting] = useState(false);
+  // Posted: the draft is cleared when the customer leaves this screen, not
+  // while they're still on it — clearing it here re-rendered the form empty
+  // behind the success popup ("No location selected" in red), and left a
+  // live Post button that could send the same job twice.
+  const [posted, setPosted] = useState(false);
+  const postedRef = useRef(false);
+  useEffect(() => () => { if (postedRef.current) resetData(); }, []);
 
   // On-site vs Remote is decided here, as the LAST thing before posting —
   // not up front — same reasoning as CreateJobRequest.service_mode: a
@@ -132,14 +139,17 @@ export default function JobSummaryScreen() {
         service_mode: data.serviceMode,
       });
 
-      resetData();
+      postedRef.current = true;
+      setPosted(true);
       alert.show(
         'success',
         'Requirement Posted!',
-        'Nearby providers have been notified and will submit their bids shortly.',
+        data.serviceMode === 'REMOTE'
+          ? "Skilled providers have been notified. You'll see who applies in My Jobs."
+          : "Nearby providers have been notified. You'll see who applies in My Jobs.",
         [
           { text: 'View My Jobs', onPress: () => router.replace('/my-jobs') },
-          { text: 'Stay Here', variant: 'secondary' },
+          { text: 'Back to Home', variant: 'secondary', onPress: () => router.dismissTo('/(tabs)/home' as any) },
         ],
       );
     } catch (err: any) {
@@ -287,7 +297,7 @@ export default function JobSummaryScreen() {
                 No location needed — this job will be matched to skilled providers by skill and availability, wherever they are.
               </ThemedText>
             </View>
-          ) : !hasLocation ? (
+          ) : !hasLocation && !posted ? (
             <View style={styles.locationWarningBox}>
               <MapPin size={14} color="#EF4444" />
               <ThemedText style={styles.locationWarningText}>
@@ -301,16 +311,16 @@ export default function JobSummaryScreen() {
       {/* Footer Button */}
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12 }]}>
         <TouchableOpacity
-          style={[styles.postButton, { backgroundColor: themeColors.brand, opacity: (isPosting || !hasLocation) ? 0.5 : 1 }]}
+          style={[styles.postButton, { backgroundColor: themeColors.brand, opacity: (isPosting || posted || !hasLocation) ? 0.5 : 1 }]}
           onPress={handleProceedToPayment}
-          disabled={isPosting || !hasLocation}
+          disabled={isPosting || posted || !hasLocation}
         >
           {isPosting
             ? <ActivityIndicator size="small" color="#111827" style={{ marginRight: 8 }} />
             : <CreditCard size={20} color="#111827" style={{ marginRight: 8 }} />
           }
           <ThemedText style={styles.postButtonText}>
-            {isPosting ? 'Posting...' : 'Post Requirement'}
+            {isPosting ? 'Posting...' : posted ? 'Posted ✓' : 'Post Requirement'}
           </ThemedText>
         </TouchableOpacity>
       </View>
