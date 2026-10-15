@@ -45,6 +45,7 @@ interface NotifItem {
   is_read: boolean;
   created_at: string;
   image_url: string | null;
+  ticket_id?: string | null;
 }
 
 function getIcon(type: string) {
@@ -172,6 +173,13 @@ export default function NotificationsScreen() {
   const handlePress = (item: NotifItem) => {
     // admin_broadcast (and anything else not tied to a job) has nowhere to
     // navigate — opening the attached image if there is one beats a dead tap.
+    // A support reply opens that conversation (ticket_id is kept since
+    // migration 053; older rows open the list of the user's tickets).
+    if (item.notif_type === 'support_ticket') {
+      if (item.ticket_id) router.push({ pathname: '/support-chat', params: { ticketId: item.ticket_id } } as any);
+      else router.push('/help-support' as any);
+      return;
+    }
     if (!item.job_id && item.image_url) {
       setViewerImage(item.image_url);
       return;

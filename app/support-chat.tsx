@@ -180,6 +180,26 @@ export default function SupportChatScreen() {
     loadTicket(paramTicketId).finally(() => setLoading(false));
   }, [paramTicketId, loadTicket]);
 
+  // "Get Help" on a job that already has an open ticket: carry on that
+  // conversation instead of starting a second one.
+  useEffect(() => {
+    if (paramTicketId || !jobId) return;
+    let alive = true;
+    SkoFyApi.supportTickets.list()
+      .then((list: any) => {
+        const open = (Array.isArray(list) ? list : []).find((t: any) =>
+          String(t.job_id) === String(jobId) && t.status !== 'RESOLVED' && t.status !== 'CLOSED');
+        if (!alive || !open) return;
+        setTicketId(open.id);
+        setStage('chat');
+        setLoading(true);
+        loadTicket(open.id).finally(() => { if (alive) setLoading(false); });
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       if (!ticketId) return;
