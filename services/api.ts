@@ -17,6 +17,7 @@
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { File, Paths } from 'expo-file-system';
+import type { PickupDetails, ShoppingItem } from '@/services/pickupOptions';
 
 // ─── CONFIG ─────────────────────────────────────────────────────────────────
 const DEV_LAN_IP = '192.168.1.6'; // Your machine's LAN IP for physical device testing
@@ -600,10 +601,16 @@ export const SkoFyApi = {
       dropoff_notes?: string;
       pickup_purchase?: 'PREPAID' | 'BUY_FOR_ME';
       purchase_limit?: number | null;
+      pickup_details?: PickupDetails;
+      shopping_list?: ShoppingItem[];
       // "ON_SITE" (default) or "REMOTE" — no physical location/distance
       // matching at all (e.g. hiring a developer/consultant).
       service_mode?: 'ON_SITE' | 'REMOTE';
     }) => request('/jobs', { method: 'POST', body: JSON.stringify(payload) }),
+
+    /** Pickup & Drop: add or change the store's pickup code until the order is collected. */
+    updatePickupCode: async (jobId: string, pickupCode: string) =>
+      request(`/jobs/${jobId}/pickup-code`, { method: 'PATCH', body: JSON.stringify({ pickup_code: pickupCode }) }),
 
     /** Pickup & Drop: the code the customer gives the provider at the drop-off. */
     getDeliveryCode: async (jobId: string): Promise<{ code: string | null; expires_in_seconds: number | null }> =>
@@ -881,9 +888,18 @@ export const SkoFyApi = {
       method: 'POST',
       body: JSON.stringify({ job_id: jobId }),
     }),
+    /** Buy it for me: holds the spending limit + the most the shopping fee
+     * can be, right after hiring. Only what's bought is paid out; the rest
+     * comes back (app/domain/pickup.py on the server). */
+    createGoodsHoldIntent: async (jobId: string): Promise<{
+      requires_payment: boolean; client_secret: string | null; payment_intent_id: string | null; amount: number;
+    }> => request('/payments/goods-hold-intent', {
+      method: 'POST',
+      body: JSON.stringify({ job_id: jobId }),
+    }),
     createEphemeralKey: async (): Promise<{ ephemeral_key_secret: string; stripe_customer_id: string }> =>
       request('/payments/ephemeral-key', { method: 'POST' }),
-    getStatus: async (jobId: string, purpose: 'INSPECTION_FEE' | 'JOB_COST' = 'JOB_COST'): Promise<{
+    getStatus: async (jobId: string, purpose: 'INSPECTION_FEE' | 'JOB_COST' | 'GOODS_ADVANCE' = 'JOB_COST'): Promise<{
       status: 'PENDING_CAPTURE' | 'HELD' | 'RELEASED' | 'REFUNDED' | 'FAILED';
       amount: number;
       held_at: string | null;

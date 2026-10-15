@@ -114,9 +114,23 @@ export function useHirePayment() {
    * on webhook delivery timing. Returns charged/amount so the caller can show
    * an explicit confirmation — silently succeeding with no visible feedback
    * looked indistinguishable from nothing having happened at all. */
-  const payInspectionFee = async (jobId: string): Promise<FeePaymentResult> => {
+  const payInspectionFee = (jobId: string) =>
+    payHold(jobId, 'INSPECTION_FEE', SkoFyApi.payments.createInspectionFeeIntent, 'Failed to pay the visiting fee. Please try again.');
+
+  /** Buy it for me: the shopping money, held right after the delivery fee. */
+  const payGoodsHold = (jobId: string) =>
+    payHold(jobId, 'GOODS_ADVANCE', SkoFyApi.payments.createGoodsHoldIntent, 'Failed to hold the shopping money. Please try again.');
+
+  // One flow for every amount held at hire: create the intent, present the
+  // sheet, then wait for HELD.
+  const payHold = async (
+    jobId: string,
+    purpose: 'INSPECTION_FEE' | 'GOODS_ADVANCE',
+    createIntent: (jobId: string) => Promise<{ requires_payment: boolean; client_secret: string | null; amount: number }>,
+    failMessage: string,
+  ): Promise<FeePaymentResult> => {
     try {
-      const intentResult = await SkoFyApi.payments.createInspectionFeeIntent(jobId);
+      const intentResult = await createIntent(jobId);
       if (!intentResult.requires_payment) {
         // Free Inspection ($0) — already marked HELD server-side, nothing
         // for the customer to actually pay.
@@ -126,7 +140,7 @@ export function useHirePayment() {
       if (sheetResult.status !== 'success') return sheetResult;
 
       for (let attempt = 0; attempt < 5; attempt++) {
-        const paymentStatus = await SkoFyApi.payments.getStatus(jobId, 'INSPECTION_FEE').catch(() => null);
+        const paymentStatus = await SkoFyApi.payments.getStatus(jobId, purpose).catch(() => null);
         if (paymentStatus?.status === 'HELD') {
           return { status: 'success', charged: true, amount: intentResult.amount };
         }
@@ -137,7 +151,7 @@ export function useHirePayment() {
       }
       return { status: 'pending', message: 'Your payment is still processing — this usually clears within a minute. Check back shortly before trying again.' };
     } catch (err: any) {
-      return { status: 'error', message: err?.message ?? 'Failed to pay the visiting fee. Please try again.' };
+      return { status: 'error', message: err?.message ?? failMessage };
     }
   };
 
@@ -167,5 +181,5 @@ export function useHirePayment() {
     }
   };
 
-  return { hireApplicant, payInspectionFee, payInvoice };
+  return { hireApplicant, payInspectionFee, payGoodsHold, payInvoice };
 }

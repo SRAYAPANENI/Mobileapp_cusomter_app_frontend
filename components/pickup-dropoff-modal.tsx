@@ -10,7 +10,10 @@ import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, S
 import { Text, TextInput } from '@/components/scaled-text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PickupOptions } from '@/components/pickup-options';
-import { PickupPurchase, PickupTiming, pickupJobFields, purchaseError, timingError } from '@/services/pickupOptions';
+import {
+  PickupDetails, PickupPurchase, PickupTiming, ShoppingItem, newShoppingItem, pickupJobFields, purchaseError,
+  shoppingListError, timingError,
+} from '@/services/pickupOptions';
 
 type MediaItem = { uri: string; type: 'image' | 'video' };
 
@@ -59,6 +62,9 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
   const [purchase, setPurchase] = useState<PickupPurchase>('PREPAID');
   const [limitText, setLimitText] = useState('');
   const [dropoffNotes, setDropoffNotes] = useState('');
+  // What to collect: order details (already paid) or a shopping list (buy for me).
+  const [pickupDetails, setPickupDetails] = useState<PickupDetails>({});
+  const [shoppingItems, setShoppingItems] = useState<ShoppingItem[]>([newShoppingItem()]);
 
   useEffect(() => {
     if (!visible) return;
@@ -69,6 +75,7 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
     setPickupLat(null); setPickupLng(null);
     setMedia([]);
     setTiming({ kind: 'ASAP' }); setPurchase('PREPAID'); setLimitText(''); setDropoffNotes('');
+    setPickupDetails({}); setShoppingItems([newShoppingItem()]);
     SkoFyApi.jobs.getPickupPlaceTypes().then(setAllowedPickupTypes).catch(() => {});
     resolveSkill();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -126,7 +133,7 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
 
   const hasValidPickup = pickupLat != null && pickupLng != null &&
     !!pickupPlaceType && allowedPickupTypes.includes(pickupPlaceType);
-  const optionsError = timingError(timing) ?? purchaseError(purchase, limitText);
+  const optionsError = timingError(timing) ?? purchaseError(purchase, limitText) ?? shoppingListError(purchase, shoppingItems);
   const canPost = hasValidPickup && description.trim().length > 0 && !optionsError &&
     !!skillId && !resolvingSkill && dropoffLat != null && dropoffLng != null;
 
@@ -169,7 +176,9 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
         title: trimmed.length > 80 ? `${trimmed.slice(0, 77)}...` : trimmed,
         description: trimmed,
         skill_id: skillId,
-        ...pickupJobFields({ timing, purchase, limitText, notes: dropoffNotes, dropoffAddress }),
+        ...pickupJobFields({
+          timing, purchase, limitText, notes: dropoffNotes, dropoffAddress, details: pickupDetails, items: shoppingItems,
+        }),
         lat: pickupLat!, lng: pickupLng!,
         job_type: 'PICKUP_DROPOFF',
         dropoff_lat: dropoffLat!, dropoff_lng: dropoffLng!,
@@ -264,6 +273,10 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
               onLimitTextChange={setLimitText}
               notes={dropoffNotes}
               onNotesChange={setDropoffNotes}
+              details={pickupDetails}
+              onDetailsChange={setPickupDetails}
+              items={shoppingItems}
+              onItemsChange={setShoppingItems}
               editable={phase === 'confirm'}
             />
 

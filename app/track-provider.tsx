@@ -9,7 +9,9 @@ import { kmToMiles } from '@/services/units';
 import { GOOGLE_PLACES_API_KEY } from '@/services/google-places';
 import { Image } from 'expo-image';
 import { callTapAllowed } from '@/services/callManager';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
+import { clearJobScreenInFront, setJobScreenInFront } from '@/services/jobScreens';
 import {
   ChevronLeft,
   LocateFixed,
@@ -21,7 +23,7 @@ import {
   Navigation
 } from 'lucide-react-native';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Dimensions, Linking, Platform, ScrollView, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Linking, Platform, ScrollView, StatusBar, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { SlideInDown } from 'react-native-reanimated';
@@ -29,6 +31,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RatingModal, RatingDimensions } from '@/components/ui/rating-modal';
 import { isRatingSkipped, markRatingSkipped, markRatingSubmitted } from '@/services/ratingReminders';
 import { CheckoutSheet } from '@/components/checkout-sheet';
+import { GoodsHoldCard, PickupCodeEditor, goodsReceiptLine } from '@/components/pickup-tracking';
 import { useHirePayment } from '@/hooks/use-hire-payment';
 
 // Map imports handled dynamically to prevent crashes and web errors
@@ -49,7 +52,6 @@ if (Platform.OS !== 'web') {
   }
 }
 
-const { width, height } = Dimensions.get('window');
 
 const TRACK_POLL_INTERVAL_MS = 2000;
 const ANIM_TICK_MS = 50; // ~20fps — smooth enough for a slow-moving marker, cheap on battery
@@ -265,12 +267,19 @@ export default function TrackProviderScreen() {
   const [jobKind, setJobKind] = useState<'STANDARD' | 'PICKUP_DROPOFF'>('STANDARD');
   const [pickupPhotoUrl, setPickupPhotoUrl] = useState<string | null>(null);
   const [pickupConfirmedAt, setPickupConfirmedAt] = useState<string | null>(null);
+  // Buy it for me: the shopping money held at hire, and what was spent.
+  const [purchaseLimit, setPurchaseLimit] = useState<number | null>(null);
+  const [goodsHoldStatus, setGoodsHoldStatus] = useState<string | null>(null);
+  const [goodsAmount, setGoodsAmount] = useState<number | null>(null);
+  const [payingGoods, setPayingGoods] = useState(false);
+  // Already paid: the store's pickup code, which the customer can add later.
+  const [pickupCode, setPickupCode] = useState<string | null>(null);
   const [invoice, setInvoice] = useState<any>(null);
   const [payingFee, setPayingFee] = useState(false);
   const [respondingToInvoice, setRespondingToInvoice] = useState(false);
   const [showCounterInput, setShowCounterInput] = useState(false);
   const [counterAmountInput, setCounterAmountInput] = useState('');
-  const { payInspectionFee, payInvoice } = useHirePayment();
+  const { payInspectionFee, payGoodsHold, payInvoice } = useHirePayment();
   const [mapError, setMapError] = useState(!MapView);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [showCheckout, setShowCheckout] = useState(false);
@@ -282,8 +291,18 @@ export default function TrackProviderScreen() {
   // forever, with no indication anything is wrong.
   const [jobGone, setJobGone] = useState(false);
   const status = STATUS_LABELS[jobStatus] ?? jobStatus;
+  const orderCollected = jobKind === 'PICKUP_DROPOFF' && !!pickupConfirmedAt;
 
   useEffect(() => { jobStatusRef.current = jobStatus; }, [jobStatus]);
+
+  // A notification for this job, tapped while this screen is in front,
+  // mustn't stack a second copy of it (services/jobScreens.ts).
+  const isFocused = useIsFocused();
+  const { height: windowHeight } = useWindowDimensions();
+  useFocusEffect(useCallback(() => {
+    setJobScreenInFront('/track-provider', jobId);
+    return () => clearJobScreenInFront('/track-provider', jobId);
+  }, [jobId]));
 
   // Count ETA down every second so it never freezes between poll/Directions updates
   useEffect(() => {
@@ -312,6 +331,14 @@ export default function TrackProviderScreen() {
     animStartTimeRef.current = Date.now();
   }, []);
 
+  const applyPickupFields = useCallback((j: any) => {
+    setPickupPhotoUrl(j.pickup_photo_url ?? null);
+    setPickupConfirmedAt(j.pickup_confirmed_at ?? null);
+    setPurchaseLimit(j.pickup_purchase === 'BUY_FOR_ME' && j.purchase_limit != null ? Number(j.purchase_limit) : null);
+    setGoodsAmount(j.goods_amount != null ? Number(j.goods_amount) : null);
+    setPickupCode(j.pickup_details?.pickup_code ?? null);
+  }, []);
+
   // One-time: who's coming, and where they're headed
   useEffect(() => {
     if (!jobId) return;
@@ -331,8 +358,7 @@ export default function TrackProviderScreen() {
       }
       setJobStatus(j.status);
       setJobKind(j.job_type === 'PICKUP_DROPOFF' ? 'PICKUP_DROPOFF' : 'STANDARD');
-      setPickupPhotoUrl(j.pickup_photo_url ?? null);
-      setPickupConfirmedAt(j.pickup_confirmed_at ?? null);
+      applyPickupFields(j);
     }).catch((err) => {
       console.error('Failed to fetch job/provider details for tracking:', err);
       if (err?.error_code === 'NOT_FOUND' || err?.error_code === 'FORBIDDEN') {
@@ -507,9 +533,10 @@ export default function TrackProviderScreen() {
             // No OTP for this job kind (the customer isn't at the pickup
             // point) — poll the job itself for the pickup-confirmation photo.
             const job = await SkoFyApi.jobs.get(jobId).catch(() => null);
-            if (!cancelled && job) {
-              setPickupPhotoUrl((job as any).pickup_photo_url ?? null);
-              setPickupConfirmedAt((job as any).pickup_confirmed_at ?? null);
+            if (!cancelled && job) applyPickupFields(job);
+            if (!cancelled && (job as any)?.pickup_purchase === 'BUY_FOR_ME') {
+              const goods = await SkoFyApi.payments.getStatus(jobId, 'GOODS_ADVANCE').catch(() => null);
+              if (!cancelled) setGoodsHoldStatus(goods?.status ?? null);
             }
           } else {
             // The OTP only ever exists in Redis while the job is still
@@ -553,6 +580,23 @@ export default function TrackProviderScreen() {
       }
     } finally {
       setPayingFee(false);
+    }
+  };
+
+  const handlePayGoodsHold = async () => {
+    if (!jobId) return;
+    setPayingGoods(true);
+    try {
+      const result = await payGoodsHold(jobId);
+      if (result.status === 'success') {
+        setGoodsHoldStatus('HELD');
+      } else if (result.status === 'pending') {
+        appAlert.show('warning', 'Still Processing', result.message);
+      } else if (result.status === 'error') {
+        appAlert.show('error', 'Payment Failed', result.message);
+      }
+    } finally {
+      setPayingGoods(false);
     }
   };
 
@@ -959,9 +1003,23 @@ export default function TrackProviderScreen() {
       >
       <Animated.View
         entering={SlideInDown.duration(600)}
-        style={[styles.bottomSheet, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12 }]}
+        style={[styles.bottomSheet, {
+          // Measured live: read once at start-up (a notification cold-starting
+          // the app), the height could be wrong for the screen as shown.
+          maxHeight: windowHeight * 0.65,
+          paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12,
+        }]}
       >
-        <ScrollView ref={bottomSheetScrollRef} showsVerticalScrollIndicator={false} bounces={false} keyboardShouldPersistTaps="handled">
+        {/* flexShrink lets the panel's height cap hold: without it a tall
+            sheet (the invoice card with its buttons) spilled out below the
+            white panel instead of scrolling. */}
+        <ScrollView
+          ref={bottomSheetScrollRef}
+          style={styles.bottomSheetScroll}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* Arrival Time */}
           <View style={styles.arrivalRow}>
             <View>
@@ -1018,12 +1076,16 @@ export default function TrackProviderScreen() {
               <MessageCircle size={20} color="#fff" />
               <ThemedText style={[styles.actionBtnText, { color: '#fff' }]}>Chat</ThemedText>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={handleCancelHire}
-            >
-              <Trash2 size={20} color="#EF4444" />
-            </TouchableOpacity>
+            {/* Once the provider has the order, cancelling would leave it with
+                them — the server refuses; Report an Issue below instead. */}
+            {!orderCollected && (
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={handleCancelHire}
+              >
+                <Trash2 size={20} color="#EF4444" />
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Inspection fee — pay right after hiring, before the provider
@@ -1078,17 +1140,34 @@ export default function TrackProviderScreen() {
               {pickupPhotoUrl && (
                 <Image source={{ uri: pickupPhotoUrl }} style={styles.pickupPhoto} contentFit="cover" />
               )}
+              {purchaseLimit != null && goodsAmount != null && (
+                <ThemedText style={[styles.inspectionCardBody, { marginBottom: 6 }]}>
+                  {goodsReceiptLine(purchaseLimit, goodsAmount)}
+                </ThemedText>
+              )}
               <ThemedText style={styles.inspectionCardBody}>
-                Your provider has your order. Review and pay the final price, and they'll bring it to you.
+                {purchaseLimit != null
+                  ? "Your provider has your items. Review and pay their delivery price, and they'll bring them to you."
+                  : "Your provider has your order. Review and pay the final price, and they'll bring it to you."}
               </ThemedText>
             </View>
           )}
-          {jobStatus === 'ACCEPTED' && jobKind === 'PICKUP_DROPOFF' && inspectionFeeStatus === 'HELD' && !pickupConfirmedAt && (
+          {jobStatus === 'ACCEPTED' && jobKind === 'PICKUP_DROPOFF' && inspectionFeeStatus === 'HELD' && !pickupConfirmedAt
+            && purchaseLimit != null && goodsHoldStatus !== 'HELD' && (
+            <GoodsHoldCard limit={purchaseLimit} paying={payingGoods} onPay={handlePayGoodsHold} styles={styles} />
+          )}
+          {jobStatus === 'ACCEPTED' && jobKind === 'PICKUP_DROPOFF' && inspectionFeeStatus === 'HELD' && !pickupConfirmedAt
+            && (purchaseLimit == null || goodsHoldStatus === 'HELD') && (
             <View style={styles.inspectionCard}>
               <ThemedText style={styles.inspectionCardBody}>
-                Waiting for your provider to arrive and confirm pickup.
+                {purchaseLimit != null
+                  ? 'Shopping money held ✓ Waiting for your provider to buy your items and confirm pickup.'
+                  : 'Waiting for your provider to arrive and confirm pickup.'}
               </ThemedText>
             </View>
+          )}
+          {jobStatus === 'ACCEPTED' && jobKind === 'PICKUP_DROPOFF' && !pickupConfirmedAt && purchaseLimit == null && jobId && (
+            <PickupCodeEditor jobId={jobId} code={pickupCode} styles={styles} />
           )}
 
           {jobStatus === 'IN_PROGRESS' && jobKind === 'PICKUP_DROPOFF' && (
@@ -1169,13 +1248,16 @@ export default function TrackProviderScreen() {
                     >
                       <ThemedText style={styles.invoiceSecondaryBtnText}>Counter</ThemedText>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.invoiceSecondaryBtn, { backgroundColor: '#FEF2F2', borderColor: '#FEE2E2' }]}
-                      onPress={() => handleRespondToInvoice('REJECT')}
-                      disabled={respondingToInvoice}
-                    >
-                      <ThemedText style={[styles.invoiceSecondaryBtnText, { color: '#EF4444' }]}>Reject</ThemedText>
-                    </TouchableOpacity>
+                    {/* Rejecting cancels the job — not once the provider has the order. */}
+                    {!orderCollected && (
+                      <TouchableOpacity
+                        style={[styles.invoiceSecondaryBtn, { backgroundColor: '#FEF2F2', borderColor: '#FEE2E2' }]}
+                        onPress={() => handleRespondToInvoice('REJECT')}
+                        disabled={respondingToInvoice}
+                      >
+                        <ThemedText style={[styles.invoiceSecondaryBtnText, { color: '#EF4444' }]}>Reject</ThemedText>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
               )}
@@ -1187,7 +1269,9 @@ export default function TrackProviderScreen() {
                 // the one-round cap was already spent on the earlier attempt.
                 <View style={{ marginTop: 8, gap: 8 }}>
                   <ThemedText style={styles.inspectionCardBody}>
-                    Your provider declined your offer. Pay the original price to proceed, or cancel.
+                    {orderCollected
+                      ? 'Your provider declined your offer. Pay the original price to get your order, or report an issue below.'
+                      : 'Your provider declined your offer. Pay the original price to proceed, or cancel.'}
                   </ThemedText>
                   <TouchableOpacity
                     style={[styles.completeJobBtn, { marginTop: 0 }]}
@@ -1196,13 +1280,15 @@ export default function TrackProviderScreen() {
                   >
                     <ThemedText style={styles.completeJobBtnText}>Accept & Pay</ThemedText>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.invoiceSecondaryBtn, { backgroundColor: '#FEF2F2', borderColor: '#FEE2E2' }]}
-                    onPress={() => handleRespondToInvoice('REJECT')}
-                    disabled={respondingToInvoice}
-                  >
-                    <ThemedText style={[styles.invoiceSecondaryBtnText, { color: '#EF4444' }]}>Reject & Cancel Job</ThemedText>
-                  </TouchableOpacity>
+                  {!orderCollected && (
+                    <TouchableOpacity
+                      style={[styles.invoiceSecondaryBtn, { backgroundColor: '#FEF2F2', borderColor: '#FEE2E2' }]}
+                      onPress={() => handleRespondToInvoice('REJECT')}
+                      disabled={respondingToInvoice}
+                    >
+                      <ThemedText style={[styles.invoiceSecondaryBtnText, { color: '#EF4444' }]}>Reject & Cancel Job</ThemedText>
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
 
@@ -1277,10 +1363,11 @@ export default function TrackProviderScreen() {
             </TouchableOpacity>
           )}
 
-          {/* Backend only accepts a dispute for IN_PROGRESS or COMPLETED —
-              a job still Open/Accepted/Inspecting has nothing to dispute yet
-              (cancel is the right action there instead). */}
-          {(jobStatus === 'IN_PROGRESS' || isCompleted) && (
+          {/* Backend accepts a dispute for IN_PROGRESS or COMPLETED, or once a
+              delivery order is collected (can_dispute in app/domain/pickup.py)
+              — before that, cancel is the right action instead. */}
+          {(jobStatus === 'IN_PROGRESS' || isCompleted
+            || (orderCollected && (jobStatus === 'ACCEPTED' || jobStatus === 'INVOICE_PENDING'))) && (
             <TouchableOpacity
               style={styles.reportIssueBtn}
               onPress={() => setIsDisputeModalVisible(true)}
@@ -1302,7 +1389,7 @@ export default function TrackProviderScreen() {
       )}
 
       <RatingModal
-        visible={showRatingModal}
+        visible={showRatingModal && isFocused}
         providerName={provider?.name ?? 'Provider'}
         onClose={handleRatingModalClose}
         onSubmit={handleRatingSubmit}
@@ -1387,8 +1474,8 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     left: 0,
     right: 0,
   },
+  bottomSheetScroll: { flexGrow: 0, flexShrink: 1 },
   bottomSheet: {
-    maxHeight: height * 0.65,
     backgroundColor: t.card,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,

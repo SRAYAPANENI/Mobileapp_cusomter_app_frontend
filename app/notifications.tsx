@@ -33,6 +33,7 @@ import {
   View,
 } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
+import { openJobScreen } from '@/services/jobScreens';
 
 interface NotifItem {
   id: string;
@@ -165,7 +166,7 @@ export default function NotificationsScreen() {
         case 'invoice_countered':
         case 'counter_accepted':
         case 'counter_rejected':
-          router.push({ pathname: '/track-provider', params: { jobId: item.job_id } } as any);
+          openJobScreen('/track-provider', item.job_id);
           break;
         case 'job_expired':
           router.push({ pathname: '/edit-job', params: { jobId: item.job_id } } as any);

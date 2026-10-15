@@ -8,6 +8,7 @@ import VoipPushNotification from 'react-native-voip-push-notification';
 import { RTCAudioSession } from 'react-native-webrtc';
 import { SkoFyApi, getFreshAccessToken } from './api';
 import { AppLock } from './appLock';
+import { openJobScreen } from './jobScreens';
 
 // Android-only native module (see CallStyleModule.kt/CallActionModule.kt) that
 // shows the incoming-call notification using NotificationCompat.CallStyle —
@@ -530,7 +531,7 @@ async function showJobUpdateNotification(jobId: string, title: string, body: str
 }
 
 function openJobUpdate(jobId: string, route: string) {
-  safeNavigate(() => router.push({ pathname: route, params: { jobId } } as any));
+  safeNavigate(() => openJobScreen(route, jobId));
 }
 
 const ADMIN_BROADCAST_CHANNEL_ID = 'admin_broadcasts_v1';
