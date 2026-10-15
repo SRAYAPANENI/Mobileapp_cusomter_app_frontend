@@ -14,7 +14,7 @@ import { openJobScreen } from './jobScreens';
 // shows the incoming-call notification using NotificationCompat.CallStyle —
 // the only way to get real colored green/red Accept/Decline buttons; Notifee's
 // generic notification actions can only ever render as plain text.
-const { CallStyleModule, CallActionModule, CallScreenModule } = NativeModules;
+const { CallStyleModule, CallActionModule, CallScreenModule, OngoingCallModule } = NativeModules;
 const callActionEmitter = CallActionModule ? new NativeEventEmitter(CallActionModule) : null;
 
 // Created natively at app start (plugins/with-call-ringtone-channel.js — the
@@ -801,6 +801,24 @@ export async function handleInitialNotification(): Promise<boolean> {
 async function dispatchCallAction({ action, jobId, callerName, callerId, callId, callerImage }: {
   action: string; jobId: string; callerName: string; callerId?: string; callId?: string; callerImage?: string;
 }): Promise<boolean> {
+  if (action.endsWith('ONGOING_HANGUP')) {
+    if (hangupHandler) hangupHandler();
+    else sendDecline(jobId);
+    OngoingCallModule?.stop?.();
+    return true;
+  }
+  if (action.endsWith('ONGOING_MUTE')) { muteHandler?.(); return true; }
+  if (action.endsWith('ONGOING_SPEAKER')) { speakerHandler?.(); return true; }
+  if (action.endsWith('ONGOING_FAILED')) {
+    // The phone refused the native call service: use the previous notification.
+    // Remembered too, in case this arrives before start() has resolved.
+    nativeFailedJobId = jobId;
+    if (nativeOngoing && ongoingCall?.jobId === jobId) {
+      nativeOngoing = false;
+      await renderOngoingCall(true);
+    }
+    return true;
+  }
   const data: IncomingCallData = { jobId, callerId: callerId || '', callerName, callId: callId || undefined, callerImage: callerImage || undefined };
   if (action.endsWith('OPEN_RINGING') && await isAppLocked()) {
     // The full-screen call (locked phone) or a tap, with App Lock on: keep
@@ -895,6 +913,17 @@ export async function startOngoingCallNotification(jobId: string, callerName: st
   });
   currentOngoingControls = { isMuted: false, isSpeakerOn: false };
   ongoingCall = { jobId, callerName, phase, connectedAt: phase === 'connected' ? Date.now() : null };
+  // Android's call-style notification on a native phone-call service — what
+  // puts the green call chip in the status bar, like WhatsApp. Notifee can't
+  // build that style, so it's only the fallback now.
+  if (OngoingCallModule) {
+    nativeFailedJobId = null;
+    nativeOngoing = await OngoingCallModule.start(
+      jobId, callerName, phase === 'connected', ongoingCall.connectedAt ?? 0,
+    ).catch(() => false);
+    if (nativeOngoing && nativeFailedJobId !== jobId) return;
+    nativeOngoing = false;
+  }
   // Started once, while the app is on screen (dialing or answering).
   await renderOngoingCall(true);
 }
@@ -903,11 +932,21 @@ export async function startOngoingCallNotification(jobId: string, callerName: st
 // chronometer — no per-second re-render, which restarted the foreground
 // service every second.
 let ongoingCall: { jobId: string; callerName: string; phase: 'calling' | 'connected'; connectedAt: number | null } | null = null;
+// True while the native call-style notification is the one showing.
+let nativeOngoing = false;
+// The call whose native service the phone refused (see ONGOING_FAILED).
+let nativeFailedJobId: string | null = null;
 
 async function renderOngoingCall(startService: boolean) {
   const call = ongoingCall;
   if (!call) return;
   const connected = call.phase === 'connected';
+  if (nativeOngoing) {
+    OngoingCallModule.update(
+      connected, call.connectedAt ?? 0, currentOngoingControls.isMuted, currentOngoingControls.isSpeakerOn,
+    );
+    return;
+  }
   try {
     await notifee.displayNotification({
       id: `ongoing-call-${call.jobId}`,
@@ -959,6 +998,10 @@ export function updateOngoingCallControls(isMuted: boolean, isSpeakerOn: boolean
 }
 
 export async function stopOngoingCallNotification(jobId: string) {
+  if (nativeOngoing && (!ongoingCall || ongoingCall.jobId === jobId)) {
+    OngoingCallModule?.stop?.();
+    nativeOngoing = false;
+  }
   if (ongoingCall?.jobId === jobId) ongoingCall = null;
   // notifee.stopForegroundService() is the actual sanctioned way to tear this
   // down — just resolving the task's own Promise (the old approach here) left
@@ -1196,7 +1239,12 @@ async function hasSession(): Promise<boolean> {
 export async function clearPushForSignOut(): Promise<void> {
   pendingCall = null;
   for (const jobId of Array.from(ringingJobIds)) cancelIncomingCallNotification(jobId);
-  if (Platform.OS === 'android') CallStyleModule?.cancelAll?.();
+  if (Platform.OS === 'android') {
+    CallStyleModule?.cancelAll?.();
+    OngoingCallModule?.stop?.();
+  }
+  nativeOngoing = false;
+  ongoingCall = null;
   stopInAppRingtone();
   await notifee.cancelAllNotifications().catch(() => {});
   await notifee.stopForegroundService().catch(() => {});
