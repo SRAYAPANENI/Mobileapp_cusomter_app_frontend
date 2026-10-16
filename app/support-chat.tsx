@@ -192,8 +192,14 @@ export default function SupportChatScreen() {
           timestamp: formatTime(m.sent_at),
         };
       });
-      // Still on its way: keep its bubble rather than dropping it until the next poll.
-      setThread(prev => [...mapped, ...prev.filter(m => m.key && sending.has(m.key))]);
+      // Keep this phone's bubbles that this copy doesn't have yet: still on
+      // their way, or saved after the refresh had already read the ticket.
+      const fetched = new Set(mapped.map(m => m.id));
+      const confirmed = new Set(sentKeysRef.current.keys());
+      setThread(prev => [
+        ...mapped,
+        ...prev.filter(m => !!m.key && (sending.has(m.key) || (confirmed.has(m.id) && !fetched.has(m.id)))),
+      ]);
       setAssignedAdminName(ticket.assigned_admin_name ?? null);
     } catch (err) {
       // A background refresh failing silently and retrying next poll is

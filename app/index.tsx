@@ -20,13 +20,23 @@ export default function SplashScreen() {
   // notification), this splash stayed under the call screen with its own
   // redirect skipped — so when the call ended and the app came back here,
   // it sat on the splash for good. Coming back to it: carry on into the app.
-  const focusCountRef = useRef(0);
+  // Also when a notification opened its screen before this splash was ever
+  // in front: going back is then its *first* focus, and its own timer was
+  // skipped (handledRef), so counting focuses left it stuck here.
+  const handledRef = useRef(false);
+  const leftRef = useRef(false);
+  const focusedRef = useRef(false);
   useFocusEffect(useCallback(() => {
-    focusCountRef.current += 1;
-    if (focusCountRef.current === 1) return;
-    clearStaleSessionAfterReinstall().then(() => TokenStore.getAccessToken()).then(token => {
-      router.replace(token ? '/home' : '/login');
-    });
+    focusedRef.current = true;
+    if (leftRef.current || handledRef.current) {
+      clearStaleSessionAfterReinstall().then(() => TokenStore.getAccessToken()).then(token => {
+        router.replace(token ? '/home' : '/login');
+      });
+    }
+    return () => {
+      focusedRef.current = false;
+      leftRef.current = true;
+    };
   }, []));
 
   useEffect(() => {
@@ -38,9 +48,8 @@ export default function SplashScreen() {
     // seconds later with whatever it decides (login or home). Two separate
     // bridges to check: Notifee's own (iOS fallback path) and the native
     // CallStyle one (Android's real colored-button notification).
-    let handled = false;
     Promise.all([handleInitialNotification(), handleInitialCallAction()]).then(([a, b]) => {
-      handled = a || b;
+      handledRef.current = a || b;
     });
 
     // Resolved once, immediately, and reused below — both to kick off a
@@ -64,7 +73,9 @@ export default function SplashScreen() {
     });
 
     const timer = setTimeout(() => {
-      if (handled) return;
+      // Something else is in front (opened from a notification): replacing
+      // now would replace that screen. Coming back here carries on instead.
+      if (handledRef.current || !focusedRef.current) return;
       // A previous bug here always sent the user to /login on every cold start,
       // even with a perfectly valid stored session — meaning killing the app and
       // reopening it (or tapping a notification, before the fix above) always

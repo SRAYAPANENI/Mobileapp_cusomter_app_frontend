@@ -800,8 +800,18 @@ export async function handleInitialNotification(): Promise<boolean> {
       if (initial.notification?.id) notifee.cancelNotification(initial.notification.id);
       return true;
     }
+    // Support replies and announcements: the same as tapping one with the app
+    // open. They used to fall through to the call handling below, which left
+    // the splash thinking nothing had opened — Back from the support chat then
+    // landed on a splash that never moved on.
+    const tapped = initial.notification?.data ?? {};
+    if (tapped.generalType || tapped.adminBroadcast) {
+      handleNotifeeEvent(EventType.PRESS, { notification: initial.notification, pressAction: initial.pressAction });
+      return true;
+    }
     const data = initial.notification?.data as IncomingCallData | undefined;
-    if (!data) return false;
+    // Only an incoming call's own notification is a call (same rule as handleNotifeeEvent).
+    if (!data?.jobId) return false;
     handlePress(data, initial.pressAction?.id);
     if (initial.notification?.id) notifee.cancelNotification(initial.notification.id);
     return true;
