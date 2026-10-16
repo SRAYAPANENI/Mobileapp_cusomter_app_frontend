@@ -338,6 +338,9 @@ export const SkoFyApi = {
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   auth: {
+    /** Is this phone still the signed-in one? A 401 here runs the normal
+     * "Signed Out" flow (the account signed in on another phone). */
+    checkSession: async (): Promise<{ active: boolean }> => request('/auth/session'),
     /**
      * Send OTP to phone number.
      * In dev mode (OTP_MOCK_MODE=true on backend) returns mock_otp: "123456".

@@ -689,6 +689,15 @@ export default function ChatScreen() {
         setSocketOpen(false);
         setIsOtherOnline(false);
         // 4403/4404: not a party to this job / no such job — retrying can't help.
+        // 4401: the server closed it because this account signed in on another
+        // phone (or the login expired). Ask once: signed out → the app's
+        // "Signed Out" flow takes over; still signed in → reconnect as usual.
+        if (event.code === 4401) {
+          SkoFyApi.auth.checkSession()
+            .then(() => scheduleReconnect())
+            .catch((err: any) => { if (err?.error_code !== 'SESSION_EXPIRED') scheduleReconnect(); });
+          return;
+        }
         if (event.code !== 4403 && event.code !== 4404) scheduleReconnect();
       };
       ws.onopen = () => {
