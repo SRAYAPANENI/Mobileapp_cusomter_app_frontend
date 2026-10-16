@@ -22,17 +22,13 @@ import { Text, TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useAppAlert } from '@/components/app-alert';
 import Animated, { FadeInLeft, FadeInRight } from 'react-native-reanimated';
-import {
-  mediaDevices,
-  MediaStream,
-  RTCIceCandidate,
-  RTCPeerConnection,
-  RTCSessionDescription,
-} from 'react-native-webrtc';
 import { Audio } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { isRatingSkipped, markRatingSkipped, markRatingSubmitted } from '@/services/ratingReminders';
-import { RTCIceServerConfig, SkoFyApi, TokenStore, getFreshAccessToken } from '@/services/api';
+import { SkoFyApi, TokenStore, getFreshAccessToken } from '@/services/api';
+// The call's audio — through our own media server (docs/CALL_RECORDING_DESIGN.md).
+import { CallMedia, CallMediaEnded } from '@/services/call/callMedia';
+import type { TransportEvent } from '@/services/call/mediaTransport';
 import { CallOverlay } from '@/components/call-overlay';
 import InCallManager from 'react-native-incall-manager';
 import { answerIosRing, claimOutgoingCall, markCallEnded, releaseOutgoingCall, startInAppRingtone, stopInAppRingtone, cancelIncomingCallNotification, endIosCallSession, forgetCallScreen, takeAcceptRequest, endIosRingForHangUp, markIosCallConnected, registerAcceptHandler, registerDeclineHandler, showIosIncomingCall, registerHangupHandler, registerMuteHandler, registerSpeakerHandler, setActiveChatJob, setChatCallActive, startIosOutgoingCall, startOngoingCallNotification, stopOngoingCallNotification, updateOngoingCallControls } from '@/services/callManager';
@@ -53,31 +49,12 @@ const MESSAGE_PAGE_SIZE = 50;
 // trip (caller already gave up, transient network blip, etc.) left the user
 // stuck on "Connecting…" forever with no offer ever arriving and no way out
 // (the back button is intentionally blocked while a call is active).
-// The microphone for a call, with WebRTC's voice processing asked for
-// explicitly (it used to rely on defaults): echo cancellation, noise
-// suppression, automatic volume and a filter for low hum.
-const CALL_AUDIO = {
-  audio: {
-    googEchoCancellation: true,
-    googNoiseSuppression: true,
-    googAutoGainControl: true,
-    googHighpassFilter: true,
-  } as any,
-  video: false,
-};
-
 const CONNECTING_TIMEOUT_MS = 15000;
 // How often "Connecting…" asks the caller again for the call (call_ready).
 const CALL_READY_RETRY_MS = 3000;
-// A dropped connection (often a Wi-Fi ↔ mobile switch) is restarted (ICE
-// restart) and gets this long to come back before the call ends.
+// A dropped connection (often a Wi-Fi ↔ mobile switch) is restored by the
+// media transport; it gets this long to come back before the call ends.
 const DISCONNECT_GRACE_MS = 30000;
-// While reconnecting, the connection restart is sent again this often —
-// one sent while the other phone's socket was down was lost.
-const RESTART_RETRY_MS = 3000;
-const RESTART_MIN_GAP_MS = 8000;
-// Max wait for the TURN relay details before calling without them.
-const ICE_SERVERS_WAIT_MS = 3000;
 
 const newCallId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
@@ -116,21 +93,6 @@ function endedLabelFor(reason: string | undefined, state: CallState): string | n
   if (reason === 'job_closed') return 'This job is closed';
   return null;
 }
-
-// STUN alone failed for real cross-network testing (two different mobile
-// carriers, different cities) — calls rang/answered fine since that's just
-// signaling, but no audio flowed, because direct peer-to-peer couldn't
-// traverse carrier-grade NAT on one or both sides. TURN relays the media in
-// that case. Metered's openrelay is a free, no-signup public TURN service —
-// fine for testing, but it's shared/rate-limited and not something to rely
-// on long-term; swap in a real TURN deployment (self-hosted coturn, or a
-// paid service like Twilio/Xirsys) before this goes anywhere near production.
-// The real STUN/TURN list (with short-lived credentials for Dodorez's own
-// relay) comes from the server — see iceServersRef below. This is only the
-// fallback if that request fails: a public STUN server, which still connects
-// most calls directly but can't relay through strict networks. The app used
-// to ship a shared TURN password here.
-const FALLBACK_ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 
 export default function ChatScreen() {
   const { jobId, id, name: paramName, profileImage: paramProfileImage, profession: paramProfession, autoAnswer, autoCall, callId: callIdParam, returnOnEnd } = useLocalSearchParams<{
@@ -214,11 +176,17 @@ export default function ChatScreen() {
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
-  const pendingIceRef = useRef<any[]>([]);
-  const incomingOfferRef = useRef<{ sdp: string; type: string } | null>(null);
-  const outgoingOfferRef = useRef<{ sdp: string; type: string } | null>(null);
+  // The call's audio through our media server (services/call/callMedia.ts).
+  const callMediaRef = useRef<CallMedia>(new CallMedia());
+  // The call is being recorded — the screen shows the notice.
+  const [recorded, setRecorded] = useState(false);
+  // Answered (either side), audio still connecting: the overlay shows the
+  // in-call "Connecting…" rather than an unanswered call.
+  const [answered, setAnswered] = useState(false);
+  // The incoming call being offered (who from), until answered or declined.
+  const incomingOfferRef = useRef<{ from?: string } | null>(null);
+  // Our outgoing call, not yet answered — offered again if the callee's app asks (call_ready).
+  const outgoingCallRef = useRef(false);
   const callTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoAnswerSentRef = useRef(false);
   const autoCallSentRef = useRef(false);
@@ -231,11 +199,6 @@ export default function ChatScreen() {
   // Read straight from the route param, it stayed 'true' for the screen's
   // whole life and every later call into this chat was answered automatically.
   const autoAnswerPendingRef = useRef(autoAnswer === 'true');
-  // ICE candidates sent for the current outgoing call. Replayed after the
-  // offer is re-sent to a callee who opened the app from the notification:
-  // the originals went out while nobody was listening, and without them the
-  // call "connected" with no audio.
-  const sentIceRef = useRef<any[]>([]);
   const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ringtoneSoundRef = useRef<Audio.Sound | null>(null);
   const callTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -265,25 +228,24 @@ export default function ChatScreen() {
   const reconnectingRef = useRef(false);
   const [endedLabel, setEndedLabel] = useState('');
   const endedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Only the caller restarts the connection after a network change, so
-  // both phones never renegotiate at once.
-  const isCallerRef = useRef(false);
   const wasConnectedRef = useRef(false);
-  const restartIceRef = useRef<() => void>(() => {});
   const outgoingClaimRef = useRef<string | null>(null);
-  const restartRetryRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastRestartAtRef = useRef(0);
   // Set while answering — a second copy of the call's offer is ignored.
   const answeringRef = useRef(false);
   const callReadyTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // The restart offer not yet answered — re-sent if the socket was down.
-  const restartOfferRef = useRef<{ sdp: string; type: string } | null>(null);
 
   // Rating modal — shown once per session when opening a COMPLETED job chat
   const [ratingVisible, setRatingVisible] = useState(false);
   const [ratings, setRatings] = useState({ behaviour: 0, skill: 0, punctuality: 0, communication: 0 });
   const [ratingComment, setRatingComment] = useState('');
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
+
+  // The other person's presence in the call's room (see onMediaEvent).
+  const peerPresentRef = useRef(false);
+  const peerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearPeerTimer = () => {
+    if (peerTimerRef.current) { clearTimeout(peerTimerRef.current); peerTimerRef.current = null; }
+  };
 
   const clearDisconnectTimer = () => {
     if (disconnectTimerRef.current) { clearTimeout(disconnectTimerRef.current); disconnectTimerRef.current = null; }
@@ -307,19 +269,7 @@ export default function ChatScreen() {
   // one mounted, and a mount-based flag kept treating the chat as "open" —
   // silently swallowing every message/call notification for this job while
   // the user was actually looking at something else.
-  const iceServersRef = useRef<RTCIceServerConfig[]>(FALLBACK_ICE_SERVERS);
   const [socketOpen, setSocketOpen] = useState(false);
-  const iceServersReadyRef = useRef<Promise<void>>(Promise.resolve());
-  useEffect(() => {
-    iceServersReadyRef.current = SkoFyApi.calls.iceServers()
-      .then(servers => { if (Array.isArray(servers) && servers.length) iceServersRef.current = servers; })
-      .catch(() => { /* keep the STUN fallback */ });
-  }, []);
-  // A call answered straight from the notification used to build its
-  // connection before the relay details had loaded — STUN only, which fails
-  // on most mobile networks.
-  const waitForIceServers = () =>
-    Promise.race([iceServersReadyRef.current, new Promise<void>(resolve => setTimeout(resolve, ICE_SERVERS_WAIT_MS))]);
 
   // Only while this screen's socket is actually connected: being the active
   // chat makes callManager skip the incoming-call notification, trusting
@@ -428,14 +378,11 @@ export default function ChatScreen() {
     markCallEnded(callIdRef.current);
     callIdRef.current = null;
     autoAnswerPendingRef.current = false;
-    sentIceRef.current = [];
     if (endedTimerRef.current) { clearTimeout(endedTimerRef.current); endedTimerRef.current = null; }
     if (callReadyTimerRef.current) { clearInterval(callReadyTimerRef.current); callReadyTimerRef.current = null; }
-    if (restartRetryRef.current) { clearInterval(restartRetryRef.current); restartRetryRef.current = null; }
     setRemoteRinging(false);
     setReconnecting(false);
     reconnectingRef.current = false;
-    restartOfferRef.current = null;
     if (jobId) stopOngoingCallNotification(jobId);
     if (jobId) endIosCallSession(jobId);
     if (jobId) forgetCallScreen(jobId);
@@ -443,13 +390,13 @@ export default function ChatScreen() {
     registerMuteHandler(null);
     registerSpeakerHandler(null);
     if (callTimerRef.current) { clearInterval(callTimerRef.current); callTimerRef.current = null; }
-    localStreamRef.current?.getTracks().forEach(t => t.stop());
-    localStreamRef.current = null;
-    peerConnectionRef.current?.close();
-    peerConnectionRef.current = null;
-    pendingIceRef.current = [];
+    callMediaRef.current.end();
+    clearPeerTimer();
+    peerPresentRef.current = false;
     incomingOfferRef.current = null;
-    outgoingOfferRef.current = null;
+    outgoingCallRef.current = false;
+    setRecorded(false);
+    setAnswered(false);
     autoAnswerSentRef.current = false;
     setIsMuted(false);
     setIsSpeakerOn(false);
@@ -457,41 +404,63 @@ export default function ChatScreen() {
     setCallState('idle');
   };
 
-  const makePeerConnection = () => {
-    const pc = new RTCPeerConnection({ iceServers: iceServersRef.current });
-    // react-native-webrtc's RTCPeerConnection implements EventTarget at runtime,
-    // but its published .d.ts doesn't surface addEventListener — cast around it.
-    (pc as any).addEventListener('icecandidate', (event: any) => {
-      if (!event.candidate) return;
-      sentIceRef.current.push(event.candidate);
-      sendSignal({ type: 'ice_candidate', candidate: event.candidate });
-    });
-    (pc as any).addEventListener('connectionstatechange', () => {
-      if (peerConnectionRef.current !== pc) return; // an earlier call's connection
-      const state = pc.connectionState;
-      if (state === 'connected') {
-        clearDisconnectTimer();
-        if (restartRetryRef.current) { clearInterval(restartRetryRef.current); restartRetryRef.current = null; }
-        reconnectingRef.current = false;
-        setReconnecting(false);
-      } else if (state === 'disconnected' || state === 'failed') {
-        // Restart the connection on the new network instead of hanging up
-        // (it used to end 10s after the first blip). Ends only if it can't
-        // come back within the grace period — call_end then tells the other phone.
-        reconnectingRef.current = true;
-        setReconnecting(true);
-        restartIceRef.current();
-        if (!restartRetryRef.current) {
-          restartRetryRef.current = setInterval(() => {
-            if (reconnectingRef.current) restartIceRef.current();
-          }, RESTART_RETRY_MS);
-        }
-        if (!disconnectTimerRef.current) {
-          disconnectTimerRef.current = setTimeout(() => handleEndCallRef.current(), DISCONNECT_GRACE_MS);
-        }
+  // The transport restores a dropped network itself; the call ends only if
+  // it can't come back within the grace period (call_end tells the other phone).
+  const onMediaEvent = (event: TransportEvent) => {
+    if (event === 'peerJoined') {
+      peerPresentRef.current = true;
+      clearPeerTimer();
+      if (!reconnectingRef.current) setReconnecting(false);
+    } else if (event === 'peerLeft' || (event === 'connected' && !peerPresentRef.current)) {
+      // The other person isn't in the room — not joined yet, or their app is
+      // gone (crash, dead battery). Our own connection is fine, so nothing
+      // else would ever end this call: give them the grace period.
+      peerPresentRef.current = false;
+      if (event === 'peerLeft') setReconnecting(true);
+      if (!peerTimerRef.current) {
+        peerTimerRef.current = setTimeout(() => handleEndCallRef.current(), DISCONNECT_GRACE_MS);
       }
-    });
-    return pc;
+    }
+    if (event === 'connected' || event === 'reconnected') {
+      clearDisconnectTimer();
+      reconnectingRef.current = false;
+      if (peerPresentRef.current) setReconnecting(false);
+    } else if (event === 'reconnecting') {
+      reconnectingRef.current = true;
+      setReconnecting(true);
+      if (!disconnectTimerRef.current) {
+        disconnectTimerRef.current = setTimeout(() => handleEndCallRef.current(), DISCONNECT_GRACE_MS);
+      }
+    } else if (event === 'disconnected') {
+      handleEndCallRef.current();
+    }
+  };
+
+  /** Both sides, once the call is answered: join its audio on our media server. */
+  const connectMedia = async () => {
+    const callId = callIdRef.current;
+    if (!callId) throw new Error('No call to connect');
+    // The ringing phase used InCallManager; LiveKit's audio session takes over now.
+    InCallManager.stop();
+    const access = await callMediaRef.current.connect(callId, onMediaEvent);
+    if (callIdRef.current !== callId) return; // ended while connecting
+    setRecorded(access.recorded);
+    wasConnectedRef.current = true;
+    callStateRef.current = 'connected';
+    setCallState('connected');
+    if (jobId) startOngoingCallNotification(jobId, name || 'Provider');
+    if (jobId) markIosCallConnected(jobId);
+    registerHangupHandler(() => handleEndCallRef.current());
+    registerMuteHandler(() => toggleMuteRef.current());
+    registerSpeakerHandler(() => toggleSpeakerRef.current());
+  };
+
+  /** Shows the recording notice before answering, and makes answering faster. */
+  const prepareMedia = (callId: string | null) => {
+    if (!callId) return;
+    callMediaRef.current.prepare(callId)
+      .then(access => { if (callIdRef.current === callId) setRecorded(access.recorded); })
+      .catch(() => { /* fetched again on connect */ });
   };
 
   const handleStartCall = async () => {
@@ -512,24 +481,18 @@ export default function ChatScreen() {
     outgoingClaimRef.current = claim;
     callActionInFlightRef.current = true;
     if (endedTimerRef.current) { clearTimeout(endedTimerRef.current); endedTimerRef.current = null; }
-    isCallerRef.current = true;
     wasConnectedRef.current = false;
     setRemoteRinging(false);
     callIdRef.current = newCallId();
-    sentIceRef.current = [];
     try {
+      // The microphone is needed once answered — ask now, not mid-call.
+      const mic = await Audio.requestPermissionsAsync();
+      if (!mic.granted) throw new Error('Microphone permission denied');
       InCallManager.start({ media: 'audio' });
-      const stream = await mediaDevices.getUserMedia(CALL_AUDIO);
-      localStreamRef.current = stream;
-      await waitForIceServers();
-      const pc = makePeerConnection();
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
-      peerConnectionRef.current = pc;
-
-      const offer = await pc.createOffer({});
-      await pc.setLocalDescription(offer);
-      outgoingOfferRef.current = { sdp: offer.sdp!, type: offer.type };
-      sendSignal({ type: 'call_offer', sdp: offer.sdp, sdpType: offer.type });
+      outgoingCallRef.current = true;
+      // No audio details: the call's audio connects through our media server once answered.
+      sendSignal({ type: 'call_offer', media: 'sfu' });
+      prepareMedia(callIdRef.current);
       setCallState('calling');
       // Now, not after the next render: the server's "busy" can arrive first.
       callStateRef.current = 'calling';
@@ -565,7 +528,6 @@ export default function ChatScreen() {
     answeringRef.current = true;
     if (jobId) takeAcceptRequest(jobId);
     autoAnswerPendingRef.current = false;
-    isCallerRef.current = false;
     wasConnectedRef.current = true;
     Vibration.cancel();
     InCallManager.stopRingtone();
@@ -578,30 +540,16 @@ export default function ChatScreen() {
     // mount effect ran).
     if (jobId) cancelIncomingCallNotification(jobId);
     try {
-      InCallManager.start({ media: 'audio' });
-      const stream = await mediaDevices.getUserMedia(CALL_AUDIO);
-      localStreamRef.current = stream;
-      await waitForIceServers();
-      const pc = makePeerConnection();
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
-      peerConnectionRef.current = pc;
-
-      await pc.setRemoteDescription(new RTCSessionDescription({ sdp: offer.sdp, type: offer.type as any }));
-      for (const candidate of pendingIceRef.current) {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
-      }
-      pendingIceRef.current = [];
-
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      sendSignal({ type: 'call_answer', sdp: answer.sdp, sdpType: answer.type });
-      setCallState('connected');
-      if (jobId) startOngoingCallNotification(jobId, name || 'Provider');
-      if (jobId) markIosCallConnected(jobId);
-      registerHangupHandler(() => handleEndCallRef.current());
-      registerMuteHandler(() => toggleMuteRef.current());
-      registerSpeakerHandler(() => toggleSpeakerRef.current());
+      const mic = await Audio.requestPermissionsAsync();
+      if (!mic.granted) throw new Error('Microphone permission denied');
+      // Answered first (the caller and the recorder start at once), then the audio.
+      sendSignal({ type: 'call_answer' });
+      setAnswered(true);
+      callStateRef.current = 'connecting';
+      setCallState('connecting');
+      await connectMedia();
     } catch (err) {
+      if (err instanceof CallMediaEnded) return;
       console.error('Failed to answer call:', err);
       appAlert.show('error', 'Call Failed', "Could not answer the call. Enable microphone access for Dodorez in your phone's settings and try again.", [
         { text: 'Cancel', variant: 'secondary' },
@@ -638,39 +586,6 @@ export default function ChatScreen() {
   };
   handleEndCallRef.current = handleEndCall;
 
-  const restartIce = async () => {
-    const pc = peerConnectionRef.current;
-    if (!pc || callStateRef.current !== 'connected') return;
-    // Only the caller makes the restart offer. The callee — often the phone
-    // that lost its network — asks for one; it used to just wait, and a
-    // restart sent while its socket was down never came again.
-    if (!isCallerRef.current) {
-      sendSignal({ type: 'call_restart' });
-      return;
-    }
-    // One restart at a time: a pending one is just sent again (the socket
-    // may have been down when it was made — see onopen).
-    const pending = restartOfferRef.current;
-    if (pc.signalingState === 'have-local-offer' && pending) {
-      sendSignal({ type: 'call_renegotiate', sdp: pending.sdp, sdpType: pending.type });
-      return;
-    }
-    if (pc.signalingState !== 'stable') return;
-    // A restart needs a few seconds to find the new route — a fresh one
-    // every retry would keep starting over.
-    if (Date.now() - lastRestartAtRef.current < RESTART_MIN_GAP_MS) return;
-    lastRestartAtRef.current = Date.now();
-    try {
-      const offer = await pc.createOffer({ iceRestart: true } as any);
-      await pc.setLocalDescription(offer);
-      restartOfferRef.current = { sdp: offer.sdp!, type: offer.type };
-      sendSignal({ type: 'call_renegotiate', sdp: offer.sdp, sdpType: offer.type });
-    } catch (err) {
-      console.warn('ICE restart failed:', err);
-    }
-  };
-  restartIceRef.current = restartIce;
-
   // Opened automatically for an incoming call from another screen: an
   // unanswered call goes back to where the user was.
   const prevCallStateRef = useRef<CallState>(callState);
@@ -687,17 +602,16 @@ export default function ChatScreen() {
   }, [callState]);
 
   const toggleMute = () => {
-    const track = localStreamRef.current?.getAudioTracks()[0];
-    if (track) {
-      track.enabled = isMuted;
-      setIsMuted(!isMuted);
-    }
+    const next = !isMuted;
+    callMediaRef.current.setMuted(next).catch(() => {});
+    setIsMuted(next);
   };
   toggleMuteRef.current = toggleMute;
 
   const toggleSpeaker = () => {
-    InCallManager.setForceSpeakerphoneOn(!isSpeakerOn);
-    setIsSpeakerOn(!isSpeakerOn);
+    const next = !isSpeakerOn;
+    callMediaRef.current.setSpeaker(next).catch(() => {});
+    setIsSpeakerOn(next);
   };
   toggleSpeakerRef.current = toggleSpeaker;
 
@@ -780,9 +694,6 @@ export default function ChatScreen() {
         ws.send(JSON.stringify({ type: 'auth', token }));
         reconnectDelay = 1000;
         setSocketOpen(true);
-        // A network change often drops the socket and the call together —
-        // the restart couldn't be sent while it was down.
-        if (reconnectingRef.current) restartIceRef.current();
         // autoAnswer being set AT ALL (true or false) means this screen was
         // opened via a call notification action — the original offer was
         // sent while we had no socket listening, so it was lost; the caller
@@ -849,20 +760,17 @@ export default function ChatScreen() {
               const myId = myUserIdRef.current;
               const theirId = data.from as string | undefined;
               if (!myId || !theirId || myId >= theirId) return;
-              // We have the lower ID — become callee: tear down our outgoing call
-              peerConnectionRef.current?.close();
-              peerConnectionRef.current = null;
-              localStreamRef.current?.getTracks().forEach(t => t.stop());
-              localStreamRef.current = null;
-              outgoingOfferRef.current = null;
+              // We have the lower ID — become callee: drop our outgoing call
+              outgoingCallRef.current = false;
               InCallManager.stopRingback();
               clearCallTimeout();
               callActionInFlightRef.current = false;
               yieldedToTheirCall = true;
             }
             if (endedTimerRef.current) { clearTimeout(endedTimerRef.current); endedTimerRef.current = null; }
-            incomingOfferRef.current = { sdp: data.sdp, type: data.sdpType };
+            incomingOfferRef.current = { from: data.from };
             callIdRef.current = data.call_id ?? null;
+            prepareMedia(callIdRef.current);
             const acceptPressed = autoAnswerPendingRef.current || (!!jobId && takeAcceptRequest(jobId));
             if ((acceptPressed && isNotifiedCall) || yieldedToTheirCall) {
               handleAcceptCallRef.current();
@@ -894,78 +802,34 @@ export default function ChatScreen() {
           // Every other call signal must belong to the current call.
           const isOtherCall = !!data.call_id && data.call_id !== callIdRef.current;
           if (data.type === 'call_answer') {
-            if (isOtherCall) return;
-            const pc = peerConnectionRef.current;
-            if (!pc) return;
+            if (isOtherCall || !outgoingCallRef.current) return;
+            outgoingCallRef.current = false;
             InCallManager.stopRingback();
             clearCallTimeout();
-            await pc.setRemoteDescription(new RTCSessionDescription({ sdp: data.sdp, type: data.sdpType }));
-            for (const candidate of pendingIceRef.current) {
-              await pc.addIceCandidate(new RTCIceCandidate(candidate));
-            }
-            pendingIceRef.current = [];
-            outgoingOfferRef.current = null;
-            wasConnectedRef.current = true;
-            setCallState('connected');
-            if (jobId) startOngoingCallNotification(jobId, name || 'Provider');
-            if (jobId) markIosCallConnected(jobId);
-            registerHangupHandler(() => handleEndCallRef.current());
-            registerMuteHandler(() => toggleMuteRef.current());
-            registerSpeakerHandler(() => toggleSpeakerRef.current());
-            return;
-          }
-          if (data.type === 'ice_candidate') {
-            if (isOtherCall) return;
-            const pc = peerConnectionRef.current;
-            if (pc && pc.remoteDescription) {
-              // After a network change the new candidates can arrive just
-              // before the restart's offer — keep them for after it.
-              try { await pc.addIceCandidate(new RTCIceCandidate(data.candidate)); }
-              catch { pendingIceRef.current.push(data.candidate); }
-            } else {
-              pendingIceRef.current.push(data.candidate);
+            setAnswered(true);
+            callStateRef.current = 'connecting';
+            setCallState('connecting');
+            try {
+              await connectMedia();
+            } catch (err) {
+              if (err instanceof CallMediaEnded) return;
+              console.error('Failed to connect the call:', err);
+              appAlert.show('error', 'Call Failed', "Couldn't connect the call. Check your internet and try again.");
+              handleEndCallRef.current();
             }
             return;
           }
           if (data.type === 'call_ring') {
-            if (!isOtherCall && callStateRef.current === 'calling') setRemoteRinging(true);
-            return;
-          }
-          if (data.type === 'call_renegotiate') {
-            // The caller restarted the connection on a new network.
-            if (isOtherCall) return;
-            const pc = peerConnectionRef.current;
-            if (!pc) return;
-            await pc.setRemoteDescription(new RTCSessionDescription({ sdp: data.sdp, type: data.sdpType }));
-            for (const candidate of pendingIceRef.current) {
-              try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
+            if (!isOtherCall && callStateRef.current === 'calling') {
+              setRemoteRinging(true);
+              // The pass fetched on dialing can beat the offer to the server;
+              // the call surely exists now, so the recording notice shows while ringing.
+              prepareMedia(callIdRef.current);
             }
-            pendingIceRef.current = [];
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            sendSignal({ type: 'call_renegotiate_answer', sdp: answer.sdp, sdpType: answer.type });
-            return;
-          }
-          if (data.type === 'call_restart') {
-            // The other phone lost the connection: restart it (or re-send
-            // the restart it missed).
-            if (isOtherCall) return;
-            restartIceRef.current();
-            return;
-          }
-          if (data.type === 'call_renegotiate_answer') {
-            if (isOtherCall) return;
-            const pc = peerConnectionRef.current;
-            if (!pc || pc.signalingState !== 'have-local-offer') return; // a duplicate answer
-            await pc.setRemoteDescription(new RTCSessionDescription({ sdp: data.sdp, type: data.sdpType }));
-            restartOfferRef.current = null;
             return;
           }
           if (data.type === 'call_ready') {
-            if (outgoingOfferRef.current && !isOtherCall) {
-              sendSignal({ type: 'call_offer', sdp: outgoingOfferRef.current.sdp, sdpType: outgoingOfferRef.current.type });
-              for (const candidate of sentIceRef.current) sendSignal({ type: 'ice_candidate', candidate });
-            }
+            if (outgoingCallRef.current && !isOtherCall) sendSignal({ type: 'call_offer', media: 'sfu' });
             return;
           }
           if (data.type === 'call_end') {
@@ -1192,8 +1056,9 @@ export default function ChatScreen() {
       </View>
 
       <CallOverlay
+          recorded={recorded}
         callState={callState}
-        answered={autoAnswer === 'true'}
+        answered={answered || autoAnswer === 'true'}
         name={name || 'Provider'}
         profileImage={profileImage}
         isMuted={isMuted}

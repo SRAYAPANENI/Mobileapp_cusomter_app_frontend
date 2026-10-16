@@ -1041,6 +1041,10 @@ export const SkoFyApi = {
      * to "Ringing…". Used where there's no live socket (a push notification). */
     ringing: async (jobId: string, callId: string) =>
       request(`/calls/${jobId}/ringing`, { method: 'POST', body: JSON.stringify({ call_id: callId }) }),
+    /** A pass to join this call's audio on our own media server (only for
+     * the call's caller or callee). docs/CALL_RECORDING_DESIGN.md. */
+    media: async (callId: string): Promise<{ url: string; token: string; room: string; recorded: boolean }> =>
+      request(`/calls/${callId}/media`, { method: 'POST' }),
   },
 
   ratingStatus: {

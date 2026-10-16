@@ -5,7 +5,8 @@ import * as SecureStore from 'expo-secure-store';
 import { Alert, AppRegistry, AppState, Linking, NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import RNCallKeep from 'react-native-callkeep';
 import VoipPushNotification from 'react-native-voip-push-notification';
-import { RTCAudioSession } from 'react-native-webrtc';
+// LiveKit's WebRTC (our own media server): same CallKit audio-session hooks.
+import { RTCAudioSession } from '@livekit/react-native-webrtc';
 import { SkoFyApi, TokenStore, getFreshAccessToken } from './api';
 import { AppLock } from './appLock';
 import { openJobScreen } from './jobScreens';

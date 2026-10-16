@@ -36,6 +36,8 @@ interface CallOverlayProps {
   answered?: boolean;
   /** Why the call ended — shown while callState is 'ended'. */
   endedLabel?: string;
+  /** The call is recorded: the notice shows before answering and during the call. */
+  recorded?: boolean;
   themeColors: typeof Colors.light;
   onAccept: () => void;
   onDecline: () => void;
@@ -118,7 +120,7 @@ function FloatingIcon({
 }
 
 export function CallOverlay({
-  callState, answered = true, name, profileImage, isMuted, isSpeakerOn, callDuration, remoteRinging, reconnecting, endedLabel, themeColors: _themeColors,
+  callState, answered = true, name, profileImage, isMuted, isSpeakerOn, callDuration, remoteRinging, reconnecting, endedLabel, recorded, themeColors: _themeColors,
   onAccept, onDecline, onEnd, onToggleMute, onToggleSpeaker,
 }: CallOverlayProps) {
   if (callState === 'idle') return null;
@@ -175,6 +177,12 @@ export function CallOverlay({
         </View>
         <ThemedText style={styles.name}>{name}</ThemedText>
         <ThemedText style={styles.status}>{statusText}</ThemedText>
+        {recorded && callState !== 'ended' && (
+          <View style={styles.recordedNotice}>
+            <View style={styles.recordedDot} />
+            <ThemedText style={styles.recordedText}>This call is recorded for quality and safety</ThemedText>
+          </View>
+        )}
       </View>
 
       {callState === 'ended' ? (
@@ -279,6 +287,18 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.poppinsBold,
     color: '#fff',
   },
+  recordedNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  recordedDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#EF4444' },
+  recordedText: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppins, color: 'rgba(255,255,255,0.85)' },
   status: {
     fontSize: 16,
     lineHeight: 22,

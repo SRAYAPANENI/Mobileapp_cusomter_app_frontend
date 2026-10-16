@@ -1,0 +1,17 @@
+diff --git a/node_modules/@livekit/react-native/android/src/main/java/com/livekit/reactnative/LiveKitReactNative.kt b/node_modules/@livekit/react-native/android/src/main/java/com/livekit/reactnative/LiveKitReactNative.kt
+index 01b6e76..91b56bb 100644
+--- a/node_modules/@livekit/react-native/android/src/main/java/com/livekit/reactnative/LiveKitReactNative.kt
++++ b/node_modules/@livekit/react-native/android/src/main/java/com/livekit/reactnative/LiveKitReactNative.kt
+@@ -78,7 +78,11 @@ object LiveKitReactNative {
+     }
+ 
+     private fun setupAdm(context: Context) {
+-        val useHardwareAudioProcessing = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
++        // Dodorez (patches/@livekit+react-native+2.12.0.patch): WebRTC's own echo
++        // canceller and noise suppressor, never the phone's. Many Android phones
++        // ship a weak hardware echo canceller, and while it's on WebRTC switches
++        // its own (much stronger) one off — the other person heard themselves back.
++        val useHardwareAudioProcessing = false
+ 
+         adm = JavaAudioDeviceModule.builder(context)
+             .setUseHardwareAcousticEchoCanceler(useHardwareAudioProcessing)

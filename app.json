@@ -111,7 +111,7 @@
       "./plugins/with-call-foreground-service.js",
       "./plugins/with-call-ringtone-channel.js",
       "./plugins/with-call-screen.js",
-      "./plugins/with-webrtc-audio.js"
+      "@livekit/react-native-expo-plugin"
     ],
     "experiments": {
       "typedRoutes": true,
