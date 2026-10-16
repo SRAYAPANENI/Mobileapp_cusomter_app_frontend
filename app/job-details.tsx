@@ -30,6 +30,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 // Map handled dynamically, same as track-provider.tsx / provider-map.tsx —
 // prevents crashes/web errors if react-native-maps isn't available.
@@ -66,6 +67,7 @@ function formatScheduledAt(iso?: string | null): string | null {
 }
 
 export default function JobDetailsScreen() {
+  const bottomInset = useBottomInset();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
@@ -402,7 +404,7 @@ export default function JobDetailsScreen() {
       </ScrollView>
 
       {canEditDetails && (
-        <View style={styles.footer}>
+        <View style={padBottom(styles.footer, bottomInset)}>
           <TouchableOpacity
             style={styles.editButton}
             onPress={() => router.push({ pathname: '/edit-job', params: { jobId } })}

@@ -26,6 +26,7 @@ import { ActivityIndicator, BackHandler, Platform, ScrollView, StyleSheet, Touch
 import { Text, TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
+import { fitBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 interface AiResult {
   problem_summary: string;
@@ -35,6 +36,7 @@ interface AiResult {
 }
 
 export default function DescribeProblemScreen() {
+  const bottomInset = useBottomInset();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -332,7 +334,7 @@ export default function DescribeProblemScreen() {
         </ScrollView>
 
         {/* Footer */}
-        <View style={styles.footer}>
+        <View style={fitBottom(styles.footer, bottomInset)}>
           <TouchableOpacity
             style={[styles.continueButton, { backgroundColor: themeColors.brand, opacity: canContinue ? 1 : 0.5 }]}
             onPress={() => router.replace('/post-requirement/step2')}

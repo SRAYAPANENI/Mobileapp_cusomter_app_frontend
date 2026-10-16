@@ -38,6 +38,7 @@ import { SkoFyApi } from '@/services/api';
 import { NAME_AFTER_HIRING, providerInitial, providerShortTitle, providerTitle, isNameHidden } from '@/services/providerName';
 import { Applicant } from '@/data/applicantsData';
 import { useHirePayment } from '@/hooks/use-hire-payment';
+import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 const { width } = Dimensions.get('window');
 
@@ -249,6 +250,7 @@ function mapApiApplicant(a: any): Applicant & { applicationId: string; providerI
 }
 
 export default function ApplicantsScreen() {
+  const bottomInset = useBottomInset();
   const { jobId } = useLocalSearchParams<{ jobId?: string }>();
   const appAlert = useAppAlert();
   const colorScheme = useColorScheme() ?? 'light';
@@ -503,7 +505,7 @@ export default function ApplicantsScreen() {
           />
         )}
         keyExtractor={item => item.id}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={padBottom(styles.listContent, bottomInset)}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => loadApplicants(true)} colors={['#FFCE48']} tintColor="#FFCE48" />

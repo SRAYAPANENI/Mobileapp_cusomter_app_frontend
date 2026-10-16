@@ -5,6 +5,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import Animated, { SlideInUp } from 'react-native-reanimated';
 import { X } from 'lucide-react-native';
+import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 const HOURS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
 const MINUTES = Array.from({ length: 60 }, (_, i) => i < 10 ? `0${i}` : `${i}`);
@@ -38,6 +39,7 @@ export function TimePickerModal({
   visible, onClose, initialHour = '09', initialMinute = '00', initialPeriod = 'AM',
   selectedDateISO, onConfirm,
 }: TimePickerModalProps) {
+  const bottomInset = useBottomInset();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -98,7 +100,7 @@ export function TimePickerModal({
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
-        <Animated.View entering={SlideInUp} style={styles.modalContent}>
+        <Animated.View entering={SlideInUp} style={padBottom(styles.modalContent, bottomInset)}>
           <View style={styles.modalHeader}>
             <ThemedText style={styles.modalTitle}>Available Slots</ThemedText>
             <TouchableOpacity onPress={onClose}>

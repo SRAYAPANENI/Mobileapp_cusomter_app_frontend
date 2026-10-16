@@ -22,6 +22,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 const AUDIENCE_LABELS: Record<string, string> = {
   ALL: 'Everyone',
@@ -33,6 +34,7 @@ const AUDIENCE_LABELS: Record<string, string> = {
 };
 
 export default function OfferDetailScreen() {
+  const bottomInset = useBottomInset();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -116,7 +118,7 @@ export default function OfferDetailScreen() {
           <ThemedText style={styles.emptyText}>This offer isn't available anymore.</ThemedText>
         </View>
       ) : (
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={padBottom(styles.scrollContent, bottomInset)} showsVerticalScrollIndicator={false}>
           {offer.image_url ? (
             <Image source={{ uri: offer.image_url }} style={styles.banner} contentFit="cover" />
           ) : (

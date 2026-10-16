@@ -26,6 +26,7 @@ import { Dimensions, FlatList, Modal, Platform, ScrollView, StyleSheet, Touchabl
 import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { FadeIn, FadeInUp, SlideInUp } from 'react-native-reanimated';
+import { fitBottom, padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 const { width } = Dimensions.get('window');
 
@@ -49,6 +50,7 @@ const getDaysInMonth = (month: number, year: number) => new Date(year, month + 1
 const getFirstDayOfMonth = (month: number, year: number) => new Date(year, month, 1).getDay();
 
 export default function VerifyProblemScreen() {
+  const bottomInset = useBottomInset();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -419,7 +421,7 @@ export default function VerifyProblemScreen() {
         </ScrollView>
 
         {/* Footer Button */}
-        <View style={styles.footer}>
+        <View style={fitBottom(styles.footer, bottomInset)}>
           <TouchableOpacity
             style={[styles.summaryButton, { backgroundColor: themeColors.brand }]}
             onPress={() => router.replace('/post-requirement/summary')}
@@ -432,7 +434,7 @@ export default function VerifyProblemScreen() {
       {/* Profession Selection Modal */}
       <Modal visible={showProfessionModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <Animated.View entering={SlideInUp} style={styles.modalContent}>
+          <Animated.View entering={SlideInUp} style={padBottom(styles.modalContent, bottomInset)}>
             <View style={styles.modalHeader}>
               <ThemedText style={styles.modalTitle}>Select Profession</ThemedText>
               <TouchableOpacity onPress={() => setShowProfessionModal(false)}>
@@ -476,7 +478,7 @@ export default function VerifyProblemScreen() {
       {/* Skills Selection Modal */}
       <Modal visible={showSkillsModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <Animated.View entering={SlideInUp} style={styles.modalContent}>
+          <Animated.View entering={SlideInUp} style={padBottom(styles.modalContent, bottomInset)}>
             <View style={styles.modalHeader}>
               <ThemedText style={styles.modalTitle}>Edit Skills</ThemedText>
               <TouchableOpacity onPress={() => setShowSkillsModal(false)}>

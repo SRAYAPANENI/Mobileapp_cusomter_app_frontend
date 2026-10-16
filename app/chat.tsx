@@ -33,6 +33,7 @@ import { CallOverlay } from '@/components/call-overlay';
 import InCallManager from 'react-native-incall-manager';
 import { answerIosRing, claimOutgoingCall, markCallEnded, releaseOutgoingCall, startInAppRingtone, stopInAppRingtone, cancelIncomingCallNotification, endIosCallSession, forgetCallScreen, takeAcceptRequest, endIosRingForHangUp, markIosCallConnected, registerAcceptHandler, registerDeclineHandler, showIosIncomingCall, registerHangupHandler, registerMuteHandler, registerSpeakerHandler, setActiveChatJob, setChatCallActive, startIosOutgoingCall, startOngoingCallNotification, stopOngoingCallNotification, updateOngoingCallControls } from '@/services/callManager';
 import { useOpenScreen } from '@/services/openScreens';
+import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 // No-answer cutoff — like a real phone call, ringing/calling shouldn't go on forever.
 // The server ends an unanswered call after 45s and says why; this is only
@@ -96,6 +97,7 @@ function endedLabelFor(reason: string | undefined, state: CallState): string | n
 }
 
 export default function ChatScreen() {
+  const bottomInset = useBottomInset();
   const { jobId, id, name: paramName, profileImage: paramProfileImage, profession: paramProfession, autoAnswer, autoCall, callId: callIdParam, returnOnEnd } = useLocalSearchParams<{
     jobId: string;
     id: string;
@@ -1140,7 +1142,7 @@ export default function ChatScreen() {
       {/* Mutual rating modal — shown once when opening a completed job chat */}
       <Modal visible={ratingVisible} transparent animationType="fade" onRequestClose={() => { markRatingSkipped(jobId); setRatingVisible(false); }}>
         <View style={styles.ratingOverlay}>
-          <View style={styles.ratingSheet}>
+          <View style={padBottom(styles.ratingSheet, bottomInset)}>
             <Text style={styles.ratingTitle}>Rate your experience</Text>
             <Text style={styles.ratingSubtitle}>How did the service go?</Text>
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ width: '100%' }}>

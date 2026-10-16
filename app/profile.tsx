@@ -52,6 +52,7 @@ import { ActivityIndicator, BackHandler, Modal, Platform, ScrollView, StyleSheet
 import { TextInput } from '@/components/scaled-text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 interface JobHistory {
   id: string;
@@ -81,6 +82,7 @@ const HISTORY_STATUS_COLORS: Record<JobHistory['status'], { bg: string; fg: stri
 };
 
 export default function ProfileScreen() {
+  const bottomInset = useBottomInset();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -750,7 +752,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={padBottom(styles.scrollContent, bottomInset)}>
         {/* Profile Info */}
         <Animated.View entering={FadeInUp.duration(600)} style={styles.profileSection}>
           <View style={styles.avatarContainer}>

@@ -17,8 +17,10 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import type { CountryCode } from 'react-native-country-picker-modal';
 import { UsPhonePrefix, US_CALLING_CODE, US_PHONE_INPUT_MAX, formatUsPhone, usPhoneDigits } from '@/components/us-phone-prefix';
 import Animated, { FadeIn, FadeInUp, FadeOut, Layout } from 'react-native-reanimated';
+import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 export default function LoginScreen() {
+  const bottomInset = useBottomInset();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -219,7 +221,7 @@ export default function LoginScreen() {
         behavior="padding"
         style={{ flex: 1 }}
       >
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={padBottom(styles.scrollContent, bottomInset)} showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <AnimatedBrandMark offsetX={40} />
             <ThemedText type="title" style={styles.title}>Welcome Back</ThemedText>

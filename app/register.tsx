@@ -48,8 +48,10 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 export default function RegisterScreen() {
+  const bottomInset = useBottomInset();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -387,7 +389,7 @@ export default function RegisterScreen() {
         </View>
 
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={padBottom(styles.scrollContent, bottomInset)}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >

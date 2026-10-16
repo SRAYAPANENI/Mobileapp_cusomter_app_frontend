@@ -21,6 +21,7 @@ import { TextInput } from '@/components/scaled-text';
 // closed, so a tap meant for a button could miss it.
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { FadeInLeft, FadeInRight } from 'react-native-reanimated';
+import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 interface Message {
   id: string;
@@ -106,6 +107,7 @@ function formatTime(iso: string): string {
 }
 
 export default function SupportChatScreen() {
+  const bottomInset = useBottomInset();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -434,7 +436,7 @@ export default function SupportChatScreen() {
       )}
 
       {stage === 'pick' ? (
-        <View style={styles.categoryContainer}>
+        <View style={padBottom(styles.categoryContainer, bottomInset)}>
           <ThemedText style={styles.categoryPrompt}>What's this about?</ThemedText>
           <View style={styles.categoryChipsRow}>
             {CATEGORIES.map(cat => (
@@ -445,7 +447,7 @@ export default function SupportChatScreen() {
           </View>
         </View>
       ) : stage === 'faq' ? (
-        <View style={styles.categoryContainer}>
+        <View style={padBottom(styles.categoryContainer, bottomInset)}>
           <ThemedText style={styles.categoryPrompt}>Common questions</ThemedText>
           <ScrollView keyboardShouldPersistTaps="handled" style={styles.faqList} contentContainerStyle={{ gap: 8 }}>
             {faqs.map(faq => (
@@ -465,7 +467,7 @@ export default function SupportChatScreen() {
           </View>
         </View>
       ) : stage === 'resolved' ? (
-        <View style={styles.categoryContainer}>
+        <View style={padBottom(styles.categoryContainer, bottomInset)}>
           {/* Its own style: selfHelpYesBtn's flex:1 (for the side-by-side row)
               collapsed this lone button to a thin strip with no label. */}
           <TouchableOpacity style={styles.doneBtn} onPress={() => router.back()} activeOpacity={0.85}>
@@ -473,7 +475,7 @@ export default function SupportChatScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-      <View style={styles.inputContainer}>
+      <View style={padBottom(styles.inputContainer, bottomInset)}>
         <TouchableOpacity style={styles.attachButton}>
           <Paperclip size={20} color="#6B7280" />
         </TouchableOpacity>

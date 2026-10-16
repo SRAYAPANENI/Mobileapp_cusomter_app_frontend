@@ -14,6 +14,7 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import type { CountryCode } from 'react-native-country-picker-modal';
 import { UsPhonePrefix, US_CALLING_CODE, US_PHONE_INPUT_MAX, formatUsPhone, usPhoneDigits } from '@/components/us-phone-prefix';
 import Animated, { FadeInDown, Layout } from 'react-native-reanimated';
+import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 // Only US numbers actually validate server-side (_validate_phone in
 // app/schemas/auth.py) — the picker still lists other countries for visual
@@ -32,6 +33,7 @@ function getErrorMessage(err: any, fallback: string): string {
 }
 
 export default function ForgotPasswordScreen() {
+  const bottomInset = useBottomInset();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -127,7 +129,7 @@ export default function ForgotPasswordScreen() {
     <ThemedView style={styles.container}>
       <AnimatedBackground />
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={padBottom(styles.scrollContent, bottomInset)} showsVerticalScrollIndicator={false}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <ArrowLeft size={24} color={themeColors.text} />
           </TouchableOpacity>

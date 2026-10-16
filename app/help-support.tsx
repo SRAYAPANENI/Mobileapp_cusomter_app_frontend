@@ -15,6 +15,7 @@ import {
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
+import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 const FAQS = [
   {
@@ -59,6 +60,7 @@ function formatDate(iso: string): string {
 }
 
 export default function HelpSupportScreen() {
+  const bottomInset = useBottomInset();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -91,7 +93,7 @@ export default function HelpSupportScreen() {
         <Headphones size={24} color="#111827" />
       </View>
 
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={padBottom(styles.scrollContent, bottomInset)} showsVerticalScrollIndicator={false}>
         {/* Search */}
         <View style={styles.searchContainer}>
           <Search size={20} color="#9CA3AF" />

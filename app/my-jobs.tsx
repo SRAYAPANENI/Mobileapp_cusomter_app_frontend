@@ -39,6 +39,7 @@ import Animated, {
   withRepeat,
   withTiming
 } from 'react-native-reanimated';
+import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 interface Job {
   id: string;
@@ -277,6 +278,7 @@ function mapApiJob(j: any): Job {
 }
 
 export default function MyJobsScreen() {
+  const bottomInset = useBottomInset();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -376,7 +378,7 @@ export default function MyJobsScreen() {
             <JobCard item={item} index={index} onCancelPress={setCancelJobId} onReportIssue={setDisputeJobId} />
           )}
           keyExtractor={item => item.id}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={padBottom(styles.listContent, bottomInset)}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl

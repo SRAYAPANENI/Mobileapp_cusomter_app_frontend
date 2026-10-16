@@ -25,6 +25,7 @@ import {
   View
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 interface JobReview {
   skill_rating: number;
@@ -69,6 +70,7 @@ const STATUS_COLORS: Record<JobHistoryItem['status'], { bg: string; fg: string }
 };
 
 export default function JobHistoryScreen() {
+  const bottomInset = useBottomInset();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -301,7 +303,7 @@ export default function JobHistoryScreen() {
           data={history}
           renderItem={renderItem}
           keyExtractor={item => item.id}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={padBottom(styles.listContent, bottomInset)}
           showsVerticalScrollIndicator={false}
         />
       )}

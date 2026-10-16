@@ -5,6 +5,7 @@ import React, { useMemo, useState } from 'react';
 import { Dimensions, Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
 import Animated, { SlideInUp } from 'react-native-reanimated';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react-native';
+import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 const { width } = Dimensions.get('window');
 
@@ -21,6 +22,7 @@ interface DatePickerModalProps {
 // Shared by post-requirement/step2.tsx (creating a job) and edit-job.tsx
 // (editing one) so both offer the identical date-picking experience.
 export function DatePickerModal({ visible, onClose, selectedDateLabel, onSelect }: DatePickerModalProps) {
+  const bottomInset = useBottomInset();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -76,7 +78,7 @@ export function DatePickerModal({ visible, onClose, selectedDateLabel, onSelect 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
-        <Animated.View entering={SlideInUp} style={styles.modalContent}>
+        <Animated.View entering={SlideInUp} style={padBottom(styles.modalContent, bottomInset)}>
           <View style={styles.modalHeader}>
             <ThemedText style={styles.modalTitle}>Select Date</ThemedText>
             <TouchableOpacity onPress={onClose}>

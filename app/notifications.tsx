@@ -36,6 +36,7 @@ import {
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { openJobScreen } from '@/services/jobScreens';
 import { openScreen, useOpenScreen } from '@/services/openScreens';
+import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 interface NotifItem {
   id: string;
@@ -118,6 +119,7 @@ function newestCreatedAt(list: { created_at: string }[]): string | undefined {
 }
 
 export default function NotificationsScreen() {
+  const bottomInset = useBottomInset();
   // A tapped announcement comes back to this list instead of opening another copy.
   useOpenScreen('/notifications', 'list', {});
   const colorScheme = useColorScheme() ?? 'light';
@@ -284,7 +286,7 @@ export default function NotificationsScreen() {
               <ThemedText style={styles.sectionTitle}>{title}</ThemedText>
             </View>
           )}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={padBottom(styles.listContent, bottomInset)}
           stickySectionHeadersEnabled={false}
           showsVerticalScrollIndicator={false}
           refreshControl={

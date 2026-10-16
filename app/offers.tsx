@@ -19,6 +19,7 @@ import {
   View,
 } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
+import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 interface Offer {
   id: string;
@@ -33,6 +34,7 @@ interface Offer {
 }
 
 export default function OffersScreen() {
+  const bottomInset = useBottomInset();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -125,7 +127,7 @@ export default function OffersScreen() {
           data={offers}
           renderItem={renderOffer}
           keyExtractor={item => item.id}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={padBottom(styles.listContent, bottomInset)}
           showsVerticalScrollIndicator={false}
         />
       )}

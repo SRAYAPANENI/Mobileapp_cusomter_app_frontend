@@ -19,6 +19,7 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 const URGENCY_OPTIONS: { label: string; value: 'HIGH' | 'MEDIUM' | 'LOW'; icon: any }[] = [
   { label: 'Urgent', value: 'HIGH', icon: Zap },
@@ -72,6 +73,7 @@ function computeScheduledAt(dateISO: string | null, hour: string, minute: string
 }
 
 export default function EditJobScreen() {
+  const bottomInset = useBottomInset();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
@@ -305,7 +307,7 @@ export default function EditJobScreen() {
           <View style={{ height: 20 }} />
         </ScrollView>
 
-        <View style={styles.footer}>
+        <View style={padBottom(styles.footer, bottomInset)}>
           <TouchableOpacity
             style={[styles.saveButton, (!title.trim() || saving) && { opacity: 0.5 }]}
             disabled={!title.trim() || saving}
