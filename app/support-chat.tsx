@@ -3,6 +3,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SkoFyApi } from '@/services/api';
+import { useOpenScreen } from '@/services/openScreens';
 import { Image } from 'expo-image';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
@@ -117,6 +118,8 @@ export default function SupportChatScreen() {
   // saved as if the user had typed it — so every chat started with a message
   // they never sent.
   const [ticketId, setTicketId] = useState<string | undefined>(paramTicketId);
+  // A tapped notification for this ticket comes back here instead of opening a copy.
+  useOpenScreen('/support-chat', ticketId, { ticketId: paramTicketId, jobId });
   // Opened from a specific job (a "Get Help" button on that job) — the topic
   // is already known, so it opens straight on that topic's FAQs.
   const [category, setCategory] = useState<string | null>(jobId ? JOB_CATEGORY : null);

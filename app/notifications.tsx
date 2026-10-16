@@ -35,6 +35,7 @@ import {
 } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { openJobScreen } from '@/services/jobScreens';
+import { openScreen, useOpenScreen } from '@/services/openScreens';
 
 interface NotifItem {
   id: string;
@@ -117,6 +118,8 @@ function newestCreatedAt(list: { created_at: string }[]): string | undefined {
 }
 
 export default function NotificationsScreen() {
+  // A tapped announcement comes back to this list instead of opening another copy.
+  useOpenScreen('/notifications', 'list', {});
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -176,7 +179,7 @@ export default function NotificationsScreen() {
     // A support reply opens that conversation (ticket_id is kept since
     // migration 053; older rows open the list of the user's tickets).
     if (item.notif_type === 'support_ticket') {
-      if (item.ticket_id) router.push({ pathname: '/support-chat', params: { ticketId: item.ticket_id } } as any);
+      if (item.ticket_id) openScreen('/support-chat', item.ticket_id, { ticketId: item.ticket_id });
       else router.push('/help-support' as any);
       return;
     }
@@ -191,7 +194,7 @@ export default function NotificationsScreen() {
           break;
         case 'chat_message':
         case 'incoming_call':
-          router.push({ pathname: '/chat', params: { jobId: item.job_id } } as any);
+          openScreen('/chat', item.job_id, { jobId: item.job_id });
           break;
         // On-site inspection + invoice — all of these are about a job
         // that's already hired and being tracked, so they belong on

@@ -9,9 +9,9 @@ import { kmToMiles } from '@/services/units';
 import { GOOGLE_PLACES_API_KEY } from '@/services/google-places';
 import { Image } from 'expo-image';
 import { callTapAllowed } from '@/services/callManager';
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
-import { clearJobScreenInFront, setJobScreenInFront } from '@/services/jobScreens';
+import { useOpenScreen } from '@/services/openScreens';
 import {
   ChevronLeft,
   LocateFixed,
@@ -295,14 +295,11 @@ export default function TrackProviderScreen() {
 
   useEffect(() => { jobStatusRef.current = jobStatus; }, [jobStatus]);
 
-  // A notification for this job, tapped while this screen is in front,
-  // mustn't stack a second copy of it (services/jobScreens.ts).
+  // A notification for this job, tapped while this screen is open, mustn't
+  // stack a second copy of it (services/openScreens.ts).
   const isFocused = useIsFocused();
   const { height: windowHeight } = useWindowDimensions();
-  useFocusEffect(useCallback(() => {
-    setJobScreenInFront('/track-provider', jobId);
-    return () => clearJobScreenInFront('/track-provider', jobId);
-  }, [jobId]));
+  useOpenScreen('/track-provider', jobId, { jobId });
 
   // Count ETA down every second so it never freezes between poll/Directions updates
   useEffect(() => {

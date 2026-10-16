@@ -10,6 +10,7 @@ import { RTCAudioSession } from '@livekit/react-native-webrtc';
 import { SkoFyApi, TokenStore, getFreshAccessToken } from './api';
 import { AppLock } from './appLock';
 import { openJobScreen } from './jobScreens';
+import { openScreen } from './openScreens';
 
 // Android-only native module (see CallStyleModule.kt/CallActionModule.kt) that
 // shows the incoming-call notification using NotificationCompat.CallStyle —
@@ -439,7 +440,7 @@ async function showMissedCallNotification(jobId: string, callerName: string) {
  * Deliberately doesn't set autoAnswer, so chat.tsx renders its normal idle
  * view rather than the call overlay. */
 function openChatForMissedCall(jobId: string, callerName: string) {
-  safeNavigate(() => router.push({ pathname: '/chat', params: { jobId, name: callerName } } as any));
+  safeNavigate(() => openScreen('/chat', jobId, { jobId, name: callerName }));
 }
 
 const JOB_STARTED_CHANNEL_ID = 'job_started_v2';
@@ -471,7 +472,7 @@ async function showJobStartedNotification(jobId: string, providerName: string) {
 }
 
 function openChatForJobStarted(jobId: string, providerName: string) {
-  safeNavigate(() => router.push({ pathname: '/chat', params: { jobId, name: providerName } } as any));
+  safeNavigate(() => openScreen('/chat', jobId, { jobId, name: providerName }));
 }
 
 const JOB_UPDATE_CHANNEL_ID = 'job_updates_v2';
@@ -593,7 +594,7 @@ async function showAdminBroadcastNotification(title: string, body: string, image
 }
 
 function openAdminBroadcast() {
-  safeNavigate(() => router.push('/notifications' as any));
+  safeNavigate(() => openScreen('/notifications', 'list', {}));
 }
 
 /** Fired on receiving a "call_cancelled" push — the caller hung up (or the
@@ -1267,14 +1268,14 @@ async function showGeneralNotification(data: Record<string, any> | undefined) {
  * the job's own screen — the Notifications list only when it's about neither. */
 function openGeneralNotification(type: string, ticketId?: string, jobId?: string) {
   if (type === 'support_ticket') {
-    safeNavigate(() => router.push({ pathname: '/support-chat', params: ticketId ? { ticketId } : {} } as any));
+    safeNavigate(() => (ticketId ? openScreen('/support-chat', ticketId, { ticketId }) : router.push('/support-chat' as any)));
     return;
   }
   if (jobId) {
     safeNavigate(() => openJobScreen('/track-provider', jobId));
     return;
   }
-  safeNavigate(() => router.push('/notifications' as any));
+  safeNavigate(() => openScreen('/notifications', 'list', {}));
 }
 
 // Android never lets an app raise a channel's importance once it exists on a

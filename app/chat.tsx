@@ -32,6 +32,7 @@ import type { TransportEvent } from '@/services/call/mediaTransport';
 import { CallOverlay } from '@/components/call-overlay';
 import InCallManager from 'react-native-incall-manager';
 import { answerIosRing, claimOutgoingCall, markCallEnded, releaseOutgoingCall, startInAppRingtone, stopInAppRingtone, cancelIncomingCallNotification, endIosCallSession, forgetCallScreen, takeAcceptRequest, endIosRingForHangUp, markIosCallConnected, registerAcceptHandler, registerDeclineHandler, showIosIncomingCall, registerHangupHandler, registerMuteHandler, registerSpeakerHandler, setActiveChatJob, setChatCallActive, startIosOutgoingCall, startOngoingCallNotification, stopOngoingCallNotification, updateOngoingCallControls } from '@/services/callManager';
+import { useOpenScreen } from '@/services/openScreens';
 
 // No-answer cutoff — like a real phone call, ringing/calling shouldn't go on forever.
 // The server ends an unanswered call after 45s and says why; this is only
@@ -106,6 +107,8 @@ export default function ChatScreen() {
     returnOnEnd?: string;
     autoCall?: string;
   }>();
+  // A tapped notification for this chat comes back here instead of opening a copy.
+  useOpenScreen('/chat', jobId, useLocalSearchParams());
   // Notification-tap navigation (notifications.tsx) only passes jobId, not
   // name/profileImage/profession — without this the header name rendered
   // blank (no fallback at all) and call-log entries read "them called you"
