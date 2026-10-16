@@ -24,6 +24,9 @@ import Animated, { FadeInLeft, FadeInRight } from 'react-native-reanimated';
 
 interface Message {
   id: string;
+  /** What the list renders it by. A sent message keeps its first key when the
+   * server's copy replaces it, so it doesn't slide in a second time. */
+  key?: string;
   text: string;
   sender: 'user' | 'agent';
   timestamp: string;
@@ -157,18 +160,40 @@ export default function SupportChatScreen() {
   const addIntro = (text: string, sender: Message['sender']) =>
     setIntro(prev => [...prev, { id: `intro-${Date.now()}-${prev.length}`, text, sender, timestamp: nowTime() }]);
 
+  // Messages this phone sent: server id → the key its bubble was shown with.
+  const sentKeysRef = useRef(new Map<string, string>());
+  // Sent but not confirmed yet: local key → text.
+  const sendingRef = useRef(new Map<string, string>());
+
   const loadTicket = useCallback(async (id: string) => {
     try {
       const ticket: any = await SkoFyApi.supportTickets.get(id);
-      const mapped: Message[] = (ticket.messages ?? []).map((m: any) => ({
-        id: m.id,
-        text: m.message,
-        // 'system' messages (automatic answers recorded on older tickets) are
-        // from support too — they used to render as the user's own messages.
-        sender: m.sender_role === 'admin' || m.sender_role === 'system' ? 'agent' : 'user',
-        timestamp: formatTime(m.sent_at),
-      }));
-      setThread(mapped);
+      const sending = new Map(sendingRef.current);
+      const mapped: Message[] = (ticket.messages ?? []).map((m: any) => {
+        const sender: Message['sender'] = m.sender_role === 'admin' || m.sender_role === 'system' ? 'agent' : 'user';
+        let key = sentKeysRef.current.get(m.id);
+        // Saved, but this poll got here before the send did: same bubble.
+        if (!key && sender === 'user') {
+          const match = [...sending].find(([, text]) => text === m.message);
+          if (match) {
+            key = match[0];
+            sending.delete(key);
+            sendingRef.current.delete(key);
+            sentKeysRef.current.set(m.id, key);
+          }
+        }
+        return {
+          id: m.id,
+          key: key ?? m.id,
+          text: m.message,
+          // 'system' messages (automatic answers recorded on older tickets) are
+          // from support too — they used to render as the user's own messages.
+          sender,
+          timestamp: formatTime(m.sent_at),
+        };
+      });
+      // Still on its way: keep its bubble rather than dropping it until the next poll.
+      setThread(prev => [...mapped, ...prev.filter(m => m.key && sending.has(m.key))]);
       setAssignedAdminName(ticket.assigned_admin_name ?? null);
     } catch (err) {
       // A background refresh failing silently and retrying next poll is
@@ -220,7 +245,8 @@ export default function SupportChatScreen() {
     setSending(true);
 
     const optimisticId = `local-${Date.now()}`;
-    setThread(prev => [...prev, { id: optimisticId, text, sender: 'user', timestamp: nowTime() }]);
+    sendingRef.current.set(optimisticId, text);
+    setThread(prev => [...prev, { id: optimisticId, key: optimisticId, text, sender: 'user', timestamp: nowTime() }]);
 
     try {
       if (!ticketId) {
@@ -228,9 +254,15 @@ export default function SupportChatScreen() {
         const ticket: any = await SkoFyApi.supportTickets.create(category ?? 'General Support', text, jobId);
         setTicketId(ticket.id);
       } else {
-        await SkoFyApi.supportTickets.addMessage(ticketId, text);
+        const saved: any = await SkoFyApi.supportTickets.addMessage(ticketId, text);
+        if (saved?.id) {
+          sentKeysRef.current.set(String(saved.id), optimisticId);
+          sendingRef.current.delete(optimisticId);
+          setThread(prev => prev.map(m => (m.key === optimisticId ? { ...m, id: String(saved.id) } : m)));
+        }
       }
     } catch (err) {
+      sendingRef.current.delete(optimisticId);
       console.error('Failed to send support message:', err);
       // The optimistic bubble never actually reached the server — pull it
       // back out instead of leaving a permanent "sent" message that lies
@@ -389,7 +421,7 @@ export default function SupportChatScreen() {
           ref={flatListRef}
           data={messages}
           renderItem={renderMessage}
-          keyExtractor={item => item.id}
+          keyExtractor={item => item.key ?? item.id}
           contentContainerStyle={styles.messageList}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         />
