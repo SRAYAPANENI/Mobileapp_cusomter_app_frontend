@@ -1245,11 +1245,22 @@ export function registerCallDeclineTask() {
 // code, a job status change — still shows as a normal pop-up notification.
 // Unhandled types used to be dropped silently: these pushes are data-only,
 // so nothing appears unless the app shows it itself.
+/** Support stopped ringing (answered, ended, missed): its "is calling"
+ * notification goes from the tray (same id showGeneralNotification gives it). */
+export function dismissSupportCallNotification(ticketId: string): void {
+  notifee.cancelNotification(`general-support_call-${ticketId}`).catch(() => {});
+}
+
 async function showGeneralNotification(data: Record<string, any> | undefined) {
+  const type = String(data?.type ?? 'general');
+  // Support's call stopped ringing unanswered (silent message): clear its notification.
+  if (type === 'support_call_over') {
+    if (data?.ticket_id) dismissSupportCallNotification(String(data.ticket_id));
+    return;
+  }
   const title = data?.title as string | undefined;
   const body = data?.body as string | undefined;
   if (!title || !body) return;
-  const type = String(data?.type ?? 'general');
   // Support calling while that ticket's chat is on screen: it rings right there.
   if (type === 'support_call' && isScreenInFront('/support-chat', data?.ticket_id as string | undefined)) return;
   const key = (data?.ticket_id as string) || (data?.job_id as string) || String(Date.now());

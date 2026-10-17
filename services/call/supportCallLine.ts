@@ -5,6 +5,8 @@ import { SkoFyApi, getFreshAccessToken, type SupportCallView } from '@/services/
 // and hand them over.
 
 const MAX_RETRY_MS = 30000;
+// The server closes a line that's silent for 75 s (so a gone phone doesn't look reachable).
+const PING_MS = 25000;
 
 /** Opens the line and keeps it open (reconnecting with backoff). Returns close(). */
 export function openSupportCallLine(ticketId: string, onCall: (call: SupportCallView) => void): () => void {
@@ -47,8 +49,12 @@ export function openSupportCallLine(ticketId: string, onCall: (call: SupportCall
   }
 
   connect();
+  const ping = setInterval(() => {
+    if (socket?.readyState === WebSocket.OPEN) socket.send('ping');
+  }, PING_MS);
   return () => {
     closed = true;
+    clearInterval(ping);
     if (retryTimer) clearTimeout(retryTimer);
     socket?.close();
   };

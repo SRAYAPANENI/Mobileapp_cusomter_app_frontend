@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { CallState } from '@/components/call-overlay';
 import { SkoFyApi, type SupportCallStatus, type SupportCallView } from '@/services/api';
+import { dismissSupportCallNotification } from '@/services/callManager';
 
 import { CallMedia, CallMediaEnded } from './callMedia';
 import { callSounds } from './callSounds';
@@ -136,6 +137,8 @@ export function useSupportCall(ticketId: string | undefined) {
   // Every update lands here — from the line, or our own requests.
   const apply = useCallback((next: SupportCallView) => {
     if (overRef.current.has(next.id)) return;
+    // Support's "is calling" notification only means something while it rings.
+    if (next.status !== 'RINGING' && next.started_by === 'agent') dismissSupportCallNotification(next.ticket_id);
     const mine = callRef.current;
     if (!LIVE.has(next.status)) {
       if (mine?.id === next.id) finish(ENDED_LABEL[next.status]);
