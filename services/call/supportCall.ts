@@ -48,6 +48,11 @@ export function useSupportCall(ticketId: string | undefined) {
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const goneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peerPresentRef = useRef(false);
+  // Calls already over here: late news about them (a check sent before the
+  // hang-up, answering after) never brings them back.
+  const overRef = useRef(new Set<string>());
+  // When our view of the call last changed: a check sent before that is stale.
+  const changedAtRef = useRef(0);
 
   const clearGone = () => {
     if (goneTimerRef.current) { clearTimeout(goneTimerRef.current); goneTimerRef.current = null; }
@@ -55,6 +60,7 @@ export function useSupportCall(ticketId: string | undefined) {
 
   /** The call is over (any final state): release everything, show why for a moment. */
   const finish = useCallback((label?: string) => {
+    if (callRef.current) overRef.current.add(callRef.current.id);
     callSounds.stop();
     mediaRef.current.end().catch(() => {});
     if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
@@ -129,6 +135,7 @@ export function useSupportCall(ticketId: string | undefined) {
 
   // Every update lands here — from the line, or our own requests.
   const apply = useCallback((next: SupportCallView) => {
+    if (overRef.current.has(next.id)) return;
     const mine = callRef.current;
     if (!LIVE.has(next.status)) {
       if (mine?.id === next.id) finish(ENDED_LABEL[next.status]);
@@ -136,6 +143,8 @@ export function useSupportCall(ticketId: string | undefined) {
       return;
     }
     if (mine && mine.id !== next.id) return; // one call at a time
+    if (mine?.status === 'ACTIVE' && next.status === 'RINGING') return; // stale: it's been answered
+    changedAtRef.current = Date.now();
     callRef.current = next;
     setCall(next);
     if (next.status === 'RINGING') {
@@ -157,13 +166,23 @@ export function useSupportCall(ticketId: string | undefined) {
     return openSupportCallLine(ticketId, apply);
   }, [ticketId, apply]);
 
-  // Who they can call, kept current — and a live call picked up on reopening the screen.
+  // Who they can call, kept current; a live call picked up on reopening the
+  // screen; and the call kept in step with the server if the line missed an
+  // update (answered, or ended, while it was reconnecting).
   useEffect(() => {
     if (!ticketId) return;
-    refreshStatus().then((s) => { if (s?.live_call) apply(s.live_call); });
-    const poll = setInterval(() => { if (!callRef.current) refreshStatus(); }, STATUS_POLL_MS);
+    const sync = async () => {
+      const sentAt = Date.now();
+      const s = await refreshStatus();
+      if (!s) return;
+      if (s.live_call) apply(s.live_call);
+      // Only a check sent after our latest change can say the call is gone.
+      else if (callRef.current && changedAtRef.current < sentAt) finish('Call ended');
+    };
+    sync();
+    const poll = setInterval(sync, STATUS_POLL_MS);
     return () => clearInterval(poll);
-  }, [ticketId, refreshStatus, apply]);
+  }, [ticketId, refreshStatus, apply, finish]);
 
   // Leaving the screen hangs up.
   useEffect(() => () => {
