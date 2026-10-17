@@ -43,6 +43,53 @@ interface IncomingCallData {
   callerImage?: string;
 }
 
+// Support calls ring through this same path — full-screen call, ringtone,
+// lock-screen Accept/Decline, CallKit — keyed "support:<ticket>" instead of a
+// job id (backend: app/domain/support_calls.py phone_call_key). Everything
+// below treats it like any call; only opening, declining and the missed-call
+// tap go to the support chat instead of a job chat.
+const SUPPORT_CALL_PREFIX = 'support:';
+
+export function supportCallKey(ticketId: string): string {
+  return `${SUPPORT_CALL_PREFIX}${ticketId}`;
+}
+
+export function supportTicketOf(key: string | null | undefined): string | null {
+  return key && key.startsWith(SUPPORT_CALL_PREFIX) ? key.slice(SUPPORT_CALL_PREFIX.length) : null;
+}
+
+// Accept pressed for support's call: the support chat answers it — at once if
+// it's open (its handler), or as soon as it opens and sees the call (the request).
+let supportAnswerHandler: { ticketId: string; answer: () => void } | null = null;
+let supportAnswerRequest: { ticketId: string; callId?: string; at: number } | null = null;
+const SUPPORT_ANSWER_REQUEST_MS = 30000;
+
+export function registerSupportAnswerHandler(ticketId: string | null, answer?: () => void): void {
+  supportAnswerHandler = ticketId && answer ? { ticketId, answer } : null;
+}
+
+/** True (once) if Accept was pressed for this support call before its chat had it. */
+export function takeSupportAnswerRequest(ticketId: string, callId: string): boolean {
+  const r = supportAnswerRequest;
+  if (!r || r.ticketId !== ticketId || (r.callId && r.callId !== callId) || Date.now() - r.at > SUPPORT_ANSWER_REQUEST_MS) {
+    return false;
+  }
+  supportAnswerRequest = null;
+  return true;
+}
+
+function openSupportCall(ticketId: string, callId: string | undefined, autoAnswer: boolean) {
+  if (autoAnswer) {
+    markAnswering();
+    if (supportAnswerHandler?.ticketId === ticketId) {
+      supportAnswerHandler.answer();
+      return;
+    }
+    supportAnswerRequest = { ticketId, callId, at: Date.now() };
+  }
+  safeNavigate(() => openScreen('/support-chat', ticketId, { ticketId }));
+}
+
 // Deterministic per-job id — without this, every push created a brand new
 // notification with a random id, so multiple ring attempts (retries, re-offers)
 // stacked up instead of replacing each other, and declining one left others behind.
@@ -161,6 +208,12 @@ function openCallScreen(call: IncomingCallData, autoAnswer: boolean, returnOnEnd
     if (pendingCall?.call.jobId === call.jobId) pendingCall = null;
     return;
   }
+  const supportTicket = supportTicketOf(call.jobId);
+  if (supportTicket) {
+    if (pendingCall?.call.jobId === call.jobId) pendingCall = null;
+    openSupportCall(supportTicket, call.callId, autoAnswer);
+    return;
+  }
   if (autoAnswer) markAnswering();
   const now = Date.now();
   for (const [k, v] of openedCallScreens) if (now - v.at > CALL_SCREEN_DEDUPE_MS) openedCallScreens.delete(k);
@@ -197,6 +250,11 @@ function openCallScreen(call: IncomingCallData, autoAnswer: boolean, returnOnEnd
 // right now (that's exactly why we needed the push in the first place).
 // With the call id, a late decline can't end a newer call on the caller's side.
 async function sendDecline(jobId: string, callId?: string) {
+  // Support's call: declined through its own endpoint (no job socket).
+  if (supportTicketOf(jobId)) {
+    if (callId) await SkoFyApi.supportCalls.end(callId).catch(() => {});
+    return;
+  }
   try {
     const url = await SkoFyApi.chat.getSocketUrl(jobId);
     const ws = new WebSocket(url);
@@ -273,6 +331,7 @@ export function stopInAppRingtone() {
 }
 
 function reportRinging(call: IncomingCallData) {
+  if (supportTicketOf(call.jobId)) return; // job calls only ("Ringing…" on the caller's screen)
   if (call.callId) SkoFyApi.calls.ringing(call.jobId, call.callId).catch(() => {});
 }
 
@@ -440,6 +499,11 @@ async function showMissedCallNotification(jobId: string, callerName: string) {
  * Deliberately doesn't set autoAnswer, so chat.tsx renders its normal idle
  * view rather than the call overlay. */
 function openChatForMissedCall(jobId: string, callerName: string) {
+  const supportTicket = supportTicketOf(jobId);
+  if (supportTicket) {
+    safeNavigate(() => openScreen('/support-chat', supportTicket, { ticketId: supportTicket }));
+    return;
+  }
   safeNavigate(() => openScreen('/chat', jobId, { jobId, name: callerName }));
 }
 
@@ -1169,7 +1233,10 @@ function setupCallKeepForIOS() {
     // AppDelegate must report every VoIP push to CallKit, even for a call
     // this job's open chat is already ringing for in-app — end that
     // duplicate straight away instead of showing two incoming-call screens.
-    if (call.jobId === activeChatJobId) {
+    const supportTicket = supportTicketOf(call.jobId);
+    const ringingInOpenSupportChat = !!supportTicket && AppState.currentState === 'active'
+      && isScreenInFront('/support-chat', supportTicket);
+    if (call.jobId === activeChatJobId || ringingInOpenSupportChat) {
       RNCallKeep.reportEndCallWithUUID(callUUID, CXEndedReason.AnsweredElsewhere);
       return;
     }
@@ -1249,6 +1316,7 @@ export function registerCallDeclineTask() {
  * notification goes from the tray (same id showGeneralNotification gives it). */
 export function dismissSupportCallNotification(ticketId: string): void {
   notifee.cancelNotification(`general-support_call-${ticketId}`).catch(() => {});
+  cancelIncomingCallNotification(supportCallKey(ticketId)); // the native ringing screen / CallKit
 }
 
 async function showGeneralNotification(data: Record<string, any> | undefined) {
@@ -1689,6 +1757,8 @@ export function initCallManager() {
     // ringing UI is handling it, showing the notification too would just be
     // a redundant, confusing second prompt for the same call.
     if (call.jobId === activeChatJobId) return;
+    const supportTicket = supportTicketOf(call.jobId);
+    if (supportTicket && isScreenInFront('/support-chat', supportTicket)) return;
     // App open on another screen: show the full-screen incoming call right
     // away, like a phone call — it used to be only a small banner. It rings
     // in-app once the screen has fetched the call (call_ready).

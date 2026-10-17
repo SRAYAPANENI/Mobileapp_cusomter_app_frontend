@@ -3,7 +3,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { CallState } from '@/components/call-overlay';
 import { SkoFyApi, type SupportCallStatus, type SupportCallView } from '@/services/api';
-import { dismissSupportCallNotification } from '@/services/callManager';
+import {
+  dismissSupportCallNotification, endIosCallSession, markIosCallConnected, registerHangupHandler,
+  registerMuteHandler, registerSpeakerHandler, registerSupportAnswerHandler, setChatCallActive,
+  startOngoingCallNotification, stopOngoingCallNotification, supportCallKey, takeSupportAnswerRequest,
+  updateOngoingCallControls,
+} from '@/services/callManager';
 
 import { CallMedia, CallMediaEnded } from './callMedia';
 import { callSounds } from './callSounds';
@@ -54,6 +59,11 @@ export function useSupportCall(ticketId: string | undefined) {
   const overRef = useRef(new Set<string>());
   // When our view of the call last changed: a check sent before that is stale.
   const changedAtRef = useRef(0);
+  // For callbacks registered with the phone's call controls (set below, after they exist).
+  const answerRef = useRef<() => void>(() => {});
+  const endRef = useRef<() => void>(() => {});
+  const toggleMuteRef = useRef<() => void>(() => {});
+  const toggleSpeakerRef = useRef<() => void>(() => {});
 
   const clearGone = () => {
     if (goneTimerRef.current) { clearTimeout(goneTimerRef.current); goneTimerRef.current = null; }
@@ -62,6 +72,17 @@ export function useSupportCall(ticketId: string | undefined) {
   /** The call is over (any final state): release everything, show why for a moment. */
   const finish = useCallback((label?: string) => {
     if (callRef.current) overRef.current.add(callRef.current.id);
+    if (ticketId) {
+      // The phone's call surfaces: ringing screen, ongoing-call notification, CallKit.
+      const key = supportCallKey(ticketId);
+      dismissSupportCallNotification(ticketId);
+      stopOngoingCallNotification(key);
+      endIosCallSession(key);
+    }
+    registerHangupHandler(null);
+    registerMuteHandler(null);
+    registerSpeakerHandler(null);
+    setChatCallActive(false);
     callSounds.stop();
     mediaRef.current.end().catch(() => {});
     if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
@@ -80,7 +101,7 @@ export function useSupportCall(ticketId: string | undefined) {
     } else {
       setCallState('idle');
     }
-  }, []);
+  }, [ticketId]);
 
   const refreshStatus = useCallback(async () => {
     if (!ticketId) return undefined;
@@ -124,6 +145,14 @@ export function useSupportCall(ticketId: string | undefined) {
       if (callRef.current?.id !== callId) return;
       setRecorded(access.recorded);
       setCallState('connected');
+      if (ticketId) {
+        const key = supportCallKey(ticketId);
+        markIosCallConnected(key);
+        startOngoingCallNotification(key, callRef.current?.agent_name ?? 'Dodorez Support');
+      }
+      registerHangupHandler(() => endRef.current());
+      registerMuteHandler(() => toggleMuteRef.current());
+      registerSpeakerHandler(() => toggleSpeakerRef.current());
       if (tickRef.current) clearInterval(tickRef.current);
       tickRef.current = setInterval(() => setDuration((d) => d + 1), 1000);
     } catch (err) {
@@ -132,7 +161,7 @@ export function useSupportCall(ticketId: string | undefined) {
       SkoFyApi.supportCalls.end(callId).catch(() => {});
       finish();
     }
-  }, [onMediaEvent, finish]);
+  }, [onMediaEvent, finish, ticketId]);
 
   // Every update lands here — from the line, or our own requests.
   const apply = useCallback((next: SupportCallView) => {
@@ -150,8 +179,15 @@ export function useSupportCall(ticketId: string | undefined) {
     changedAtRef.current = Date.now();
     callRef.current = next;
     setCall(next);
+    setChatCallActive(true); // the app lock stays out of a call
     if (next.status === 'RINGING') {
       if (next.started_by === 'agent') {
+        if (!mine && ticketId && takeSupportAnswerRequest(ticketId, next.id)) {
+          // Accepted on the phone's own call screen (lock screen, CallKit).
+          setCallState('connecting');
+          answerRef.current();
+          return;
+        }
         if (!mine) callSounds.ring(); // support is calling: ring like a phone
         setCallState('ringing');
       } else {
@@ -162,12 +198,18 @@ export function useSupportCall(ticketId: string | undefined) {
     } else if (mine?.status !== 'ACTIVE') {
       connectAudio(next.id); // just answered (the line and our own request both say so)
     }
-  }, [connectAudio, refreshStatus, finish]);
+  }, [connectAudio, refreshStatus, finish, ticketId]);
 
   useEffect(() => {
     if (!ticketId) return;
     return openSupportCallLine(ticketId, apply);
   }, [ticketId, apply]);
+
+  useEffect(() => {
+    if (!ticketId) return;
+    registerSupportAnswerHandler(ticketId, () => answerRef.current());
+    return () => registerSupportAnswerHandler(null);
+  }, [ticketId]);
 
   // Who they can call, kept current; a live call picked up on reopening the
   // screen; and the call kept in step with the server if the line missed an
@@ -187,10 +229,19 @@ export function useSupportCall(ticketId: string | undefined) {
     return () => clearInterval(poll);
   }, [ticketId, refreshStatus, apply, finish]);
 
-  // Leaving the screen hangs up.
+  // Leaving the screen hangs up — and lets go of the phone's call controls.
   useEffect(() => () => {
     const current = callRef.current;
-    if (current) SkoFyApi.supportCalls.end(current.id).catch(() => {});
+    if (current) {
+      SkoFyApi.supportCalls.end(current.id).catch(() => {});
+      const key = supportCallKey(current.ticket_id);
+      stopOngoingCallNotification(key);
+      endIosCallSession(key);
+      registerHangupHandler(null);
+      registerMuteHandler(null);
+      registerSpeakerHandler(null);
+      setChatCallActive(false);
+    }
     callSounds.stop();
     mediaRef.current.end().catch(() => {});
     if (tickRef.current) clearInterval(tickRef.current);
@@ -258,6 +309,15 @@ export function useSupportCall(ticketId: string | undefined) {
       return !on;
     });
   }, []);
+
+  answerRef.current = () => { answer(); };
+  endRef.current = () => { end(); };
+  toggleMuteRef.current = toggleMute;
+  toggleSpeakerRef.current = toggleSpeaker;
+
+  useEffect(() => {
+    if (callState === 'connected') updateOngoingCallControls(muted, speaker);
+  }, [muted, speaker, callState]);
 
   return {
     status, call, callState, endedLabel, muted, speaker, recorded, duration, error,
