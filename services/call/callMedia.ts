@@ -23,14 +23,19 @@ export class CallMedia {
   private muted = false;
   private speaker = false;
 
-  constructor(private readonly transport: MediaTransport = new LiveKitTransport()) {}
+  /** `fetchAccess`: where this kind of call gets its pass (job calls by
+   * default; support calls pass their own). */
+  constructor(
+    private readonly transport: MediaTransport = new LiveKitTransport(),
+    private readonly fetchAccess: (callId: string) => Promise<MediaAccess> = (callId) => SkoFyApi.calls.media(callId),
+  ) {}
 
   /** Fetches the call's pass early (while ringing) so the recording notice
    * shows before answering, and answering doesn't wait for it. */
   async prepare(callId: string): Promise<MediaAccess> {
     if (this.access && this.accessFor === callId) return this.access;
     if (this.pending?.callId === callId) return this.pending.promise;
-    const promise: Promise<MediaAccess> = SkoFyApi.calls.media(callId)
+    const promise: Promise<MediaAccess> = this.fetchAccess(callId)
       .then(access => {
         if (this.pending?.promise === promise) { this.access = access; this.accessFor = callId; }
         return access;

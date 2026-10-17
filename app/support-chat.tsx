@@ -1,15 +1,17 @@
 import { useAppAlert } from '@/components/app-alert';
+import { CallOverlay } from '@/components/call-overlay';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SkoFyApi } from '@/services/api';
 import { useOpenScreen } from '@/services/openScreens';
+import { useSupportCall } from '@/services/call/supportCall';
 import { Image } from 'expo-image';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
   ChevronLeft,
   HelpCircle,
-  MoreVertical,
+  Phone,
   Paperclip,
   Send
 } from 'lucide-react-native';
@@ -125,6 +127,18 @@ export default function SupportChatScreen() {
   const [ticketId, setTicketId] = useState<string | undefined>(paramTicketId);
   // A tapped notification for this ticket comes back here instead of opening a copy.
   useOpenScreen('/support-chat', ticketId, { ticketId: paramTicketId, jobId });
+  // Voice calls with the agent handling this ticket (services/call/supportCall.ts).
+  const supportCall = useSupportCall(ticketId);
+  useEffect(() => {
+    if (!supportCall.error) return;
+    alert.show('info', 'Call', supportCall.error, undefined, 3500);
+    supportCall.clearError();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supportCall.error]);
+  const onCallPress = () => {
+    if (supportCall.status?.can_call) supportCall.startCall();
+    else alert.show('info', 'Call support', supportCall.status?.reason ?? 'Calling opens once a team member picks up your request.', undefined, 3500);
+  };
   // Opened from a specific job (a "Get Help" button on that job) — the topic
   // is already known, so it opens straight on that topic's FAQs.
   const [category, setCategory] = useState<string | null>(jobId ? JOB_CATEGORY : null);
@@ -415,9 +429,18 @@ export default function SupportChatScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.menuButton}>
-          <MoreVertical size={20} color="#000" />
-        </TouchableOpacity>
+        {/* Call the agent handling this ticket — once someone has it. */}
+        {ticketId ? (
+          <TouchableOpacity
+            style={[styles.menuButton, { opacity: supportCall.status?.can_call ? 1 : 0.35 }]}
+            onPress={onCallPress}
+            accessibilityLabel={supportCall.status?.agent_name ? `Call ${supportCall.status.agent_name}` : 'Call support'}
+          >
+            <Phone size={20} color="#000" />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.menuButton} />
+        )}
       </View>
 
       {loading ? (
@@ -496,6 +519,21 @@ export default function SupportChatScreen() {
         </TouchableOpacity>
       </View>
       )}
+      <CallOverlay
+        callState={supportCall.callState}
+        name={supportCall.call?.agent_name ?? supportCall.status?.agent_name ?? 'Dodorez Support'}
+        isMuted={supportCall.muted}
+        isSpeakerOn={supportCall.speaker}
+        callDuration={supportCall.duration}
+        endedLabel={supportCall.endedLabel}
+        recorded={supportCall.recorded}
+        themeColors={themeColors}
+        onAccept={supportCall.answer}
+        onDecline={supportCall.end}
+        onEnd={supportCall.end}
+        onToggleMute={supportCall.toggleMute}
+        onToggleSpeaker={supportCall.toggleSpeaker}
+      />
       {alert.element}
     </KeyboardAvoidingView>
   );

@@ -309,6 +309,27 @@ function _expiresWithin(token: string, seconds: number): boolean {
 }
 
 // ─── API SURFACE ─────────────────────────────────────────────────────────────
+/** A voice call on a support ticket (backend: app/services/support_call_service.py). */
+export interface SupportCallView {
+  id: string;
+  ticket_id: string;
+  subject: string | null;
+  status: 'RINGING' | 'ACTIVE' | 'ENDED' | 'MISSED' | 'DECLINED' | 'CANCELLED';
+  /** 'user' = this person called; 'agent' = support called them. */
+  started_by: 'user' | 'agent';
+  agent_name: string;
+  answered_at: string | null;
+  duration_seconds: number | null;
+}
+
+export interface SupportCallStatus {
+  can_call: boolean;
+  /** Why they can't call right now (closed, nobody has the ticket yet, agent away). */
+  reason: string | null;
+  agent_name: string | null;
+  live_call: SupportCallView | null;
+}
+
 /** Job-cost checkout amounts — see the backend's offer_pricing.py. The
  * discount comes out of Dodorez's fee; the provider's share never changes. */
 export interface CheckoutBreakdown {
@@ -834,6 +855,25 @@ export const SkoFyApi = {
   // ── Support tickets ──────────────────────────────────────────────────────
   // No WebSocket for this one (unlike job chat above) — screens polling for
   // new admin replies do so on a plain interval.
+  // Voice calls with the agent handling a support ticket (backend:
+  // app/services/support_call_service.py).
+  supportCalls: {
+    /** Can this person call their agent now (and why not), and any live call. */
+    status: async (ticketId: string): Promise<SupportCallStatus> => request(`/support-tickets/${ticketId}/call`),
+    /** Ring the agent handling this ticket. */
+    call: async (ticketId: string): Promise<SupportCallView> =>
+      request(`/support-tickets/${ticketId}/call`, { method: 'POST' }),
+    answer: async (callId: string): Promise<SupportCallView> =>
+      request(`/support-calls/${callId}/answer`, { method: 'POST' }),
+    /** Hang up, cancel (still ringing, the caller) or decline (still ringing, the callee). */
+    end: async (callId: string): Promise<SupportCallView> =>
+      request(`/support-calls/${callId}/end`, { method: 'POST' }),
+    /** A pass to this call's audio on our own media server. */
+    media: async (callId: string): Promise<{ url: string; token: string; room: string; recorded: boolean }> =>
+      request(`/support-calls/${callId}/media`, { method: 'POST' }),
+    getSocketUrl: (ticketId: string): string => `${BASE_URL.replace(/^http/, 'ws')}/ws/support/${ticketId}`,
+  },
+
   supportTickets: {
     // openingIsSystem: the message is an automatic note (e.g. which FAQs were
     // viewed), not something the user typed — shown as from support.

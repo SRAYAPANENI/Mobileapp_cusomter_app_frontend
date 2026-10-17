@@ -53,6 +53,11 @@ export function useOpenScreen(route: string, key: string | null | undefined, par
   }, []));
 }
 
+/** This job's or ticket's screen is the one in front right now. */
+export function isScreenInFront(route: string, key: string | null | undefined): boolean {
+  return !!key && openScreens.some(s => s.route === route && s.key === key && s.focused);
+}
+
 /** Opens a job's or ticket's screen: nothing if it's already in front, back to
  * it if it's open further down, a new screen only if it isn't open at all. */
 export function openScreen(route: string, key: string, params: Record<string, unknown>) {
