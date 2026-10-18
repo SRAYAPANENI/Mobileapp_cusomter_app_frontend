@@ -51,55 +51,83 @@ const JOB_CATEGORY = 'Job / Booking Issue';
 // most questions are answered here without needing a person. A topic with
 // no FAQs (Something Else) goes straight to chat.
 const CATEGORY_FAQS: Record<string, { question: string; answer: string }[]> = {
-  'Payment Issue': [
+  "Payment Issue": [
     {
-      question: 'Is my payment safe?',
-      answer: "Yes. Your payment is held securely by Dodorez the moment you hire a provider, and it's only released to them once the job is marked complete — never paid out upfront.",
+      question: "Is my payment safe?",
+      answer: "Yes. You pay Dodorez, not the provider directly, and we hold the money. A visiting fee is released to the provider once they've done the visit; the price of the work is released only when the job is marked complete.",
     },
     {
-      question: 'When am I charged?',
-      answer: "The provider's visiting fee is charged when you hire them. The cost of the work is charged when you approve their invoice. Both are held safely until the job is done.",
+      question: "When am I charged?",
+      answer: "If the provider charges a visiting fee, it's held when you hire them. The price of the work is held once you've agreed it — for jobs priced after an inspection, that's when you accept the provider's invoice.",
     },
     {
-      question: 'How do refunds work?',
-      answer: "If a job is cancelled before work starts, your payment goes back to your original card — usually within 5–10 business days. The visiting fee isn't refunded once the provider has done the inspection, but it counts toward the final bill if you hire them.",
+      question: "How do refunds work?",
+      answer: "If a job is cancelled before the work starts, the money held for it goes back to your original card — usually within 5–10 business days, depending on your bank. A visiting fee isn't refunded once the provider has done the visit.",
+    },
+    {
+      question: "Can I use an offer or promo code?",
+      answer: "Yes. Before you pay, the payment screen shows the offers you can use and lets you enter a promo code. Each offer can be used once. You'll find current offers under Offers.",
     },
   ],
-  'Job / Booking Issue': [
+  "Job / Booking Issue": [
     {
       question: "What's the cancellation policy?",
-      answer: "You can cancel a job for free any time before the provider actually starts work on-site. Once a job is marked \"In Progress\" (or already completed), cancellation isn't available — but you can file a dispute directly from that job's page instead.",
+      answer: "You can cancel any time before the provider starts the work — open the job in My Jobs. If they've already done the visit, their visiting fee isn't refunded. If they've already picked up your order, you can't cancel: pay their invoice, or tap \"Report an Issue\" if something's wrong. Once work has started, use \"Report an Issue\" instead.",
     },
     {
-      question: 'No provider has applied to my job yet',
-      answer: "Your job is sent to every verified provider in your city with the right skills. Give it a little time — or open the job and add more details or a photo, which helps providers respond.",
+      question: "No provider has applied to my job yet",
+      answer: "In-person jobs go to every available, verified provider with the right skills across your area; online jobs to matching providers anywhere. Give it a little time — adding more detail or a photo helps providers respond.",
     },
     {
-      question: 'How do I contact my provider?',
-      answer: "Once you've hired someone, chat and call open from that job's page — your phone number is never shared outside the app.",
+      question: "Can I change my job after posting it?",
+      answer: "Yes, until you hire someone: open it in My Jobs and edit it. An expired job can be edited to post it again. After you've hired, agree any changes with your provider in the job's chat.",
+    },
+    {
+      question: "How do I contact my provider?",
+      answer: "Once you've hired someone, chat and call open from that job — your phone number is never shared outside the app.",
+    },
+    {
+      question: "How are providers checked?",
+      answer: "Before anyone can apply, their ID is verified and their skills are checked with a skill test. Before they can be hired, they also need a cleared background check and an approved licence. You can see their ratings and past jobs too.",
+    },
+    {
+      question: "How do I rate my provider?",
+      answer: "When a job is finished, you'll be asked to rate it — you can also rate it from the job's chat. Your rating helps other customers and the provider.",
     },
   ],
-  'Provider Behavior': [
+  "Provider Behavior": [
     {
-      question: 'Had a problem with your provider?',
-      answer: "If a provider didn't show up, was unprofessional, or there's a quality issue on a job that's in progress or completed, file a dispute directly from that job — go to My Jobs, open it, and tap \"Report an Issue.\" Our team reviews every dispute within 24 hours.",
+      question: "Had a problem with your provider?",
+      answer: "If a provider didn't show up, was unprofessional, or there's a quality issue on a job that's in progress or completed, open the job in My Jobs and tap \"Report an Issue.\" Our team reviews every report within 24 hours.",
     },
     {
-      question: 'The provider asked me to pay outside the app',
+      question: "I feel unsafe",
+      answer: "If you're in danger, call 911 first. Then tell us here what happened — safety reports go straight to our senior team.",
+    },
+    {
+      question: "The provider asked me to pay outside the app",
       answer: "Please don't. Payments made outside Dodorez aren't protected — we can't refund them or help with disputes. Pay through the app, and let us know if a provider asks you to pay them directly.",
     },
   ],
-  'Account Issue': [
+  "Account Issue": [
     {
       question: "I can't log in",
-      answer: "Use \"Forgot password\" on the login screen, or log in with a one-time code sent to your phone. If neither works, tap \"I still need help\" below.",
+      answer: "Use \"Forgot Password?\" on the login screen, or log in with a one-time code sent to your phone. If neither works, tap \"I still need help\" below.",
     },
     {
-      question: 'How do I update my details or address?',
+      question: "How do I update my details or address?",
       answer: "Go to Profile to change your name, email and saved addresses. To change your phone number, tap \"I still need help\" and we'll do it for you.",
     },
+    {
+      question: "I'm not getting notifications",
+      answer: "Check that notifications are allowed for Dodorez in your phone's settings. Dodorez works on one phone at a time — logging in on another phone moves your notifications and calls there.",
+    },
+    {
+      question: "How do I delete my account?",
+      answer: "Tap \"I still need help\" below and ask us to delete it. We'll confirm here once it's done.",
+    },
   ],
-  'Something Else': [],
+  "Something Else": [],
 };
 
 const nowTime = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -585,7 +613,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   categoryChip: { backgroundColor: t.inputFilled, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1, borderColor: t.borderSubtle },
   categoryChipText: { fontSize: 13, fontFamily: Fonts.poppinsSemiBold, color: t.textPrimary },
   selfHelpButtonRow: { flexDirection: 'row', gap: 10 },
-  faqList: { maxHeight: 220 },
+  faqList: { maxHeight: 300 },
   faqChip: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: t.inputFilled, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11,
