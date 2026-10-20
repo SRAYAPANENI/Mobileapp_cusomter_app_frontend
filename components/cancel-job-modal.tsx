@@ -80,7 +80,7 @@ export function CancelJobModal({ visible, jobId, scenario = 'pre-hire', onClose,
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal statusBarTranslucent navigationBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView style={styles.modalOverlay} behavior="padding" automaticOffset>
         <View style={[styles.reasonModalContainer, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12 }]}>
           <View style={styles.modalIndicator} />

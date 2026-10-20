@@ -24,6 +24,7 @@ import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { FadeInLeft, FadeInRight } from 'react-native-reanimated';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
+import AnimatedLogoMark from '@/components/animated-logo-mark';
 
 interface Message {
   id: string;
@@ -43,6 +44,12 @@ const POLL_INTERVAL_MS = 8000;
 // instead of every new conversation landing in the admin queue tagged
 // "General Support" with no way to tell what it's actually about.
 const CATEGORIES = ['Payment Issue', 'Job / Booking Issue', 'Provider Behavior', 'Account Issue', 'Something Else'];
+
+// Which support team each topic goes to is decided on the server from this
+// code (app/domain/support_departments.py TOPICS) — not from the label, so the
+// wording here can change freely.
+const CATEGORY_TOPICS: Record<string, string> = { 'Payment Issue': 'payment', 'Job / Booking Issue': 'job', 'Provider Behavior': 'behaviour', 'Account Issue': 'account', 'Something Else': 'other' };
+const topicOf = (category: string | null) => (category && CATEGORY_TOPICS[category]) || 'other';
 
 // The category a "Get Help" button on a specific job opens straight into.
 const JOB_CATEGORY = 'Job / Booking Issue';
@@ -301,7 +308,7 @@ export default function SupportChatScreen() {
     try {
       if (!ticketId) {
         // First real message creates the ticket — with the user's own words.
-        const ticket: any = await SkoFyApi.supportTickets.create(category ?? 'General Support', text, jobId);
+        const ticket: any = await SkoFyApi.supportTickets.create(category ?? 'General Support', text, jobId, false, topicOf(category));
         setTicketId(ticket.id);
       } else {
         const saved: any = await SkoFyApi.supportTickets.addMessage(ticketId, text);
@@ -359,7 +366,7 @@ export default function SupportChatScreen() {
     addIntro('Glad that helped! Feel free to come back anytime if something else comes up.', 'agent');
     try {
       const ticket: any = await SkoFyApi.supportTickets.create(
-        category ?? 'General Support', faqNote('Marked as solved by the FAQ answers.'), jobId, true,
+        category ?? 'General Support', faqNote('Marked as solved by the FAQ answers.'), jobId, true, topicOf(category),
       );
       await SkoFyApi.supportTickets.selfResolve(ticket.id);
     } catch (err) {
@@ -373,7 +380,7 @@ export default function SupportChatScreen() {
     setCreatingTicket(true);
     try {
       const ticket: any = await SkoFyApi.supportTickets.create(
-        category ?? 'General Support', faqNote('Still needs help — waiting for a team member.'), jobId, true,
+        category ?? 'General Support', faqNote('Still needs help — waiting for a team member.'), jobId, true, topicOf(category),
       );
       setTicketId(ticket.id);
       addIntro("No problem — we've opened a request for you. Type your message below and our team will reply right here.", 'agent');
@@ -439,12 +446,16 @@ export default function SupportChatScreen() {
         </TouchableOpacity>
 
         <View style={styles.headerInfo}>
-          <View style={styles.avatarContainer}>
-            <Image
-              source={require('@/assets/images/logo-mark.png')}
-              style={styles.headerAvatar}
-              contentFit="contain"
-            />
+          <View style={styles.avatarSlot}>
+            <AnimatedLogoMark size={40}>
+              <View style={styles.avatarContainer}>
+                <Image
+                  source={require('@/assets/images/logo-mark.png')}
+                  style={styles.headerAvatar}
+                  contentFit="contain"
+                />
+              </View>
+            </AnimatedLogoMark>
           </View>
           <View>
             <ThemedText style={styles.headerTitle}>Dodorez Support</ThemedText>
@@ -583,8 +594,9 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   headerInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', marginLeft: 8 },
   avatarContainer: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFFBEB',
-    justifyContent: 'center', alignItems: 'center', marginRight: 12
+    justifyContent: 'center', alignItems: 'center'
   },
+  avatarSlot: { marginRight: 12 },
   headerAvatar: { width: 24, height: 24 },
   headerTitle: { fontSize: 16, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
   onlineBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },

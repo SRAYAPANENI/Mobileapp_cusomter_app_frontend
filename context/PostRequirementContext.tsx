@@ -2,6 +2,10 @@ import React, { createContext, useContext, useState } from 'react';
 
 interface PostRequirementData {
   description: string;
+  // The AI analysis's one-line summary of the problem (step 1) — '' until
+  // the customer runs it, and cleared again when they change what it was
+  // based on (the description or the photos).
+  problemSummary: string;
   media: { uri: string; type: 'image' | 'video' }[];
   profession: string;
   skills: string[];
@@ -45,8 +49,9 @@ interface PostRequirementContextType {
 
 const initialData: PostRequirementData = {
   description: '',
+  problemSummary: '',
   media: [],
-  profession: 'AC Technician',
+  profession: '',
   skills: [],
   skill_id: null,
   skill_ids: [],

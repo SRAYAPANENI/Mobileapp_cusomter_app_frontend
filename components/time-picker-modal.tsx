@@ -1,25 +1,15 @@
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import React, { useEffect, useRef, useState } from 'react';
+import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
+import {
+  addDays, byPartOfDay, dayLabel, fromParts, isPickable, quickPicks, sameDay, slotsFor, startOfDay,
+  toParts, untilText, windowLabel,
+} from '@/services/schedule-slots';
+import { Clock3, X, Zap } from 'lucide-react-native';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import Animated, { SlideInUp } from 'react-native-reanimated';
-import { X } from 'lucide-react-native';
-import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
-
-const HOURS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
-const MINUTES = Array.from({ length: 60 }, (_, i) => i < 10 ? `0${i}` : `${i}`);
-const PERIODS = ['AM', 'PM'];
-
-const MIN_LEAD_MINUTES = 15;
-
-function buildDateTime(dateISO: string, hour: string, minute: string, period: string): Date {
-  const base = new Date(dateISO);
-  let h24 = parseInt(hour, 10) % 12;
-  if (period === 'PM') h24 += 12;
-  base.setHours(h24, parseInt(minute, 10), 0, 0);
-  return base;
-}
 
 interface TimePickerModalProps {
   visible: boolean;
@@ -27,143 +17,185 @@ interface TimePickerModalProps {
   initialHour?: string;
   initialMinute?: string;
   initialPeriod?: string;
+  /** Whether a time was already picked (otherwise nothing starts selected). */
+  initialSet?: boolean;
+  /** The day it's for (ISO); none = today. */
   selectedDateISO?: string | null;
-  onConfirm: (label: string, hour: string, minute: string, period: string) => void;
+  title?: string;
+  /** `day` is the day the time is on — the sheet can move it to tomorrow. */
+  onConfirm: (label: string, hour: string, minute: string, period: string, day: { label: string; iso: string }) => void;
 }
 
-const ITEM_HEIGHT = 52; // pickerItem height (48) + marginBottom (4)
+// "3:30 PM" — compact, for the time chips.
+function chipText(at: Date): string {
+  const h = at.getHours() % 12 || 12;
+  return `${h}:${String(at.getMinutes()).padStart(2, '0')} ${at.getHours() < 12 ? 'AM' : 'PM'}`;
+}
 
 // Shared by post-requirement/step2.tsx (creating a job) and edit-job.tsx
-// (editing one) so both offer the identical time-picking experience.
+// (editing one). Only times still ahead are offered (services/schedule-slots.ts):
+// past ones aren't greyed out, they simply don't exist — and the list keeps
+// up while the sheet stays open.
 export function TimePickerModal({
-  visible, onClose, initialHour = '09', initialMinute = '00', initialPeriod = 'AM',
-  selectedDateISO, onConfirm,
+  visible, onClose, initialHour = '09', initialMinute = '00', initialPeriod = 'AM', initialSet = false,
+  selectedDateISO, title = 'Pick a time', onConfirm,
 }: TimePickerModalProps) {
   const bottomInset = useBottomInset();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
-  const [selectedHour, setSelectedHour] = useState(initialHour);
-  const [selectedMinute, setSelectedMinute] = useState(initialMinute);
-  const [selectedPeriod, setSelectedPeriod] = useState(initialPeriod);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const hourScrollRef = useRef<ScrollView>(null);
-  const minuteScrollRef = useRef<ScrollView>(null);
+  const [now, setNow] = useState(() => new Date());
+  const [day, setDay] = useState(() => startOfDay(new Date()));
+  const [chosen, setChosen] = useState<Date | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
-  // When the modal opens, reset to the initial values and scroll to them.
+  // Opening: the day it's for (never before today), and the time picked
+  // before if it's still ahead. Too late for anything today: tomorrow.
   useEffect(() => {
     if (!visible) return;
-    setSelectedHour(initialHour);
-    setSelectedMinute(initialMinute);
-    setSelectedPeriod(initialPeriod);
-    setErrorMsg(null);
-    const hourIdx = HOURS.indexOf(initialHour);
-    const minIdx = parseInt(initialMinute, 10);
-    // Small delay so the ScrollView has rendered before we scroll.
-    const t = setTimeout(() => {
-      if (hourIdx >= 0) hourScrollRef.current?.scrollTo({ y: hourIdx * ITEM_HEIGHT, animated: false });
-      if (minIdx >= 0) minuteScrollRef.current?.scrollTo({ y: minIdx * ITEM_HEIGHT, animated: false });
-    }, 80);
-    return () => clearTimeout(t);
+    const current = new Date();
+    setNow(current);
+    const today = startOfDay(current);
+    let start = selectedDateISO ? startOfDay(new Date(selectedDateISO)) : today;
+    if (start < today) start = today;
+    setNote(null);
+    if (sameDay(start, today) && slotsFor(today, current).length === 0) {
+      start = addDays(today, 1);
+      setNote("It's late for today — showing tomorrow.");
+    }
+    setDay(start);
+    const previous = initialSet
+      ? fromParts(start.toISOString(), { hour: initialHour, minute: initialMinute, period: initialPeriod as 'AM' | 'PM' }, current)
+      : null;
+    setChosen(previous && isPickable(previous, current) ? previous : null);
   }, [visible]);
 
-  const confirmTimeSelection = () => {
-    if (selectedDateISO) {
-      const chosen = buildDateTime(selectedDateISO, selectedHour, selectedMinute, selectedPeriod);
-      const earliest = new Date(Date.now() + MIN_LEAD_MINUTES * 60 * 1000);
-      if (chosen < earliest) {
-        setErrorMsg(`Please pick a time at least ${MIN_LEAD_MINUTES} minutes from now.`);
-        return;
-      }
+  // Keep up with the clock while open: a time that slips into the past goes.
+  useEffect(() => {
+    if (!visible) return;
+    const timer = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(timer);
+  }, [visible]);
+  useEffect(() => {
+    if (chosen && !isPickable(chosen, now)) {
+      setChosen(null);
+      setNote('That time just passed — pick another.');
     }
-    setErrorMsg(null);
+  }, [now]);
 
-    const startTime = `${selectedHour}:${selectedMinute} ${selectedPeriod}`;
+  const today = startOfDay(now);
+  const tomorrow = addDays(today, 1);
+  const todayOpen = slotsFor(today, now).length > 0;
+  const parts = useMemo(() => byPartOfDay(slotsFor(day, now)), [day, now]);
+  const picks = useMemo(() => quickPicks(now), [now]);
+  const otherDay = !sameDay(day, today) && !sameDay(day, tomorrow) ? day : null;
 
-    let h = parseInt(selectedHour);
-    let p = selectedPeriod;
-    let endH = h + 2;
-    let endP = p;
-    if (endH > 12) {
-      endH = endH - 12;
-      endP = p === 'AM' ? 'PM' : 'AM';
-    } else if (endH === 12) {
-      endP = p === 'AM' ? 'PM' : 'AM';
+  const pick = (at: Date) => {
+    setNote(null);
+    setDay(startOfDay(at));
+    setChosen(at);
+  };
+
+  const confirm = () => {
+    const current = new Date();
+    if (!chosen || !isPickable(chosen, current)) {
+      setChosen(null);
+      setNote('That time just passed — pick another.');
+      return;
     }
-    const formattedEndH = endH < 10 ? `0${endH}` : `${endH}`;
-    const endTime = `${formattedEndH}:${selectedMinute} ${endP}`;
+    const p = toParts(chosen);
+    const chosenDay = startOfDay(chosen);
+    onConfirm(windowLabel(chosen), p.hour, p.minute, p.period, {
+      label: dayLabel(chosenDay, current),
+      iso: chosenDay.toISOString(),
+    });
+  };
 
-    onConfirm(`${startTime} - ${endTime}`, selectedHour, selectedMinute, selectedPeriod);
+  const dayChip = (d: Date, label: string, enabled = true) => {
+    const active = sameDay(day, d);
+    return (
+      <TouchableOpacity
+        key={label}
+        disabled={!enabled}
+        onPress={() => { setDay(d); setNote(null); if (chosen && !sameDay(chosen, d)) setChosen(null); }}
+        style={[styles.dayChip, active && styles.dayChipActive, !enabled && { opacity: 0.4 }]}
+      >
+        <ThemedText style={[styles.dayChipText, active && styles.chipTextActive]}>{label}</ThemedText>
+      </TouchableOpacity>
+    );
   };
 
   return (
-    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+    <Modal statusBarTranslucent navigationBarTranslucent visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         <Animated.View entering={SlideInUp} style={padBottom(styles.modalContent, bottomInset)}>
           <View style={styles.modalHeader}>
-            <ThemedText style={styles.modalTitle}>Available Slots</ThemedText>
+            <ThemedText style={styles.modalTitle}>{title}</ThemedText>
             <TouchableOpacity onPress={onClose}>
               <X size={24} color={themeColors.textPrimary} />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.timePickerContainer}>
-            <View style={styles.pickerColumn}>
-              <ThemedText style={styles.pickerLabel}>Hour</ThemedText>
-              <ScrollView keyboardShouldPersistTaps="handled" ref={hourScrollRef} showsVerticalScrollIndicator={false} style={styles.columnScroll}>
-                {HOURS.map(h => (
-                  <TouchableOpacity
-                    key={h}
-                    onPress={() => { setSelectedHour(h); setErrorMsg(null); }}
-                    style={[styles.pickerItem, selectedHour === h && { backgroundColor: themeColors.brand, borderRadius: 12 }]}
-                  >
-                    <ThemedText style={[styles.pickerItemText, selectedHour === h && { color: '#000', fontFamily: Fonts.poppinsBold }]}>{h}</ThemedText>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-
-            <View style={styles.pickerColumn}>
-              <ThemedText style={styles.pickerLabel}>Minute</ThemedText>
-              <ScrollView keyboardShouldPersistTaps="handled" ref={minuteScrollRef} showsVerticalScrollIndicator={false} style={styles.columnScroll}>
-                {MINUTES.map(m => (
-                  <TouchableOpacity
-                    key={m}
-                    onPress={() => { setSelectedMinute(m); setErrorMsg(null); }}
-                    style={[styles.pickerItem, selectedMinute === m && { backgroundColor: themeColors.brand, borderRadius: 12 }]}
-                  >
-                    <ThemedText style={[styles.pickerItemText, selectedMinute === m && { color: '#000', fontFamily: Fonts.poppinsBold }]}>{m}</ThemedText>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-
-            <View style={styles.pickerColumn}>
-              <ThemedText style={styles.pickerLabel}>Period</ThemedText>
-              <View style={styles.columnFixed}>
-                {PERIODS.map(p => (
-                  <TouchableOpacity
-                    key={p}
-                    onPress={() => { setSelectedPeriod(p); setErrorMsg(null); }}
-                    style={[styles.pickerItem, selectedPeriod === p && { backgroundColor: themeColors.brand, borderRadius: 12 }]}
-                  >
-                    <ThemedText style={[styles.pickerItemText, selectedPeriod === p && { color: '#000', fontFamily: Fonts.poppinsBold }]}>{p}</ThemedText>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
+          {/* Day */}
+          <View style={styles.dayRow}>
+            {dayChip(today, todayOpen ? 'Today' : 'Today · full', todayOpen)}
+            {dayChip(tomorrow, 'Tomorrow')}
+            {otherDay && dayChip(otherDay, dayLabel(otherDay, now))}
           </View>
 
-          {errorMsg && (
-            <ThemedText style={styles.errorText}>{errorMsg}</ThemedText>
-          )}
+          {/* One tap for the usual cases */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickRow} keyboardShouldPersistTaps="handled">
+            {picks.map((q) => {
+              const active = chosen?.getTime() === q.at.getTime();
+              return (
+                <TouchableOpacity key={q.label} onPress={() => pick(q.at)} style={[styles.quickChip, active && styles.quickChipActive]}>
+                  <Zap size={14} color={active ? '#000' : '#D97706'} />
+                  <ThemedText style={[styles.quickText, active && styles.chipTextActive]}>{q.label}</ThemedText>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          {/* Every time still ahead on that day */}
+          <ScrollView style={styles.slotScroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            {parts.map((part) => (
+              <View key={part.title} style={styles.part}>
+                <ThemedText style={styles.partTitle}>{part.title}</ThemedText>
+                <View style={styles.slotGrid}>
+                  {part.slots.map((at) => {
+                    const active = chosen?.getTime() === at.getTime();
+                    return (
+                      <TouchableOpacity key={at.getTime()} onPress={() => pick(at)} style={[styles.slot, active && styles.slotActive]}>
+                        <ThemedText style={[styles.slotText, active && styles.chipTextActive]}>{chipText(at)}</ThemedText>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+
+          {/* What's picked, and how far away it is */}
+          <View style={styles.summary}>
+            <Clock3 size={18} color={themeColors.brand} />
+            {chosen ? (
+              <ThemedText style={styles.summaryText}>
+                {dayLabel(startOfDay(chosen), now)} · {chipText(chosen)}
+                <ThemedText style={styles.summaryHint}>  —  {untilText(chosen, now)}</ThemedText>
+              </ThemedText>
+            ) : (
+              <ThemedText style={styles.summaryHint}>Tap a time above</ThemedText>
+            )}
+          </View>
+          {note && <ThemedText style={styles.noteText}>{note}</ThemedText>}
 
           <TouchableOpacity
-            style={[styles.doneButton, { backgroundColor: themeColors.brand, marginTop: 12 }]}
-            onPress={confirmTimeSelection}
+            style={[styles.doneButton, { backgroundColor: themeColors.brand }, !chosen && { opacity: 0.5 }]}
+            disabled={!chosen}
+            onPress={confirm}
           >
-            <ThemedText style={styles.doneButtonText}>Set Time</ThemedText>
+            <ThemedText style={styles.doneButtonText}>Set time</ThemedText>
           </TouchableOpacity>
         </Animated.View>
       </View>
@@ -183,72 +215,71 @@ function makeStyles(t: typeof Colors.light) {
       borderTopLeftRadius: 32,
       borderTopRightRadius: 32,
       padding: 24,
-      maxHeight: '85%',
+      maxHeight: '88%',
     },
     modalHeader: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: 20,
+      marginBottom: 16,
     },
     modalTitle: {
       fontSize: 20, lineHeight: 25,
       fontFamily: Fonts.poppinsBold,
       color: t.textPrimary,
     },
-    timePickerContainer: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      height: 250,
-      gap: 12,
+    dayRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+    dayChip: {
+      paddingHorizontal: 18, paddingVertical: 10, borderRadius: 14,
+      borderWidth: 1, borderColor: t.border, backgroundColor: t.card,
     },
-    pickerColumn: {
-      flex: 1,
-      alignItems: 'center',
+    dayChipActive: { backgroundColor: t.brand, borderColor: t.brand },
+    dayChipText: { fontSize: 14, lineHeight: 19, fontFamily: Fonts.poppinsSemiBold, color: t.textPrimary },
+    chipTextActive: { color: '#000', fontFamily: Fonts.poppinsBold },
+    quickRow: { gap: 8, paddingBottom: 14 },
+    quickChip: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+      paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20,
+      backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A',
     },
-    pickerLabel: {
-      fontSize: 12, lineHeight: 16,
-      fontFamily: Fonts.poppinsBold,
-      color: t.textMuted,
-      marginBottom: 12,
-      textTransform: 'uppercase',
+    quickChipActive: { backgroundColor: t.brand, borderColor: t.brand },
+    // Dark text in both themes: the chip is always light yellow.
+    quickText: { fontSize: 13, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: '#1F2937' },
+    slotScroll: { maxHeight: 280 },
+    part: { marginBottom: 12 },
+    partTitle: {
+      fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsBold, color: t.textMuted,
+      textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8,
     },
-    columnScroll: {
-      width: '100%',
+    slotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    slot: {
+      width: '23%', paddingVertical: 10, borderRadius: 12, alignItems: 'center',
+      borderWidth: 1, borderColor: t.border, backgroundColor: t.card,
     },
-    columnFixed: {
-      width: '100%',
-      gap: 8,
+    slotActive: { backgroundColor: t.brand, borderColor: t.brand },
+    slotText: { fontSize: 13, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: t.textPrimary },
+    summary: {
+      flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6,
+      padding: 14, borderRadius: 14, backgroundColor: t.inputFilled,
     },
-    pickerItem: {
-      height: 48,
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginBottom: 4,
-    },
-    pickerItemText: {
-      fontSize: 18, lineHeight: 22,
-      fontFamily: Fonts.poppinsSemiBold,
-      color: t.textPrimary,
+    summaryText: { flex: 1, fontSize: 15, lineHeight: 21, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
+    summaryHint: { fontSize: 13, lineHeight: 19, fontFamily: Fonts.poppins, color: t.textSecondary },
+    noteText: {
+      fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold,
+      color: '#D97706', textAlign: 'center', marginTop: 10,
     },
     doneButton: {
       height: 56,
       borderRadius: 16,
       justifyContent: 'center',
       alignItems: 'center',
-      marginBottom: 20,
+      marginTop: 14,
+      marginBottom: 8,
     },
     doneButtonText: {
       fontSize: 16, lineHeight: 20,
       fontFamily: Fonts.poppinsBold,
       color: '#000',
-    },
-    errorText: {
-      fontSize: 13, lineHeight: 17,
-      fontFamily: Fonts.poppinsSemiBold,
-      color: '#EF4444',
-      textAlign: 'center',
-      marginTop: 12,
     },
   });
 }

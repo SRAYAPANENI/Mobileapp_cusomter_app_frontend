@@ -27,6 +27,7 @@ import { Text, TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 import { fitBottom, useBottomInset } from '@/hooks/use-bottom-inset';
+import AnimatedLogoMark from '@/components/animated-logo-mark';
 
 interface AiResult {
   problem_summary: string;
@@ -83,7 +84,7 @@ export default function DescribeProblemScreen() {
         uri: asset.uri,
         type: (asset.type === 'video' || asset.duration) ? 'video' as const : 'image' as const,
       }));
-      updateData({ media: [...data.media, ...newMedia] });
+      updateData({ media: [...data.media, ...newMedia], problemSummary: '' });
       setAiResult(null); // Reset AI result when new media added
     }
   };
@@ -91,7 +92,7 @@ export default function DescribeProblemScreen() {
   const removeMedia = (index: number) => {
     const updated = [...data.media];
     updated.splice(index, 1);
-    updateData({ media: updated });
+    updateData({ media: updated, problemSummary: '' });
     setAiResult(null);
   };
 
@@ -129,6 +130,7 @@ export default function DescribeProblemScreen() {
       // profession means the suggestion wasn't in the catalogue — keep
       // whatever is selected and let the customer choose.
       updateData({
+        problemSummary: result.problem_summary ?? '',
         ...(result.profession ? { profession: result.profession, skills: result.skills } : {}),
         jobType: result.urgency === 'Urgent' ? 'Urgent' : 'Normal',
         // Work that can be done remotely starts as Remote (no address, no
@@ -180,7 +182,7 @@ export default function DescribeProblemScreen() {
             <TouchableOpacity style={styles.backButton} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/home')}>
               <ArrowLeft size={24} color={themeColors.text} />
             </TouchableOpacity>
-            <Image source={require('@/assets/images/logo-mark.png')} style={styles.logo} contentFit="contain" />
+            <AnimatedLogoMark size={60} />
           </View>
 
           {/* Title */}
@@ -251,7 +253,7 @@ export default function DescribeProblemScreen() {
                 multiline
                 numberOfLines={4}
                 value={data.description}
-                onChangeText={(text) => { updateData({ description: text }); setAiResult(null); }}
+                onChangeText={(text) => { updateData({ description: text, problemSummary: '' }); setAiResult(null); }}
                 textAlignVertical="top"
               />
             </View>
@@ -366,7 +368,6 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     marginBottom: 40,
   },
   backButton: { position: 'absolute', left: 0, padding: 8 },
-  logo: { width: 60, height: 60 },
   titleSection: { alignItems: 'center', marginBottom: 32 },
   title: { fontSize: 26, fontFamily: Fonts.poppinsBold, color: t.textPrimary, textAlign: 'center' },
   subtitle: {

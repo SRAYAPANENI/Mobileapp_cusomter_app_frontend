@@ -34,6 +34,21 @@ const GLOW_STOPS: [string, string, string][] = [
   ['#3B82F6', '#2563EB', '#7C3AED'],
 ];
 
+const NAV_BAR_HEIGHT = 62;
+const BAR_GAP = 12; // between the bar and the phone's navigation bar / screen edge
+
+function barBottom(insetBottom: number): number {
+  return Math.max(insetBottom, 8) + BAR_GAP;
+}
+
+/** Bottom padding for a screen's scrolling content under this floating bar,
+ * so its last item (e.g. a job card's buttons) can scroll clear of the bar
+ * instead of ending up underneath it. */
+export function useBottomBarClearance(): number {
+  const insets = useSafeAreaInsets();
+  return barBottom(insets.bottom) + NAV_BAR_HEIGHT + 24;
+}
+
 export function SkoFyBottomBar({ activeTab, onBookPress }: SkoFyBottomBarProps) {
   const insets = useSafeAreaInsets();
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
@@ -116,8 +131,7 @@ export function SkoFyBottomBar({ activeTab, onBookPress }: SkoFyBottomBarProps) 
     }
   }, [onBookPress]);
 
-  const navBarHeight = 62;
-  const bottomPad = Math.max(insets.bottom, 8);
+  const navBarHeight = NAV_BAR_HEIGHT;
 
   return (
     <>
@@ -125,7 +139,7 @@ export function SkoFyBottomBar({ activeTab, onBookPress }: SkoFyBottomBarProps) 
       <View
         style={[
           styles.outerWrapper,
-          { bottom: bottomPad + 12 },
+          { bottom: barBottom(insets.bottom) },
         ]}
         pointerEvents="box-none"
       >

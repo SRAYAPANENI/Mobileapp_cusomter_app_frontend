@@ -113,7 +113,7 @@ export function CheckoutSheet({ visible, jobId, onPay, onClose }: CheckoutSheetP
   const close = () => { if (!paying) onClose(); };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
+    <Modal statusBarTranslucent navigationBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={close}>
       <KeyboardAvoidingView style={s.overlay} behavior="padding" automaticOffset>
         <View style={[s.container, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12 }]}>
           <View style={s.handle} />

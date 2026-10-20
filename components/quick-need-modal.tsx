@@ -9,6 +9,7 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Text, TextInput } from '@/components/scaled-text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
 // Posted directly from the Explore Services tile row (see home.tsx) — no
 // intermediate picker screen. Title/description/skill come from the tapped
@@ -101,8 +102,8 @@ export function QuickNeedModal({ visible, need, lat, lng, address, onClose, onPo
   if (!need) return null;
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={phase === 'confirm' ? onClose : undefined}>
-      <View style={s.backdrop}>
+    <Modal statusBarTranslucent navigationBarTranslucent visible={visible} animationType="slide" transparent onRequestClose={phase === 'confirm' ? onClose : undefined}>
+      <KeyboardAvoidingView style={s.backdrop} behavior="padding" automaticOffset>
         <View style={[s.sheet, { paddingBottom: Math.max(insets.bottom, 20) }]}>
           <View style={s.dragHandle} />
 
@@ -185,7 +186,7 @@ export function QuickNeedModal({ visible, need, lat, lng, address, onClose, onPo
             </View>
           )}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

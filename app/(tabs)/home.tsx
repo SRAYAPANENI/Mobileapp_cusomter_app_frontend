@@ -7,7 +7,7 @@ import { PickupDropoffModal } from '@/components/pickup-dropoff-modal';
 import { NoInternetState } from '@/components/no-internet-state';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { SkoFyBottomBar } from '@/components/skofy-bottom-bar';
+import { SkoFyBottomBar, useBottomBarClearance } from '@/components/skofy-bottom-bar';
 import { SkoFyMascot } from '@/components/skofy-mascot';
 import { Colors, Fonts } from '@/constants/theme';
 import { QUICK_NEEDS, QuickNeed } from '@/constants/quick-needs';
@@ -269,6 +269,7 @@ export default function HomeScreen() {
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const insets = useSafeAreaInsets();
+  const barClearance = useBottomBarClearance();
   const isOnline = useIsOnline();
   // States
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
@@ -1758,13 +1759,13 @@ export default function HomeScreen() {
         ── end Map Box ── */}
 
         {/* Bottom padding so content clears the bottom nav bar */}
-        <View style={{ height: 100 + insets.bottom }} />
+        <View style={{ height: barClearance }} />
       </ScrollView>
 
       {/* ── Book Now chooser — Standard Job vs Pickup & Drop, asked before
           location so Pickup & Drop gets its own dedicated flow instead of
           being a toggle inside the standard wizard ── */}
-      <Modal visible={bookChoiceModalVisible} transparent animationType="fade" onRequestClose={() => setBookChoiceModalVisible(false)}>
+      <Modal statusBarTranslucent navigationBarTranslucent visible={bookChoiceModalVisible} transparent animationType="fade" onRequestClose={() => setBookChoiceModalVisible(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setBookChoiceModalVisible(false)}>
           <Reanimated.View entering={FadeInUp} style={[styles.locationModalContent, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12 }]}>
             <View style={styles.locationModalHeader}>
@@ -1797,7 +1798,7 @@ export default function HomeScreen() {
       </Modal>
 
       {/* ── Location Modal ── */}
-      <Modal visible={isLocationModalVisible} transparent animationType="fade" onRequestClose={() => setIsLocationModalVisible(false)}>
+      <Modal statusBarTranslucent navigationBarTranslucent visible={isLocationModalVisible} transparent animationType="fade" onRequestClose={() => setIsLocationModalVisible(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setIsLocationModalVisible(false)}>
           <Reanimated.View entering={FadeInUp} style={[styles.locationModalContent, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12 }]}>
             <View style={styles.locationModalHeader}>
@@ -1854,7 +1855,7 @@ export default function HomeScreen() {
       </Modal>
 
       {/* ── View Location Sheet (header pill tap) ── */}
-      <Modal visible={showViewLocationSheet} transparent animationType="slide" onRequestClose={() => setShowViewLocationSheet(false)}>
+      <Modal statusBarTranslucent navigationBarTranslucent visible={showViewLocationSheet} transparent animationType="slide" onRequestClose={() => setShowViewLocationSheet(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowViewLocationSheet(false)}>
           <Reanimated.View entering={FadeInUp} style={[styles.locationSheetContainer, { paddingBottom: Math.max(insets.bottom, 20) + 12 }]}>
             {/* Top drag handle indicator */}

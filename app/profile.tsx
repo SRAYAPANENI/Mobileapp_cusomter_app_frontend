@@ -1,7 +1,7 @@
 import { EmptyJobsState } from '@/components/empty-jobs-state';
 import { NoInternetState } from '@/components/no-internet-state';
 import { Skeleton } from '@/components/skeleton';
-import { SkoFyBottomBar } from '@/components/skofy-bottom-bar';
+import { SkoFyBottomBar, useBottomBarClearance } from '@/components/skofy-bottom-bar';
 import { AcceptedIdDocuments } from '@/components/accepted-id-documents';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -52,7 +52,8 @@ import { ActivityIndicator, BackHandler, Modal, Platform, ScrollView, StyleSheet
 import { TextInput } from '@/components/scaled-text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
+import { usePushPreference } from '@/hooks/use-push-preference';
+import { padBottom } from '@/hooks/use-bottom-inset';
 
 interface JobHistory {
   id: string;
@@ -82,7 +83,7 @@ const HISTORY_STATUS_COLORS: Record<JobHistory['status'], { bg: string; fg: stri
 };
 
 export default function ProfileScreen() {
-  const bottomInset = useBottomInset();
+  const barClearance = useBottomBarClearance();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -92,7 +93,7 @@ export default function ProfileScreen() {
   // end up sitting behind/under it. Applied once, reused at every usage.
   const modalBottomPad = { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 16 };
 
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [pushEnabled, setPushEnabled] = usePushPreference(message => showAlert('error', 'Not Saved', message));
   const [appLockEnabled, setAppLockEnabled] = useState(false);
   const [appLockAvailable, setAppLockAvailable] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -752,7 +753,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={padBottom(styles.scrollContent, bottomInset)}>
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={padBottom(styles.scrollContent, barClearance)}>
         {/* Profile Info */}
         <Animated.View entering={FadeInUp.duration(600)} style={styles.profileSection}>
           <View style={styles.avatarContainer}>
@@ -1130,7 +1131,7 @@ export default function ProfileScreen() {
       </ScrollView>
 
       {/* Settings Modal Integrated logic */}
-      <Modal
+      <Modal statusBarTranslucent navigationBarTranslucent
         visible={isSettingsOpen}
         transparent={true}
         animationType="slide"
@@ -1152,8 +1153,8 @@ export default function ProfileScreen() {
                   <ThemedText style={styles.settingLabel}>Push Notifications</ThemedText>
                 </View>
                 <Switch
-                  value={notificationsEnabled}
-                  onValueChange={setNotificationsEnabled}
+                  value={pushEnabled}
+                  onValueChange={setPushEnabled}
                   trackColor={{ false: '#D1D5DB', true: '#FFCE48' }}
                   thumbColor="#fff"
                 />
@@ -1272,7 +1273,7 @@ export default function ProfileScreen() {
       </Modal>
 
       {/* Change Password Modal */}
-      <Modal
+      <Modal statusBarTranslucent navigationBarTranslucent
         visible={isPasswordOpen}
         animationType="fade"
         transparent
@@ -1612,7 +1613,7 @@ export default function ProfileScreen() {
       </Modal>
 
       {/* Update Email Modal */}
-      <Modal visible={isEmailModalOpen} transparent animationType="fade" onRequestClose={() => { setIsEmailModalOpen(false); setEmailInput(''); }}>
+      <Modal statusBarTranslucent navigationBarTranslucent visible={isEmailModalOpen} transparent animationType="fade" onRequestClose={() => { setIsEmailModalOpen(false); setEmailInput(''); }}>
         <KeyboardAvoidingView
           style={[styles.modalOverlay, { justifyContent: 'center', padding: 20 }]}
           behavior="padding"
@@ -1739,7 +1740,7 @@ function makeStyles(t: typeof Colors.light) {
     alignItems: 'flex-end',
   },
   scrollContent: {
-    paddingBottom: 40,
+    paddingBottom: 0, // the bottom bar's clearance is added (padBottom)
   },
   profileSection: {
     alignItems: 'center',

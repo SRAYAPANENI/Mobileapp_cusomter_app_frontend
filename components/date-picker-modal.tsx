@@ -76,7 +76,7 @@ export function DatePickerModal({ visible, onClose, selectedDateLabel, onSelect 
   };
 
   return (
-    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+    <Modal statusBarTranslucent navigationBarTranslucent visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         <Animated.View entering={SlideInUp} style={padBottom(styles.modalContent, bottomInset)}>
           <View style={styles.modalHeader}>

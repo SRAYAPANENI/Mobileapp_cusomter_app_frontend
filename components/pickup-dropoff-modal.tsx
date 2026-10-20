@@ -6,7 +6,8 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, CheckCircle2, MapPin, Package, Store, Video as VideoIcon, X } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Text, TextInput } from '@/components/scaled-text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PickupOptions } from '@/components/pickup-options';
@@ -197,8 +198,8 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={phase === 'confirm' ? onClose : undefined}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.backdrop}>
+    <Modal statusBarTranslucent navigationBarTranslucent visible={visible} animationType="slide" transparent onRequestClose={phase === 'confirm' ? onClose : undefined}>
+      <KeyboardAvoidingView behavior="padding" automaticOffset style={s.backdrop}>
         <View style={[s.sheet, { paddingBottom: Math.max(insets.bottom, 20) }]}>
           <View style={s.dragHandle} />
 

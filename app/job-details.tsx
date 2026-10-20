@@ -126,28 +126,31 @@ export default function JobDetailsScreen() {
   // instance last had in state. Only the very first load shows the full-page
   // spinner; refocus reloads happen silently in the background so the
   // already-visible content doesn't flash away and back on every return trip.
-  useFocusEffect(
-    useCallback(() => {
-      if (!jobId) {
-        setLoading(false);
-        setLoadError(true);
-        return;
-      }
-      const isFirstLoad = !hasLoadedOnceRef.current;
-      if (isFirstLoad) setLoading(true);
-      SkoFyApi.jobs.get(jobId)
-        .then((data: any) => {
-          setJob(data);
-          hasLoadedOnceRef.current = true;
-        })
-        .catch(() => {
-          if (isFirstLoad) setLoadError(true);
-          // A silent refresh failing shouldn't blow away already-visible,
-          // still-probably-fine content with a full error screen.
-        })
-        .finally(() => { if (isFirstLoad) setLoading(false); });
-    }, [jobId])
-  );
+  const loadJob = useCallback(() => {
+    if (!jobId) {
+      setLoading(false);
+      setLoadError(true);
+      return;
+    }
+    const isFirstLoad = !hasLoadedOnceRef.current;
+    if (isFirstLoad) {
+      setLoading(true);
+      setLoadError(false);
+    }
+    SkoFyApi.jobs.get(jobId)
+      .then((data: any) => {
+        setJob(data);
+        hasLoadedOnceRef.current = true;
+      })
+      .catch(() => {
+        if (isFirstLoad) setLoadError(true);
+        // A silent refresh failing shouldn't blow away already-visible,
+        // still-probably-fine content with a full error screen.
+      })
+      .finally(() => { if (isFirstLoad) setLoading(false); });
+  }, [jobId]);
+
+  useFocusEffect(loadJob);
 
   const canEditPhotos = (job?.applicant_count ?? 0) === 0;
 
@@ -205,11 +208,19 @@ export default function JobDetailsScreen() {
   if (loadError || !job) {
     return (
       <ThemedView style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
-        <ThemedText style={{ fontFamily: Fonts.poppinsSemiBold, fontSize: 15, color: themeColors.textPrimary, textAlign: 'center', marginBottom: 16 }}>
+        <ThemedText style={styles.errorTitle}>
           This job's details couldn't be loaded.
         </ThemedText>
-        <TouchableOpacity style={styles.editButton} onPress={() => router.back()}>
-          <ThemedText style={styles.editButtonText}>Go Back</ThemedText>
+        <ThemedText style={styles.errorHint}>
+          Check your connection and try again.
+        </ThemedText>
+        {!!jobId && (
+          <TouchableOpacity style={[styles.editButton, styles.errorButton]} onPress={loadJob}>
+            <ThemedText style={styles.editButtonText}>Try Again</ThemedText>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity style={styles.errorBackButton} onPress={() => router.back()}>
+          <ThemedText style={styles.errorBackText}>Go Back</ThemedText>
         </TouchableOpacity>
       </ThemedView>
     );
@@ -525,6 +536,27 @@ function makeStyles(t: typeof Colors.light) {
       fontSize: 16, lineHeight: 20,
       fontFamily: Fonts.poppinsBold,
       color: '#000',
+    },
+    errorTitle: {
+      fontFamily: Fonts.poppinsSemiBold, fontSize: 16, lineHeight: 22,
+      color: t.textPrimary, textAlign: 'center',
+    },
+    errorHint: {
+      fontFamily: Fonts.poppins, fontSize: 13, lineHeight: 19,
+      color: t.textSecondary, textAlign: 'center', marginTop: 6, marginBottom: 24,
+    },
+    errorButton: {
+      alignSelf: 'stretch',
+      paddingHorizontal: 32,
+    },
+    errorBackButton: {
+      marginTop: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 32,
+    },
+    errorBackText: {
+      fontFamily: Fonts.poppinsSemiBold, fontSize: 15, lineHeight: 21,
+      color: t.textSecondary,
     },
   });
 }

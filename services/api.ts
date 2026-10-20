@@ -877,10 +877,12 @@ export const SkoFyApi = {
   supportTickets: {
     // openingIsSystem: the message is an automatic note (e.g. which FAQs were
     // viewed), not something the user typed — shown as from support.
-    create: async (subject: string, message: string, jobId?: string, openingIsSystem = false) =>
+    // topic: what they picked (payment, job, behaviour, account, other) —
+    // decides which support team gets it.
+    create: async (subject: string, message: string, jobId?: string, openingIsSystem = false, topic?: string) =>
       request('/support-tickets', {
         method: 'POST',
-        body: JSON.stringify({ subject, message, job_id: jobId, opening_is_system: openingIsSystem }),
+        body: JSON.stringify({ subject, message, job_id: jobId, opening_is_system: openingIsSystem, topic }),
       }),
     list: async () => request('/support-tickets'),
     get: async (ticketId: string) => request(`/support-tickets/${ticketId}`),
@@ -1068,6 +1070,13 @@ export const SkoFyApi = {
       const data: any = await request('/notifications/unread-count');
       return data?.unread_count ?? 0;
     },
+    /** This app's "Push Notifications" switch (Settings). */
+    getPushPreference: async (): Promise<boolean> => {
+      const data: any = await request('/notifications/push-preference');
+      return data?.enabled !== false;
+    },
+    setPushPreference: async (enabled: boolean) =>
+      request('/notifications/push-preference', { method: 'PUT', body: JSON.stringify({ enabled }) }),
     readAll: async () => request('/notifications/read-all', { method: 'POST' }),
     /** "Clear all": hides every notification from the list for good (kept on
      * the server for support). Marking read alone brought them all back. */

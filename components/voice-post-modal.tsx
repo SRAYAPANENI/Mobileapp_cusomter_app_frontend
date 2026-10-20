@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckCircle, TriangleAlert as AlertTriangle, X, Mic, Square, Camera, ImageIcon, Play, Languages } from 'lucide-react-native';
 import { Fonts } from '@/constants/theme';
 import { SkoFyApi, JobShapePayload } from '@/services/api';
+import { hasPassed } from '@/services/schedule-slots';
 
 // Every AI call failure used to be shown as "Check your internet/connection"
 // regardless of actual cause — including a real 429 rate limit (a very
@@ -195,6 +196,8 @@ export function VoicePostModal({
   const [phase, setPhase] = useState<Phase>('idle');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [jobData, setJobData] = useState<JobData | null>(null);
+  // The time the assistant heard may already be behind us (the server refuses past times).
+  const timePassed = !!jobData?.scheduled_at && hasPassed(new Date(jobData.scheduled_at), new Date());
   const [errorMsg, setErrorMsg] = useState('');
   const [isPermDenied, setIsPermDenied] = useState(false);
   const [showAlternativeActions, setShowAlternativeActions] = useState(false);
@@ -1139,8 +1142,18 @@ export function VoicePostModal({
 
                 <View style={s.confirmRow}>
                   <Text style={s.confirmLabel}>When</Text>
-                  <Text style={s.confirmValue}>{formatScheduledAt(jobData!.scheduled_at)}</Text>
+                  <Text style={[s.confirmValue, timePassed && s.passedValue]}>{formatScheduledAt(jobData!.scheduled_at)}</Text>
                 </View>
+                {/* The time heard has already gone by (e.g. "by 1 PM" said at
+                    1:10 PM) — the server won't take it; offer the fix here. */}
+                {timePassed && (
+                  <View style={s.passedRow}>
+                    <Text style={s.passedText}>That time has already passed.</Text>
+                    <TouchableOpacity onPress={() => setJobData({ ...jobData!, scheduled_at: null })}>
+                      <Text style={s.passedFix}>Make it as soon as possible</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
 
                 {/* The summary describes the assistant's understanding — hidden
                     once the customer switches On-site / Remote away from it. */}
@@ -1242,7 +1255,7 @@ export function VoicePostModal({
                 <TouchableOpacity style={s.cancelBtn} onPress={cancelConfirm}>
                   <Text style={s.cancelBtnText}>Start over</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={s.postBtn} onPress={doPostJob}>
+                <TouchableOpacity style={[s.postBtn, timePassed && { opacity: 0.5 }]} onPress={doPostJob} disabled={timePassed}>
                   <Text style={s.postBtnText}>Post Job →</Text>
                 </TouchableOpacity>
               </View>
@@ -1648,6 +1661,10 @@ function makeStyles(C: Colors) {
     successText: { fontSize: 15, fontFamily: Fonts.poppinsBold, color: '#10B981' },
     confirmLabel: { fontSize: 13, fontFamily: Fonts.poppins, color: C.muted },
     confirmValue: { fontSize: 14, fontFamily: Fonts.poppinsBold, color: C.text, flexShrink: 1, textAlign: 'right' },
+    passedValue: { color: '#EF4444', textDecorationLine: 'line-through' },
+    passedRow: { alignItems: 'flex-end', marginTop: -6, marginBottom: 10, gap: 2 },
+    passedText: { fontSize: 12, fontFamily: Fonts.poppinsSemiBold, color: '#EF4444' },
+    passedFix: { fontSize: 13, fontFamily: Fonts.poppinsBold, color: '#D97706', textDecorationLine: 'underline' },
     confirmDesc: { fontSize: 13, fontFamily: Fonts.poppins, color: C.muted, fontStyle: 'italic' },
 
     directBanner: { backgroundColor: '#FFF3CD', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#FFCE48' },

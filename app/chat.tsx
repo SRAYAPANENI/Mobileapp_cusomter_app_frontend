@@ -1140,8 +1140,8 @@ export default function ChatScreen() {
       {appAlert.element}
 
       {/* Mutual rating modal — shown once when opening a completed job chat */}
-      <Modal visible={ratingVisible} transparent animationType="fade" onRequestClose={() => { markRatingSkipped(jobId); setRatingVisible(false); }}>
-        <View style={styles.ratingOverlay}>
+      <Modal statusBarTranslucent navigationBarTranslucent visible={ratingVisible} transparent animationType="fade" onRequestClose={() => { markRatingSkipped(jobId); setRatingVisible(false); }}>
+        <KeyboardAvoidingView style={styles.ratingOverlay} behavior="padding" automaticOffset>
           <View style={padBottom(styles.ratingSheet, bottomInset)}>
             <Text style={styles.ratingTitle}>Rate your experience</Text>
             <Text style={styles.ratingSubtitle}>How did the service go?</Text>
@@ -1202,7 +1202,7 @@ export default function ChatScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </KeyboardAvoidingView>
   );

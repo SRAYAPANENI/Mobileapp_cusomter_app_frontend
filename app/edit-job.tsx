@@ -3,6 +3,7 @@ import { DatePickerModal } from '@/components/date-picker-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TimePickerModal } from '@/components/time-picker-modal';
+import { fromParts, hasPassed, isPickable } from '@/services/schedule-slots';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SkoFyApi } from '@/services/api';
@@ -63,13 +64,10 @@ function parseScheduledAt(iso?: string | null) {
   };
 }
 
-function computeScheduledAt(dateISO: string | null, hour: string, minute: string, period: string): string | undefined {
-  if (!dateISO) return undefined;
-  const base = new Date(dateISO);
-  let hour24 = parseInt(hour, 10) % 12;
-  if (period === 'PM') hour24 += 12;
-  base.setHours(hour24, parseInt(minute, 10), 0, 0);
-  return base.toISOString();
+// Only when a time is set; no date picked means today (the time used to be dropped then).
+function computeScheduledAt(timeSet: boolean, dateISO: string | null, hour: string, minute: string, period: string): string | undefined {
+  if (!timeSet) return undefined;
+  return fromParts(dateISO, { hour, minute, period: period as 'AM' | 'PM' }).toISOString();
 }
 
 export default function EditJobScreen() {
@@ -156,7 +154,11 @@ export default function EditJobScreen() {
 
   const handleSave = async () => {
     if (!jobId || saving || !title.trim()) return;
-    const scheduledAt = computeScheduledAt(dateISO, timeHour, timeMinute, timePeriod);
+    const scheduledAt = computeScheduledAt(!!timeLabel, dateISO, timeHour, timeMinute, timePeriod);
+    if (scheduledAt && !wasExpired && hasPassed(new Date(scheduledAt), new Date())) {
+      alert.show('error', 'Pick a New Time', 'This job’s time has passed — pick a later one.');
+      return;
+    }
     // A repost needs a fresh future time — the backend's expiry sweep runs
     // every 15 min and re-expires anything past its scheduled_at (or, for
     // an ASAP job with none, past the response window since it was
@@ -327,6 +329,10 @@ export default function EditJobScreen() {
         onSelect={(label, iso) => {
           setDateLabel(label);
           setDateISO(iso);
+          // A time the new date leaves behind now is cleared, not kept.
+          if (timeLabel && !isPickable(fromParts(iso, { hour: timeHour, minute: timeMinute, period: timePeriod as 'AM' | 'PM' }), new Date())) {
+            setTimeLabel(null);
+          }
           setShowDatePicker(false);
         }}
       />
@@ -334,15 +340,20 @@ export default function EditJobScreen() {
       <TimePickerModal
         visible={showTimePicker}
         onClose={() => setShowTimePicker(false)}
+        title={urgency === 'HIGH' ? 'Set your deadline' : 'Pick a time'}
         initialHour={timeHour}
         initialMinute={timeMinute}
         initialPeriod={timePeriod}
+        initialSet={!!timeLabel}
         selectedDateISO={dateISO}
-        onConfirm={(label, hour, minute, period) => {
+        onConfirm={(label, hour, minute, period, day) => {
           setTimeLabel(label);
           setTimeHour(hour);
           setTimeMinute(minute);
           setTimePeriod(period);
+          // The sheet can move the day (Today / Tomorrow / "Tomorrow 9 AM").
+          setDateLabel(day.label);
+          setDateISO(day.iso);
           setShowTimePicker(false);
         }}
       />

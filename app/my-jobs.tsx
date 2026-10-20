@@ -1,6 +1,6 @@
 import { CancelJobModal } from '@/components/cancel-job-modal';
 import { DisputeModal } from '@/components/dispute-modal';
-import { SkoFyBottomBar } from '@/components/skofy-bottom-bar';
+import { SkoFyBottomBar, useBottomBarClearance } from '@/components/skofy-bottom-bar';
 import { EmptyJobsState } from '@/components/empty-jobs-state';
 import { NoInternetState } from '@/components/no-internet-state';
 import { Skeleton } from '@/components/skeleton';
@@ -9,7 +9,6 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useIsOnline } from '@/hooks/use-is-online';
-import { Image } from 'expo-image';
 import { router, useFocusEffect } from 'expo-router';
 import {
   CalendarX,
@@ -39,7 +38,8 @@ import Animated, {
   withRepeat,
   withTiming
 } from 'react-native-reanimated';
-import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
+import { padBottom } from '@/hooks/use-bottom-inset';
+import AnimatedLogoMark from '@/components/animated-logo-mark';
 
 interface Job {
   id: string;
@@ -96,14 +96,7 @@ function JobCard({
     >
       <View style={styles.cardHeader}>
         <View style={{ flex: 1 }}>
-          <View style={styles.titleRow}>
-            <ThemedText style={styles.jobTitle}>{item.title}</ThemedText>
-            {hasApplicants && (
-              <View style={styles.newBadge}>
-                <ThemedText style={styles.newBadgeText}>NEW</ThemedText>
-              </View>
-            )}
-          </View>
+          <ThemedText style={styles.jobTitle}>{item.title}</ThemedText>
           <ThemedText style={styles.jobDescription} numberOfLines={2}>
             {item.description}
           </ThemedText>
@@ -114,6 +107,11 @@ function JobCard({
               {item.status === 'Open' ? 'Open' : item.status === 'Ongoing' ? 'Ongoing' : 'Normal'}
             </ThemedText>
           </View>
+          {hasApplicants && (
+            <View style={styles.newBadge}>
+              <ThemedText style={styles.newBadgeText}>NEW</ThemedText>
+            </View>
+          )}
         </View>
       </View>
 
@@ -278,7 +276,7 @@ function mapApiJob(j: any): Job {
 }
 
 export default function MyJobsScreen() {
-  const bottomInset = useBottomInset();
+  const barClearance = useBottomBarClearance();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -331,11 +329,7 @@ export default function MyJobsScreen() {
           <ChevronLeft size={24} color="#000" />
         </TouchableOpacity>
         <ThemedText style={styles.headerTitle}>Your Jobs</ThemedText>
-        <Image
-          source={require('@/assets/images/logo-mark.png')}
-          style={styles.logo}
-          contentFit="contain"
-        />
+        <AnimatedLogoMark size={32} />
       </View>
 
       <View style={styles.tabsRow}>
@@ -378,7 +372,7 @@ export default function MyJobsScreen() {
             <JobCard item={item} index={index} onCancelPress={setCancelJobId} onReportIssue={setDisputeJobId} />
           )}
           keyExtractor={item => item.id}
-          contentContainerStyle={padBottom(styles.listContent, bottomInset)}
+          contentContainerStyle={padBottom(styles.listContent, barClearance)}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -487,10 +481,6 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     fontFamily: Fonts.poppinsBold,
     color: '#000',
   },
-  logo: {
-    width: 32,
-    height: 32,
-  },
   tabsRow: {
     flexDirection: 'row',
     paddingHorizontal: 16,
@@ -521,7 +511,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   listContent: {
     padding: 16,
-    paddingBottom: 40,
+    paddingBottom: 0, // the bottom bar's clearance is added (padBottom)
   },
   card: {
     backgroundColor: t.card,
@@ -538,12 +528,8 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    gap: 12,
     marginBottom: 12,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
   },
   jobTitle: {
     fontSize: 18,
@@ -572,6 +558,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   badgeContainer: {
     alignItems: 'flex-end',
+    gap: 6,
   },
   statusTag: {
     paddingHorizontal: 10,

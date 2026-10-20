@@ -2,10 +2,10 @@ import { DatePickerModal } from '@/components/date-picker-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TimePickerModal } from '@/components/time-picker-modal';
+import { fromParts, isPickable } from '@/services/schedule-slots';
 import { Colors, Fonts } from '@/constants/theme';
 import { usePostRequirement } from '@/context/PostRequirementContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import {
   ArrowLeft,
@@ -27,6 +27,7 @@ import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { FadeIn, FadeInUp, SlideInUp } from 'react-native-reanimated';
 import { fitBottom, padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
+import AnimatedLogoMark from '@/components/animated-logo-mark';
 
 const { width } = Dimensions.get('window');
 
@@ -45,10 +46,6 @@ const SKILL_DATABASE: Record<string, string[]> = {
   'House Cleaning': ['Deep Cleaning', 'Move-in Cleaning', 'Carpet Cleaning', 'Window Cleaning', 'Regular Sweeping'],
 };
 
-// --- Custom Date Picker Logic Helpers ---
-const getDaysInMonth = (month: number, year: number) => new Date(year, month + 1, 0).getDate();
-const getFirstDayOfMonth = (month: number, year: number) => new Date(year, month, 1).getDay();
-
 export default function VerifyProblemScreen() {
   const bottomInset = useBottomInset();
   const colorScheme = useColorScheme() ?? 'light';
@@ -62,8 +59,6 @@ export default function VerifyProblemScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
 
-  // Calendar State
-  const [viewDate, setViewDate] = useState(new Date());
   const [searchQuery, setSearchQuery] = useState('');
 
   // Professions — fetched live from the backend (single source of truth)
@@ -86,6 +81,10 @@ export default function VerifyProblemScreen() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!data.profession) {
+      setBackendSkills([]);
+      return;
+    }
     SkoFyApi.skills.list(data.profession)
       .then((list: any) => {
         if (!cancelled && Array.isArray(list) && list.length > 0) {
@@ -132,6 +131,8 @@ export default function VerifyProblemScreen() {
     [backendSkills, data.profession]
   );
 
+  const problemText = data.problemSummary.trim() || data.description.trim();
+
   const filteredProfessions = allProfessions.filter(p =>
     p.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -161,109 +162,11 @@ export default function VerifyProblemScreen() {
     updateData({ skills: currentSkills, skill_id: newSkillId, skill_ids: currentSkillIds });
   };
 
-  // --- Custom Date Picker View ---
-  const calendarDays = useMemo(() => {
-    const month = viewDate.getMonth();
-    const year = viewDate.getFullYear();
-    const daysInMonth = getDaysInMonth(month, year);
-    const firstDay = getFirstDayOfMonth(month, year);
-    const days = [];
-
-    // Padding for first week
-    for (let i = 0; i < firstDay; i++) {
-      days.push(null);
-    }
-
-    // Actual days
-    for (let i = 1; i <= daysInMonth; i++) {
-      days.push(new Date(year, month, i));
-    }
-
-    return days;
-  }, [viewDate]);
-
-  const handleSelectDate = (date: Date) => {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const tomorrow = new Date(today);
-    tomorrow.setDate(today.getDate() + 1);
-
-    const selectedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-
-    let dateStr = "";
-    if (selectedDate.getTime() === today.getTime()) {
-      dateStr = "Today";
-    } else if (selectedDate.getTime() === tomorrow.getTime()) {
-      dateStr = "Tomorrow";
-    } else {
-      dateStr = date.toLocaleDateString('en-US', {
-        weekday: 'short', month: 'short', day: 'numeric'
-      });
-    }
-    updateData({ date: dateStr, dateISO: selectedDate.toISOString() });
-    setShowDatePicker(false);
-  };
-
-  const isSelectedDate = (date: Date) => {
-    if (!data.date) return false;
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const tomorrow = new Date(today);
-    tomorrow.setDate(today.getDate() + 1);
-
-    const checkDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-
-    if (data.date === "Today") return checkDate.getTime() === today.getTime();
-    if (data.date === "Tomorrow") return checkDate.getTime() === tomorrow.getTime();
-
-    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) === data.date;
-  }
-
-  const isDateDisabled = (date: Date) => {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    return date < today;
-  }
-
-  // --- Custom Time Picker States ---
-  const [selectedHour, setSelectedHour] = useState('09');
-  const [selectedMinute, setSelectedMinute] = useState('00');
-  const [selectedPeriod, setSelectedPeriod] = useState('AM');
-
-  const hours = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
-  const minutes = Array.from({ length: 60 }, (_, i) => i < 10 ? `0${i}` : `${i}`);
-  const periods = ['AM', 'PM'];
-
-  const confirmTimeSelection = () => {
-    const startTime = `${selectedHour}:${selectedMinute} ${selectedPeriod}`;
-
-    // Calculate a 2-hour window for the slot display
-    let h = parseInt(selectedHour);
-    let m = parseInt(selectedMinute);
-    let p = selectedPeriod;
-
-    let endH = h + 2;
-    let endP = p;
-
-    if (endH > 12) {
-      endH = endH - 12;
-      endP = p === "AM" ? "PM" : "AM";
-    } else if (endH === 12) {
-      endP = p === "AM" ? "PM" : "AM";
-    }
-
-    const formattedEndH = endH < 10 ? `0${endH}` : `${endH}`;
-    const formattedEndM = selectedMinute;
-    const endTime = `${formattedEndH}:${formattedEndM} ${endP}`;
-
-    updateData({
-      time: `${startTime} - ${endTime}`,
-      timeHour: selectedHour,
-      timeMinute: selectedMinute,
-      timePeriod: selectedPeriod,
-    });
-    setShowTimePicker(false);
-  };
+  // A picked time that the date no longer leaves ahead of now (e.g. 9 AM,
+  // then the date changed to today at 1 PM) is cleared, not kept.
+  const timeStillAhead = (dateISO: string | null) =>
+    data.time === 'Select Time'
+    || isPickable(fromParts(dateISO, { hour: data.timeHour, minute: data.timeMinute, period: data.timePeriod as 'AM' | 'PM' }), new Date());
 
   return (
     <ThemedView style={styles.container}>
@@ -284,11 +187,7 @@ export default function VerifyProblemScreen() {
               <ArrowLeft size={24} color={themeColors.text} />
             </TouchableOpacity>
 
-            <Image
-              source={require('@/assets/images/logo-mark.png')}
-              style={styles.logo}
-              contentFit="contain"
-            />
+            <AnimatedLogoMark size={60} />
           </View>
 
           {/* Title Section */}
@@ -297,13 +196,17 @@ export default function VerifyProblemScreen() {
             <ThemedText style={styles.subtitle}>You can edit anything before posting.</ThemedText>
           </Animated.View>
 
-          {/* Detected Problem */}
-          <Animated.View entering={FadeInUp.delay(200)} style={styles.problemBox}>
-            <ThemedText style={styles.problemLabel}>Detected Problem</ThemedText>
-            <ThemedText style={styles.problemText}>
-              AC not cooling properly, water leakage observed.
-            </ThemedText>
-          </Animated.View>
+          {/* The problem: the AI's summary, else the customer's own words. */}
+          {!!problemText && (
+            <Animated.View entering={FadeInUp.delay(200)} style={styles.problemBox}>
+              <ThemedText style={styles.problemLabel}>
+                {data.problemSummary.trim() ? 'Detected Problem' : 'Your Problem'}
+              </ThemedText>
+              <ThemedText style={styles.problemText} numberOfLines={6}>
+                {problemText}
+              </ThemedText>
+            </Animated.View>
+          )}
 
           {/* Suggested Profession */}
           <Animated.View entering={FadeInUp.delay(300)} style={styles.section}>
@@ -314,11 +217,18 @@ export default function VerifyProblemScreen() {
               </TouchableOpacity>
             </View>
             <ScrollView keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
-              <View style={[styles.chip, { backgroundColor: themeColors.brand, borderColor: themeColors.brand }]}>
-                <ThemedText style={[styles.chipText, { color: '#000', fontFamily: Fonts.poppinsBold }]}>
-                  {data.profession}
-                </ThemedText>
-              </View>
+              {data.profession ? (
+                <View style={[styles.chip, { backgroundColor: themeColors.brand, borderColor: themeColors.brand }]}>
+                  <ThemedText style={[styles.chipText, { color: '#000', fontFamily: Fonts.poppinsBold }]}>
+                    {data.profession}
+                  </ThemedText>
+                </View>
+              ) : (
+                <TouchableOpacity style={styles.skillChip} onPress={() => setShowProfessionModal(true)}>
+                  <Plus size={14} color={themeColors.textSecondary} />
+                  <ThemedText style={styles.skillChipText}>Choose a profession</ThemedText>
+                </TouchableOpacity>
+              )}
             </ScrollView>
           </Animated.View>
 
@@ -361,7 +271,7 @@ export default function VerifyProblemScreen() {
 
           {/* Job Type */}
           <Animated.View entering={FadeInUp.delay(500)} style={styles.section}>
-            <ThemedText style={styles.sectionTitle}>Job Type</ThemedText>
+            <ThemedText style={[styles.sectionTitle, styles.sectionTitleSpaced]}>Job Type</ThemedText>
             <View style={styles.jobTypeRow}>
               {[
                 { label: 'Urgent', icon: Zap },
@@ -423,7 +333,8 @@ export default function VerifyProblemScreen() {
         {/* Footer Button */}
         <View style={fitBottom(styles.footer, bottomInset)}>
           <TouchableOpacity
-            style={[styles.summaryButton, { backgroundColor: themeColors.brand }]}
+            style={[styles.summaryButton, { backgroundColor: themeColors.brand }, !data.profession && { opacity: 0.5 }]}
+            disabled={!data.profession}
             onPress={() => router.replace('/post-requirement/summary')}
           >
             <ThemedText style={styles.summaryButtonText}>View Job Summary</ThemedText>
@@ -432,8 +343,8 @@ export default function VerifyProblemScreen() {
       </KeyboardAvoidingView>
 
       {/* Profession Selection Modal */}
-      <Modal visible={showProfessionModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
+      <Modal statusBarTranslucent navigationBarTranslucent visible={showProfessionModal} animationType="slide" transparent>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior="padding" automaticOffset>
           <Animated.View entering={SlideInUp} style={padBottom(styles.modalContent, bottomInset)}>
             <View style={styles.modalHeader}>
               <ThemedText style={styles.modalTitle}>Select Profession</ThemedText>
@@ -472,11 +383,11 @@ export default function VerifyProblemScreen() {
               style={{ maxHeight: 300 }}
             />
           </Animated.View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Skills Selection Modal */}
-      <Modal visible={showSkillsModal} animationType="slide" transparent>
+      <Modal statusBarTranslucent navigationBarTranslucent visible={showSkillsModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <Animated.View entering={SlideInUp} style={padBottom(styles.modalContent, bottomInset)}>
             <View style={styles.modalHeader}>
@@ -520,7 +431,7 @@ export default function VerifyProblemScreen() {
         onClose={() => setShowDatePicker(false)}
         selectedDateLabel={data.date}
         onSelect={(label, iso) => {
-          updateData({ date: label, dateISO: iso });
+          updateData({ date: label, dateISO: iso, ...(timeStillAhead(iso) ? {} : { time: 'Select Time' }) });
           setShowDatePicker(false);
         }}
       />
@@ -528,12 +439,15 @@ export default function VerifyProblemScreen() {
       <TimePickerModal
         visible={showTimePicker}
         onClose={() => setShowTimePicker(false)}
+        title={data.jobType === 'Urgent' ? 'Set your deadline' : 'Pick a time'}
         initialHour={data.timeHour}
         initialMinute={data.timeMinute}
         initialPeriod={data.timePeriod}
+        initialSet={data.time !== 'Select Time'}
         selectedDateISO={data.dateISO ?? null}
-        onConfirm={(label, hour, minute, period) => {
-          updateData({ time: label, timeHour: hour, timeMinute: minute, timePeriod: period });
+        onConfirm={(label, hour, minute, period, day) => {
+          // The sheet can move the day (Today / Tomorrow / "Tomorrow 9 AM").
+          updateData({ time: label, timeHour: hour, timeMinute: minute, timePeriod: period, date: day.label, dateISO: day.iso });
           setShowTimePicker(false);
         }}
       />
@@ -563,10 +477,6 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     position: 'absolute',
     left: 0,
     padding: 8,
-  },
-  logo: {
-    width: 60,
-    height: 60,
   },
   titleSection: {
     alignItems: 'center',
@@ -623,6 +533,10 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
+  },
+  // A title with no sectionHeader around it — the same space below.
+  sectionTitleSpaced: {
+    marginBottom: 12,
   },
   scheduleSubtitle: {
     fontSize: 12,
@@ -686,12 +600,13 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   jobTypeCard: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    height: 50,
-    borderRadius: 12,
+    minHeight: 72,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: t.border,
     backgroundColor: t.card,
@@ -701,6 +616,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     lineHeight: 19,
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
+    textAlign: 'center',
   },
   scheduleRow: {
     flexDirection: 'row',

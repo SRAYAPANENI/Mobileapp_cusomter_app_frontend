@@ -1,65 +1,11 @@
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Image } from 'expo-image';
 import { MapPin } from 'lucide-react-native';
-import React, { useEffect } from 'react';
+import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Text } from '@/components/scaled-text';
-import Animated, {
-  FadeInDown,
-  useAnimatedStyle,
-  useSharedValue,
-  withDelay,
-  withRepeat,
-  withTiming,
-} from 'react-native-reanimated';
-
-function PingRing({
-  size,
-  color,
-  delay,
-}: {
-  size: number;
-  color: string;
-  delay: number;
-}) {
-  const scale = useSharedValue(1);
-  const opacity = useSharedValue(0.5);
-
-  useEffect(() => {
-    scale.value = withDelay(
-      delay,
-      withRepeat(withTiming(1.9, { duration: 2200 }), -1, false)
-    );
-    opacity.value = withDelay(
-      delay,
-      withRepeat(withTiming(0, { duration: 2200 }), -1, false)
-    );
-  }, []);
-
-  const ringStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-    opacity: opacity.value,
-  }));
-
-  return (
-    <Animated.View
-      style={[
-        styles.ring,
-        {
-          // No top/left set — this ring is meant to exactly fill its
-          // ringWrap parent (same size), and position:'absolute' with no
-          // insets defaults to (0,0), which is exactly that.
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          borderColor: color,
-        },
-        ringStyle,
-      ]}
-    />
-  );
-}
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import AnimatedLogoMark from '@/components/animated-logo-mark';
 
 // Icon + wordmark + an invisible spacer (same width as the icon) sit in one
 // normal flex row. Because the spacer balances the icon's width on the
@@ -96,8 +42,6 @@ export default function AnimatedBrandMark({
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
 
-  const ringSize = size * 1.3;
-  const ringOffset = -(ringSize - size) / 2;
   const gap = 10;
   const sideWidth = size + gap;
 
@@ -105,19 +49,7 @@ export default function AnimatedBrandMark({
     <View style={styles.container}>
       <View style={[styles.brandRow, { marginLeft: offsetX }]}>
         <View style={{ width: sideWidth, height: size }}>
-          <View style={[styles.markWrap, { width: size, height: size }]}>
-            <View style={[styles.ringWrap, { width: ringSize, height: ringSize, top: ringOffset, left: ringOffset }]}>
-              <PingRing size={ringSize} color={themeColors.brand} delay={0} />
-              <PingRing size={ringSize} color={themeColors.brand} delay={1100} />
-            </View>
-            <Animated.View entering={FadeInDown.duration(600)}>
-              <Image
-                source={require('@/assets/images/logo-mark.png')}
-                style={{ width: size, height: size }}
-                contentFit="contain"
-              />
-            </Animated.View>
-          </View>
+          <AnimatedLogoMark size={size} />
         </View>
         {showName && (
           <Animated.View
@@ -153,13 +85,6 @@ export default function AnimatedBrandMark({
 const styles = StyleSheet.create({
   container: { alignItems: 'center' },
   brandRow: { flexDirection: 'row', alignItems: 'center' },
-  markWrap: { alignItems: 'center', justifyContent: 'center' },
-  ringWrap: { position: 'absolute' },
-  ring: {
-    position: 'absolute',
-    borderWidth: 2,
-    backgroundColor: 'transparent',
-  },
   nameRow: { flexDirection: 'row', alignItems: 'center' },
   name: { fontFamily: Fonts.poppinsBold, letterSpacing: 0.2 },
   pinLetter: { marginHorizontal: -1 },

@@ -4,6 +4,7 @@ import { Colors, Fonts } from '@/constants/theme';
 import { usePostRequirement } from '@/context/PostRequirementContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SkoFyApi } from '@/services/api';
+import { fromParts, hasPassed } from '@/services/schedule-slots';
 import { router } from 'expo-router';
 import {
   ArrowLeft,
@@ -75,16 +76,26 @@ export default function JobSummaryScreen() {
   // timePeriod are the raw values captured alongside them in step2, used
   // here to build the real timestamp that actually gets sent to the
   // backend (previously this was silently never sent at all).
-  const computeScheduledAt = (): string | undefined => {
-    if (!data.dateISO) return undefined;
-    const base = new Date(data.dateISO);
-    let hour24 = parseInt(data.timeHour, 10) % 12;
-    if (data.timePeriod === 'PM') hour24 += 12;
-    base.setHours(hour24, parseInt(data.timeMinute, 10), 0, 0);
-    return base.toISOString();
+  // Only when a time was picked, and only for the job types that have one
+  // (a time picked, then the type switched to Normal, isn't sent). No date
+  // picked means the default, "Today" — the time used to be dropped then.
+  const scheduledFor = (): Date | null => {
+    const hasTime = (data.jobType === 'Urgent' || data.jobType === 'Book Slot') && data.time !== 'Select Time';
+    if (!hasTime) return null;
+    return fromParts(data.dateISO, { hour: data.timeHour, minute: data.timeMinute, period: data.timePeriod as 'AM' | 'PM' });
   };
 
   const handleProceedToPayment = async () => {
+    if (!data.profession) {
+      alert.show('error', 'Choose a Profession', 'Go back and choose who you need for this job.');
+      return;
+    }
+    // The time may have gone by while they were deciding on this screen.
+    const when = scheduledFor();
+    if (when && hasPassed(when, new Date())) {
+      alert.show('error', 'That Time Has Passed', 'Go back and pick a later time.');
+      return;
+    }
     if (!hasLocation) {
       alert.show('error', 'No Location Selected', "Go back to Home and choose a location before posting, or this job won't reach any providers.");
       return;
@@ -128,7 +139,7 @@ export default function JobSummaryScreen() {
         urgency: (urgencyMap[data.jobType] || 'MEDIUM') as any,
         lat: data.lat ?? undefined,
         lng: data.lng ?? undefined,
-        scheduled_at: computeScheduledAt(),
+        scheduled_at: scheduledFor()?.toISOString(),
         images: imageUrls,
         posted_via: 'MANUAL',
         job_type: data.jobKind,

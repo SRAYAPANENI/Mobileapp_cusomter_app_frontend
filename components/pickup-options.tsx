@@ -7,6 +7,7 @@ import {
   MAX_PURCHASE_LIMIT, NOT_DELIVERED_NOTE, PickupDetails, PickupPurchase, PickupTiming, ShoppingItem,
   goodsHoldAmount, parseLimit, scheduleAt, shoppingFee,
 } from '@/services/pickupOptions';
+import { fromParts, sameDay, toParts } from '@/services/schedule-slots';
 import { Ban, Clock } from 'lucide-react-native';
 import React, { useState } from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
@@ -34,6 +35,7 @@ export function PickupOptions(p: Props) {
   const [day, setDay] = useState<0 | 1>(0);
   const [pickerOpen, setPickerOpen] = useState(false);
   const scheduled = p.timing.kind === 'SCHEDULED' ? p.timing : null;
+  const pickedParts = scheduled?.at ? toParts(scheduled.at) : null;
 
   return (
     <View style={s.wrap}>
@@ -116,10 +118,18 @@ export function PickupOptions(p: Props) {
       <TimePickerModal
         visible={pickerOpen}
         onClose={() => setPickerOpen(false)}
+        title="Pick a delivery time"
         selectedDateISO={scheduleAt(day, '12', '00', 'AM').toISOString()}
-        onConfirm={(_label, hour, minute, period) => {
+        initialSet={!!pickedParts}
+        initialHour={pickedParts?.hour}
+        initialMinute={pickedParts?.minute}
+        initialPeriod={pickedParts?.period}
+        onConfirm={(_label, hour, minute, period, picked) => {
           setPickerOpen(false);
-          p.onTimingChange({ kind: 'SCHEDULED', at: scheduleAt(day, hour, minute, period) });
+          // The sheet can move the day ("Tomorrow 9 AM"): follow it, and the Today/Tomorrow toggle with it.
+          const at = fromParts(picked.iso, { hour, minute, period: period as 'AM' | 'PM' });
+          setDay(sameDay(at, new Date()) ? 0 : 1);
+          p.onTimingChange({ kind: 'SCHEDULED', at });
         }}
       />
     </View>

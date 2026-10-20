@@ -39,6 +39,7 @@ import { NAME_AFTER_HIRING, providerInitial, providerShortTitle, providerTitle, 
 import { Applicant } from '@/data/applicantsData';
 import { useHirePayment } from '@/hooks/use-hire-payment';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
+import AnimatedLogoMark from '@/components/animated-logo-mark';
 
 const { width } = Dimensions.get('window');
 
@@ -413,11 +414,7 @@ export default function ApplicantsScreen() {
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
-          <Image
-            source={require('@/assets/images/logo-mark.png')}
-            style={styles.logo}
-            contentFit="contain"
-          />
+          <AnimatedLogoMark size={28} />
           <ThemedText style={styles.headerTitle}>Applicants</ThemedText>
         </View>
 
@@ -607,10 +604,6 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-  },
-  logo: {
-    width: 28,
-    height: 28,
   },
   headerTitle: {
     fontSize: 20,
