@@ -147,6 +147,9 @@ export default function JobSummaryScreen() {
         dropoff_lng: data.jobKind === 'PICKUP_DROPOFF' ? (data.dropoffLng ?? undefined) : undefined,
         pickup_place_id: data.jobKind === 'PICKUP_DROPOFF' ? (data.pickupPlaceId ?? undefined) : undefined,
         pickup_place_type: data.jobKind === 'PICKUP_DROPOFF' ? (data.pickupPlaceType ?? undefined) : undefined,
+        // The store and the drop-off as the customer chose them (only pins were sent).
+        pickup_address: data.jobKind === 'PICKUP_DROPOFF' ? (data.address?.slice(0, 300) || undefined) : undefined,
+        dropoff_address: data.jobKind === 'PICKUP_DROPOFF' ? (data.dropoffAddress?.slice(0, 300) || undefined) : undefined,
         service_mode: data.serviceMode,
       });
 

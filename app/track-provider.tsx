@@ -1200,7 +1200,7 @@ export default function TrackProviderScreen() {
                   label: `Send code to ${recipientName}`,
                   onPress: () => {
                     Share.share({
-                      message: `Your Dodorez delivery is on its way. When it arrives, give the driver this code: ${deliveryCode}`,
+                      message: `Your Dodorez delivery is with you. Give the provider this code: ${deliveryCode} (valid for a few minutes).`,
                     }).catch(() => {});
                   },
                 } : undefined}

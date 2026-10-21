@@ -308,13 +308,13 @@ export default function JobDetailsScreen() {
               </ThemedText>
             </View>
           )}
-          {job.job_type === 'PICKUP_DROPOFF' && (job.dropoff_lat != null || resolvedDropoffAddress) && (
+          {job.job_type === 'PICKUP_DROPOFF' && (job.dropoff_lat != null || job.dropoff_address || resolvedDropoffAddress) && (
             <View style={[styles.metaRow, { marginTop: 8 }]}>
               <View style={[styles.metaIconCircle, { backgroundColor: '#EFF6FF' }]}>
                 <MapPin size={16} color="#0EA5E9" />
               </View>
               <ThemedText style={styles.metaText} numberOfLines={2}>
-                Deliver to: {resolvedDropoffAddress || 'Resolving address…'}
+                Deliver to: {job.dropoff_address || resolvedDropoffAddress || 'Resolving address…'}
               </ThemedText>
             </View>
           )}
