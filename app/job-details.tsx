@@ -324,7 +324,7 @@ export default function JobDetailsScreen() {
                 <Package size={16} color="#B45309" />
               </View>
               <ThemedText style={styles.metaText} numberOfLines={2}>
-                From a person: {job.pickup_item}
+                {job.pickup_details?.recipient_name ? `Sending to ${job.pickup_details.recipient_name}` : 'From a person'}: {job.pickup_item}
                 {job.item_value != null ? ` (worth $${Number(job.item_value).toFixed(2)})` : ''}
               </ThemedText>
             </View>

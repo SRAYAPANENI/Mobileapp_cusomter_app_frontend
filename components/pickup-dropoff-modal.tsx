@@ -7,7 +7,7 @@ import { Image } from 'expo-image';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import { Bookmark, Camera, ClipboardPaste, CheckCircle2, Home, IdCard, MapPin, Package, ShieldAlert, Square, SquareCheck, Store, Video as VideoIcon, X } from 'lucide-react-native';
+import { ArrowDownToLine, ArrowUpFromLine, Bookmark, Camera, ClipboardPaste, CheckCircle2, Home, IdCard, MapPin, Package, ShieldAlert, Square, SquareCheck, Store, Video as VideoIcon, X } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
@@ -15,8 +15,8 @@ import { Text, TextInput } from '@/components/scaled-text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PickupOptions } from '@/components/pickup-options';
 import {
-  DEFAULT_PERSON_PICKUP_RULES, PersonPickupRules, PickupDetails, PickupPurchase, PickupSource, PickupTiming,
-  ShoppingItem, hasIdOnFile, looksLikeLink, newShoppingItem, parseLimit, personPickupError, pickupJobFields, purchaseError,
+  DEFAULT_PERSON_PICKUP_RULES, PersonPickupRules, PickupDetails, PickupDirection, PickupPurchase, PickupSource, PickupTiming,
+  ShoppingItem, hasIdOnFile, looksLikeLink, newShoppingItem, tripError, tripMiles, parseLimit, personPickupError, pickupJobFields, purchaseError,
   shoppingListError, timingError,
 } from '@/services/pickupOptions';
 
@@ -52,6 +52,10 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
 
   const [phase, setPhase] = useState<Phase>('confirm');
   const [source, setSource] = useState<PickupSource>('STORE');
+  // From a person: bring it to me (my location is the drop-off), or send it
+  // from me (my location is the pickup; the search finds the drop-off).
+  const [direction, setDirection] = useState<PickupDirection>('TO_ME');
+  const [myName, setMyName] = useState('');
   const [description, setDescription] = useState('');
   const [allowedPickupTypes, setAllowedPickupTypes] = useState<string[]>([]);
   const [pickupQuery, setPickupQuery] = useState('');
@@ -93,11 +97,15 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
   const chosenTextRef = useRef<string | null>(null);
   // A shared location link that couldn't be read, and why.
   const [linkError, setLinkError] = useState<string | null>(null);
+  // How many providers the posted job reached — 0 means nobody near the pickup yet.
+  const [reached, setReached] = useState<number | null>(null);
 
   useEffect(() => {
     if (!visible) return;
     setPhase('confirm');
+    setReached(null);
     setSource('STORE');
+    setDirection('TO_ME');
     setDescription('');
     resetPickupPlace();
     setMedia([]);
@@ -114,7 +122,7 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
     SkoFyApi.jobs.getPickupPlaceTypes().then(setAllowedPickupTypes).catch(() => {});
     SkoFyApi.jobs.getPersonPickupRules().then(setRules).catch(() => {});
     SkoFyApi.customers.getProfile()
-      .then((p) => setIdOnFile(hasIdOnFile(p)))
+      .then((p) => { setIdOnFile(hasIdOnFile(p)); setMyName(p.name?.trim() ?? ''); })
       .catch(() => setIdOnFile(null));
     resolveSkill();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -171,6 +179,7 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
     setSource(next);
     resetPickupPlace(); // a store must be re-picked from the allowlist, and vice versa
     if (next === 'PERSON') setPurchase('PREPAID'); // nothing is bought from a person
+    else setDirection('TO_ME'); // a store's order always comes to me
   };
 
   const resolveSkill = async () => {
@@ -261,15 +270,20 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
   };
 
   const hasPickupPoint = pickupLat != null && pickupLng != null;
+  // Pickup & Drop is local: how far the pickup is from the drop-off.
+  const miles = hasPickupPoint && dropoffLat != null && dropoffLng != null
+    ? tripMiles({ lat: pickupLat!, lng: pickupLng! }, { lat: dropoffLat, lng: dropoffLng })
+    : null;
+  const tooFar = miles != null ? tripError(miles, rules.max_trip_km) : null;
   const hasValidPickup = hasPickupPoint && (source === 'PERSON' || (!!pickupPlaceType && allowedPickupTypes.includes(pickupPlaceType)));
   // What's still missing, in the order the form asks for it.
-  const formError = source === 'PERSON'
+  const formError = tooFar ?? (source === 'PERSON'
     ? personPickupError(personItem, valueText, declared, rules)
-      ?? (handoverName.trim() ? null : 'Add who will hand it over.')
+      ?? (handoverName.trim() ? null : direction === 'FROM_ME' ? 'Add who will receive it.' : 'Add who will hand it over.')
       ?? (idOnFile === false ? 'Add your ID in Profile first — it’s needed for a pickup from a person.' : null)
       ?? timingError(timing)
     : (description.trim() ? null : 'Say what you need picked up.')
-      ?? timingError(timing) ?? purchaseError(purchase, limitText) ?? shoppingListError(purchase, shoppingItems);
+      ?? timingError(timing) ?? purchaseError(purchase, limitText) ?? shoppingListError(purchase, shoppingItems));
   // A missing ID is in formError; if the profile couldn't be read, the server still checks it.
   const ready = hasValidPickup && !formError && !!skillId && !resolvingSkill && dropoffLat != null && dropoffLng != null;
 
@@ -313,27 +327,40 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
         } catch { /* non-fatal — job still posts without media */ }
       }
       const fromPerson = source === 'PERSON';
+      const sendFromMe = fromPerson && direction === 'FROM_ME';
       const item = personItem.trim();
       const notes = description.trim();
-      const title = fromPerson ? `Pick up: ${item}` : notes;
-      await SkoFyApi.jobs.create({
+      const otherName = handoverName.trim();
+      const otherPhone = handoverPhone.trim();
+      const title = !fromPerson ? notes : sendFromMe ? `Send: ${item}` : `Pick up: ${item}`;
+      // The searched place, and mine: which is the pickup depends on the direction.
+      const searched = { lat: pickupLat!, lng: pickupLng!, address: pickupQuery.trim() };
+      const mine = { lat: dropoffLat!, lng: dropoffLng!, address: dropoffAddress };
+      const [from, to] = sendFromMe ? [mine, searched] : [searched, mine];
+      const posted: any = await SkoFyApi.jobs.create({
         title: title.length > 80 ? `${title.slice(0, 77)}...` : title,
-        description: fromPerson ? (notes || `Pick up ${item} and bring it to me.`) : notes,
+        description: !fromPerson ? notes
+          : notes || (sendFromMe ? `Pick up ${item} from me and take it to ${otherName}.` : `Pick up ${item} and bring it to me.`),
         skill_id: skillId,
         ...pickupJobFields({
           timing,
           purchase: fromPerson ? 'PREPAID' : purchase,
           limitText,
           notes: dropoffNotes,
-          dropoffAddress,
-          details: fromPerson
-            ? { handover_name: handoverName.trim(), ...(handoverPhone.trim() ? { handover_phone: handoverPhone.trim() } : {}) }
-            : pickupDetails,
+          dropoffAddress: to.address,
+          pickupAddress: from.address,
+          details: !fromPerson ? pickupDetails
+            : sendFromMe
+              ? {
+                  recipient_name: otherName, ...(otherPhone ? { recipient_phone: otherPhone } : {}),
+                  ...(myName ? { handover_name: myName } : {}),
+                }
+              : { handover_name: otherName, ...(otherPhone ? { handover_phone: otherPhone } : {}) },
           items: shoppingItems,
         }),
-        lat: pickupLat!, lng: pickupLng!,
+        lat: from.lat, lng: from.lng,
         job_type: 'PICKUP_DROPOFF',
-        dropoff_lat: dropoffLat!, dropoff_lng: dropoffLng!,
+        dropoff_lat: to.lat, dropoff_lng: to.lng,
         pickup_source: source,
         ...(fromPerson
           ? { pickup_item: item, item_value: parseLimit(valueText) ?? undefined, item_declared: declared }
@@ -349,8 +376,11 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
           lat: pickupLat, lng: pickupLng,
         }).catch(() => { /* the job is posted; saving the place is a nice-to-have */ });
       }
+      const count = typeof posted?.providers_notified === 'number' ? posted.providers_notified : null;
+      setReached(count);
       setPhase('success');
-      setTimeout(() => onPosted(), 1400);
+      // Nobody near the pickup: leave the message up long enough to read.
+      setTimeout(() => onPosted(), count === 0 ? 4000 : 1400);
     } catch (e: any) {
       setPhase('confirm');
       appAlert.show('error', 'Could not post', e?.message || 'Please check your connection and try again.');
@@ -358,6 +388,7 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
   };
 
   const fromPerson = source === 'PERSON';
+  const sendFromMe = fromPerson && direction === 'FROM_ME';
 
   return (
     <Modal statusBarTranslucent navigationBarTranslucent visible={visible} animationType="slide" transparent onRequestClose={phase === 'confirm' ? onClose : undefined}>
@@ -399,8 +430,30 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
               })}
             </View>
 
+            {fromPerson && (
+              <View style={s.sourceRow}>
+                {([['TO_ME', 'Bring it to me', ArrowDownToLine], ['FROM_ME', 'Send from me', ArrowUpFromLine]] as const).map(([key, label, Icon]) => {
+                  const on = direction === key;
+                  return (
+                    <TouchableOpacity
+                      key={key}
+                      style={[s.sourceChip, on && s.sourceChipOn]}
+                      onPress={() => setDirection(key)}
+                      disabled={phase !== 'confirm'}
+                    >
+                      <Icon size={15} color={on ? '#111827' : '#6B7280'} />
+                      <Text style={[s.sourceText, on && s.sourceTextOn]}>{label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
             <View style={s.fieldWrap}>
-              <Text style={s.fieldLabel}>{fromPerson ? 'Pickup address (a friend, family, anyone)' : 'Pickup from (store, pharmacy, etc.)'}</Text>
+              <Text style={s.fieldLabel}>
+                {!fromPerson ? 'Pickup from (store, pharmacy, etc.)'
+                  : sendFromMe ? 'Deliver to (a friend, family, anyone)' : 'Pickup address (a friend, family, anyone)'}
+              </Text>
               <View style={s.searchInputRow}>
                 {fromPerson ? <Home size={16} color="#6B7280" /> : <Store size={16} color="#6B7280" />}
                 <TextInput
@@ -432,11 +485,14 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
                 </View>
               )}
               {!!linkError && <Text style={s.fieldError}>{linkError}</Text>}
+              {miles != null && !tooFar && (
+                <Text style={s.hintText}>About {miles < 1 ? 'under 1' : Math.round(miles)} mile{miles >= 1.5 ? 's' : ''} {sendFromMe ? 'from you' : 'from the drop-off'}</Text>
+              )}
               {fromPerson && !hasPickupPoint && phase === 'confirm' && (
                 <TouchableOpacity style={s.pasteRow} onPress={pasteLink}>
                   <ClipboardPaste size={14} color="#0EA5E9" />
                   <Text style={s.pasteText}>Paste a location link</Text>
-                  <Text style={s.pasteHint}>they shared on WhatsApp or Google Maps</Text>
+                  <Text style={s.pasteHint}>shared on WhatsApp or Google Maps</Text>
                 </TouchableOpacity>
               )}
               {!!noResultsFor && !pickupSearching && pickupSuggestions.length === 0 && (
@@ -482,7 +538,9 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
 
             <View style={s.locationRow}>
               <MapPin size={16} color="#6B7280" />
-              <Text style={s.locationText} numberOfLines={2}>Deliver to: {dropoffAddress || 'Current location'}</Text>
+              <Text style={s.locationText} numberOfLines={2}>
+                {sendFromMe ? 'Pick up from you: ' : 'Deliver to: '}{dropoffAddress || 'Current location'}
+              </Text>
             </View>
 
             {fromPerson ? (
@@ -525,7 +583,7 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
                 </View>
 
                 <View style={s.fieldWrap}>
-                  <Text style={s.fieldLabel}>Who's handing it over?</Text>
+                  <Text style={s.fieldLabel}>{sendFromMe ? "Who's receiving it?" : "Who's handing it over?"}</Text>
                   <TextInput
                     style={s.input}
                     placeholder="Their name"
@@ -537,7 +595,9 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
                   />
                   <TextInput
                     style={[s.input, { marginTop: 8 }]}
-                    placeholder="Their phone (optional) — shared only with the provider you hire"
+                    placeholder={sendFromMe
+                      ? 'Their phone (optional) — so the provider can call on arrival'
+                      : 'Their phone (optional) — shared only with the provider you hire'}
                     placeholderTextColor="#9CA3AF"
                     value={handoverPhone}
                     onChangeText={setHandoverPhone}
@@ -654,7 +714,11 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
           {phase === 'success' && (
             <View style={s.centerRow}>
               <CheckCircle2 size={20} color="#10B981" />
-              <Text style={[s.centerText, { color: '#10B981', fontFamily: Fonts.poppinsSemiBold }]}>Posted! We'll match you shortly.</Text>
+              <Text style={[s.centerText, { color: reached === 0 ? '#B45309' : '#10B981', fontFamily: Fonts.poppinsSemiBold }]}>
+                {reached === 0
+                  ? "Posted — but no providers are near the pickup right now. We'll tell you when one applies."
+                  : "Posted! We'll match you shortly."}
+              </Text>
             </View>
           )}
         </View>

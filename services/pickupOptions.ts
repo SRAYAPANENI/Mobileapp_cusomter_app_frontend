@@ -6,9 +6,15 @@ export type PickupPurchase = 'PREPAID' | 'BUY_FOR_ME';
 /** A store (an allowlisted business) or a person (any address — a friend's house). */
 export type PickupSource = 'STORE' | 'PERSON';
 
+/** From a person: bring it to the customer, or send it from the customer to
+ * someone else. The customer's own location is the drop-off, or the pickup. */
+export type PickupDirection = 'TO_ME' | 'FROM_ME';
+
 /** A pickup from a person: the server's cap and list (GET /jobs/pickup-from-person). */
 export interface PersonPickupRules {
   max_value: number;
+  /** Pickup & Drop is local: the furthest the pickup may be from the drop-off. */
+  max_trip_km?: number;
   banned: string;
 }
 
@@ -16,6 +22,25 @@ export const DEFAULT_PERSON_PICKUP_RULES: PersonPickupRules = {
   max_value: 500,
   banned: 'alcohol, tobacco or vapes, cannabis, medication, weapons, cash, or anything illegal',
 };
+
+const KM_PER_MILE = 1.609344;
+export const DEFAULT_MAX_TRIP_KM = 80;
+
+/** Straight-line distance in miles — same as the server's (app/domain/geo.py). */
+export function tripMiles(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const rad = (d: number) => (d * Math.PI) / 180;
+  const h = Math.sin(rad(b.lat - a.lat) / 2) ** 2
+    + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lng - a.lng) / 2) ** 2;
+  return (2 * 6371 * Math.asin(Math.sqrt(h))) / KM_PER_MILE;
+}
+
+/** A pickup too far from the drop-off reaches no provider (they're matched
+ * near the pickup). Same rule and wording as the server's validate_trip. */
+export function tripError(miles: number, maxKm: number = DEFAULT_MAX_TRIP_KM): string | null {
+  const maxMiles = maxKm / KM_PER_MILE;
+  if (miles <= maxMiles) return null;
+  return `The pickup is about ${Math.round(miles)} miles from the drop-off. Pickup & Drop is for local trips — up to ${Math.round(maxMiles)} miles. Check the pickup address.`;
+}
 
 /** Pasted text that holds a link — a shared location, read by the server
  * (POST /jobs/pickup-location-link) instead of searched for. */
@@ -88,7 +113,7 @@ export function timingError(timing: PickupTiming): string | null {
 /** The job fields these choices become. */
 export function pickupJobFields(options: {
   timing: PickupTiming; purchase: PickupPurchase; limitText: string; notes: string; dropoffAddress: string;
-  details: PickupDetails; items: ShoppingItem[];
+  details: PickupDetails; items: ShoppingItem[]; pickupAddress?: string;
 }) {
   const buying = options.purchase === 'BUY_FOR_ME';
   const scheduled = options.timing.kind === 'SCHEDULED' && options.timing.at;
@@ -101,6 +126,7 @@ export function pickupJobFields(options: {
       ? { purchase_limit: parseLimit(options.limitText), shopping_list: filledItems(options.items) }
       : { pickup_details: cleanDetails(options.details) }),
     dropoff_address: options.dropoffAddress || undefined,
+    pickup_address: options.pickupAddress?.trim().slice(0, 300) || undefined,
     dropoff_notes: options.notes.trim() || undefined,
   };
 }
@@ -117,6 +143,9 @@ export interface PickupDetails {
   /** From a person: who hands it over (shown to the hired provider only). */
   handover_name?: string;
   handover_phone?: string;
+  /** Sent from the customer: who receives it at the drop-off. */
+  recipient_name?: string;
+  recipient_phone?: string;
 }
 
 export type IfUnavailable = 'SUBSTITUTE' | 'SKIP' | 'CALL';

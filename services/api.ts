@@ -622,6 +622,7 @@ export const SkoFyApi = {
       // Pickup & Drop: the drop-off as typed, how to find the door, and who
       // pays for the goods (services/pickupOptions.ts).
       dropoff_address?: string;
+      pickup_address?: string;
       dropoff_notes?: string;
       pickup_purchase?: 'PREPAID' | 'BUY_FOR_ME';
       purchase_limit?: number | null;

@@ -23,7 +23,7 @@ import {
   Navigation
 } from 'lucide-react-native';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Linking, Platform, ScrollView, StatusBar, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Linking, Platform, ScrollView, Share, StatusBar, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { SlideInDown } from 'react-native-reanimated';
@@ -187,8 +187,10 @@ const STATUS_LABELS: Record<string, string> = {
 
 // A one-time code the customer reads out to the provider: the arrival code on
 // in-person jobs, the drop-off code on deliveries.
-function CodeCard({ title, code, body, styles }: {
+function CodeCard({ title, code, body, styles, action }: {
   title: string; code: string; body: string; styles: ReturnType<typeof makeStyles>;
+  /** e.g. sending the code on to whoever receives the delivery. */
+  action?: { label: string; onPress: () => void };
 }) {
   return (
     <View style={styles.otpCard}>
@@ -206,6 +208,11 @@ function CodeCard({ title, code, body, styles }: {
         ))}
       </View>
       <ThemedText style={styles.inspectionCardBody}>{body}</ThemedText>
+      {action && (
+        <TouchableOpacity style={[styles.completeJobBtn, { marginTop: 10 }]} onPress={action.onPress}>
+          <ThemedText style={styles.completeJobBtnText}>{action.label}</ThemedText>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -277,6 +284,8 @@ export default function TrackProviderScreen() {
   // From a person (any address): no store, no store code — the provider
   // checks the item with whoever hands it over, and may refuse it.
   const [pickupFromPerson, setPickupFromPerson] = useState(false);
+  // Sent from the customer: someone else receives it, so they need the drop-off code.
+  const [recipientName, setRecipientName] = useState<string | null>(null);
   const [invoice, setInvoice] = useState<any>(null);
   const [payingFee, setPayingFee] = useState(false);
   const [respondingToInvoice, setRespondingToInvoice] = useState(false);
@@ -338,6 +347,7 @@ export default function TrackProviderScreen() {
     setGoodsAmount(j.goods_amount != null ? Number(j.goods_amount) : null);
     setPickupCode(j.pickup_details?.pickup_code ?? null);
     setPickupFromPerson(j.pickup_source === 'PERSON');
+    setRecipientName(j.pickup_details?.recipient_name ?? null);
   }, []);
 
   // One-time: who's coming, and where they're headed
@@ -1180,10 +1190,20 @@ export default function TrackProviderScreen() {
           {jobStatus === 'IN_PROGRESS' && jobKind === 'PICKUP_DROPOFF' && (
             deliveryCode ? (
               <CodeCard
-                title="Your drop-off code"
+                title={recipientName ? `Drop-off code for ${recipientName}` : 'Your drop-off code'}
                 code={deliveryCode}
-                body="Give this code to your provider when they hand over your order."
+                body={recipientName
+                  ? `Send this code to ${recipientName}. They give it to your provider when it arrives — that's how we know it reached them.`
+                  : 'Give this code to your provider when they hand over your order.'}
                 styles={styles}
+                action={recipientName ? {
+                  label: `Send code to ${recipientName}`,
+                  onPress: () => {
+                    Share.share({
+                      message: `Your Dodorez delivery is on its way. When it arrives, give the driver this code: ${deliveryCode}`,
+                    }).catch(() => {});
+                  },
+                } : undefined}
               />
             ) : (
               <View style={styles.inspectionCard}>
