@@ -4,7 +4,8 @@ import { SkoFyApi } from '@/services/api';
 import { GooglePlacesService, GooglePlaceSuggestion } from '@/services/google-places';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { Camera, CheckCircle2, MapPin, Package, Store, Video as VideoIcon, X } from 'lucide-react-native';
+import { router } from 'expo-router';
+import { Camera, CheckCircle2, Home, IdCard, MapPin, Package, ShieldAlert, Square, SquareCheck, Store, Video as VideoIcon, X } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
@@ -12,7 +13,8 @@ import { Text, TextInput } from '@/components/scaled-text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PickupOptions } from '@/components/pickup-options';
 import {
-  PickupDetails, PickupPurchase, PickupTiming, ShoppingItem, newShoppingItem, pickupJobFields, purchaseError,
+  DEFAULT_PERSON_PICKUP_RULES, PersonPickupRules, PickupDetails, PickupPurchase, PickupSource, PickupTiming,
+  ShoppingItem, hasIdOnFile, newShoppingItem, parseLimit, personPickupError, pickupJobFields, purchaseError,
   shoppingListError, timingError,
 } from '@/services/pickupOptions';
 
@@ -22,9 +24,9 @@ type MediaItem = { uri: string; type: 'image' | 'video' };
 // intermediate picker screen (same "modal, not a route" pattern as
 // QuickNeedModal). The customer's already-confirmed location (from the
 // shared location picker in home.tsx) becomes the DROPOFF point — "bring it
-// to me here" — matching step1.tsx's manual-wizard convention. Only the
-// pickup point (a verified business, same allowlist gate as everywhere
-// else) and a description of what's needed are asked here.
+// to me here". The pickup is either a store (an allowlisted business) or a
+// person at any address — a friend's house — with its own safeguards
+// (services/pickupOptions.ts, server: app/domain/pickup.py).
 interface Props {
   visible: boolean;
   dropoffAddress: string;
@@ -44,6 +46,7 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
   const appAlert = useAppAlert();
 
   const [phase, setPhase] = useState<Phase>('confirm');
+  const [source, setSource] = useState<PickupSource>('STORE');
   const [description, setDescription] = useState('');
   const [allowedPickupTypes, setAllowedPickupTypes] = useState<string[]>([]);
   const [pickupQuery, setPickupQuery] = useState('');
@@ -66,21 +69,48 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
   // What to collect: order details (already paid) or a shopping list (buy for me).
   const [pickupDetails, setPickupDetails] = useState<PickupDetails>({});
   const [shoppingItems, setShoppingItems] = useState<ShoppingItem[]>([newShoppingItem()]);
+  // From a person: the item, its value, who hands it over, and the declaration.
+  const [personItem, setPersonItem] = useState('');
+  const [valueText, setValueText] = useState('');
+  const [handoverName, setHandoverName] = useState('');
+  const [handoverPhone, setHandoverPhone] = useState('');
+  const [declared, setDeclared] = useState(false);
+  const [rules, setRules] = useState<PersonPickupRules>(DEFAULT_PERSON_PICKUP_RULES);
+  // An ID on their profile — needed for a pickup from a person (null = still checking).
+  const [idOnFile, setIdOnFile] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!visible) return;
     setPhase('confirm');
+    setSource('STORE');
     setDescription('');
-    setPickupQuery(''); setPickupSuggestions([]); setPickupTypeError(null);
-    setPickupPlaceId(null); setPickupPlaceType(null);
-    setPickupLat(null); setPickupLng(null);
+    resetPickupPlace();
     setMedia([]);
     setTiming({ kind: 'ASAP' }); setPurchase('PREPAID'); setLimitText(''); setDropoffNotes('');
     setPickupDetails({}); setShoppingItems([newShoppingItem()]);
+    setPersonItem(''); setValueText(''); setHandoverName(''); setHandoverPhone(''); setDeclared(false);
+    setIdOnFile(null);
     SkoFyApi.jobs.getPickupPlaceTypes().then(setAllowedPickupTypes).catch(() => {});
+    SkoFyApi.jobs.getPersonPickupRules().then(setRules).catch(() => {});
+    SkoFyApi.customers.getProfile()
+      .then((p) => setIdOnFile(hasIdOnFile(p)))
+      .catch(() => setIdOnFile(null));
     resolveSkill();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
+
+  const resetPickupPlace = () => {
+    setPickupQuery(''); setPickupSuggestions([]); setPickupTypeError(null);
+    setPickupPlaceId(null); setPickupPlaceType(null);
+    setPickupLat(null); setPickupLng(null);
+  };
+
+  const chooseSource = (next: PickupSource) => {
+    if (next === source) return;
+    setSource(next);
+    resetPickupPlace(); // a store must be re-picked from the allowlist, and vice versa
+    if (next === 'PERSON') setPurchase('PREPAID'); // nothing is bought from a person
+  };
 
   const resolveSkill = async () => {
     setResolvingSkill(true);
@@ -106,37 +136,48 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
         const bias = dropoffLat != null && dropoffLng != null
           ? { latitude: dropoffLat, longitude: dropoffLng }
           : undefined;
-        const results = await GooglePlacesService.searchAddress(pickupQuery, undefined, bias, allowedPickupTypes);
+        // A store: only allowlisted businesses. A person: any address.
+        const results = await GooglePlacesService.searchAddress(
+          pickupQuery, undefined, bias, source === 'STORE' ? allowedPickupTypes : undefined,
+        );
         setPickupSuggestions(results);
       } catch { setPickupSuggestions([]); }
       setPickupSearching(false);
     }, 350);
     return () => clearTimeout(handle);
-  }, [pickupQuery, dropoffLat, dropoffLng, allowedPickupTypes]);
+  }, [pickupQuery, dropoffLat, dropoffLng, allowedPickupTypes, source]);
 
   const handlePickupSelect = async (item: GooglePlaceSuggestion) => {
     setPickupSuggestions([]);
     setPickupQuery(item.description);
     try {
       const details = await GooglePlacesService.getPlaceDetails(item.place_id);
-      const isAllowed = !!details.primary_type && allowedPickupTypes.includes(details.primary_type);
       setPickupPlaceId(item.place_id);
       setPickupPlaceType(details.primary_type ?? null);
       setPickupLat(details.latitude);
       setPickupLng(details.longitude);
+      const isAllowed = source === 'PERSON'
+        || (!!details.primary_type && allowedPickupTypes.includes(details.primary_type));
       setPickupTypeError(isAllowed
         ? null
-        : "This doesn't look like a supported pickup location (grocery, pharmacy, etc). Please choose a business.");
+        : "This doesn't look like a supported store (grocery, pharmacy, etc). Choose a business — or a pickup from a person.");
     } catch {
       setPickupTypeError('Could not fetch location details. Please check your internet connection.');
     }
   };
 
-  const hasValidPickup = pickupLat != null && pickupLng != null &&
-    !!pickupPlaceType && allowedPickupTypes.includes(pickupPlaceType);
-  const optionsError = timingError(timing) ?? purchaseError(purchase, limitText) ?? shoppingListError(purchase, shoppingItems);
-  const canPost = hasValidPickup && description.trim().length > 0 && !optionsError &&
-    !!skillId && !resolvingSkill && dropoffLat != null && dropoffLng != null;
+  const hasPickupPoint = pickupLat != null && pickupLng != null;
+  const hasValidPickup = hasPickupPoint && (source === 'PERSON' || (!!pickupPlaceType && allowedPickupTypes.includes(pickupPlaceType)));
+  // What's still missing, in the order the form asks for it.
+  const formError = source === 'PERSON'
+    ? personPickupError(personItem, valueText, declared, rules)
+      ?? (handoverName.trim() ? null : 'Add who will hand it over.')
+      ?? (idOnFile === false ? 'Add your ID in Profile first — it’s needed for a pickup from a person.' : null)
+      ?? timingError(timing)
+    : (description.trim() ? null : 'Say what you need picked up.')
+      ?? timingError(timing) ?? purchaseError(purchase, limitText) ?? shoppingListError(purchase, shoppingItems);
+  // A missing ID is in formError; if the profile couldn't be read, the server still checks it.
+  const ready = hasValidPickup && !formError && !!skillId && !resolvingSkill && dropoffLat != null && dropoffLng != null;
 
   // Both images and videos in one picker — same mediaTypes list step1.tsx
   // uses for its own "gallery" pick path, just without the separate
@@ -155,8 +196,13 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
     }
   };
 
+  const goAddId = () => {
+    onClose();
+    router.push('/profile');
+  };
+
   const handlePost = async () => {
-    if (!canPost || !skillId) return;
+    if (!ready || !skillId) return;
     setPhase('posting');
     try {
       let imageUrls: string[] = [];
@@ -172,19 +218,32 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
           imageUrls = await SkoFyApi.jobs.uploadMedia(files);
         } catch { /* non-fatal — job still posts without media */ }
       }
-      const trimmed = description.trim();
+      const fromPerson = source === 'PERSON';
+      const item = personItem.trim();
+      const notes = description.trim();
+      const title = fromPerson ? `Pick up: ${item}` : notes;
       await SkoFyApi.jobs.create({
-        title: trimmed.length > 80 ? `${trimmed.slice(0, 77)}...` : trimmed,
-        description: trimmed,
+        title: title.length > 80 ? `${title.slice(0, 77)}...` : title,
+        description: fromPerson ? (notes || `Pick up ${item} and bring it to me.`) : notes,
         skill_id: skillId,
         ...pickupJobFields({
-          timing, purchase, limitText, notes: dropoffNotes, dropoffAddress, details: pickupDetails, items: shoppingItems,
+          timing,
+          purchase: fromPerson ? 'PREPAID' : purchase,
+          limitText,
+          notes: dropoffNotes,
+          dropoffAddress,
+          details: fromPerson
+            ? { handover_name: handoverName.trim(), ...(handoverPhone.trim() ? { handover_phone: handoverPhone.trim() } : {}) }
+            : pickupDetails,
+          items: shoppingItems,
         }),
         lat: pickupLat!, lng: pickupLng!,
         job_type: 'PICKUP_DROPOFF',
         dropoff_lat: dropoffLat!, dropoff_lng: dropoffLng!,
-        pickup_place_id: pickupPlaceId ?? undefined,
-        pickup_place_type: pickupPlaceType ?? undefined,
+        pickup_source: source,
+        ...(fromPerson
+          ? { pickup_item: item, item_value: parseLimit(valueText) ?? undefined, item_declared: declared }
+          : { pickup_place_id: pickupPlaceId ?? undefined, pickup_place_type: pickupPlaceType ?? undefined }),
         service_mode: 'ON_SITE',
         posted_via: 'MANUAL',
         images: imageUrls,
@@ -196,6 +255,8 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
       appAlert.show('error', 'Could not post', e?.message || 'Please check your connection and try again.');
     }
   };
+
+  const fromPerson = source === 'PERSON';
 
   return (
     <Modal statusBarTranslucent navigationBarTranslucent visible={visible} animationType="slide" transparent onRequestClose={phase === 'confirm' ? onClose : undefined}>
@@ -218,14 +279,32 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
             )}
           </View>
 
-          <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 420 }}>
+          <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 460 }}>
+            {/* Where from: a store, or a person at any address */}
+            <View style={s.sourceRow}>
+              {([['STORE', 'From a store', Store], ['PERSON', 'From a person', Home]] as const).map(([key, label, Icon]) => {
+                const on = source === key;
+                return (
+                  <TouchableOpacity
+                    key={key}
+                    style={[s.sourceChip, on && s.sourceChipOn]}
+                    onPress={() => chooseSource(key)}
+                    disabled={phase !== 'confirm'}
+                  >
+                    <Icon size={15} color={on ? '#111827' : '#6B7280'} />
+                    <Text style={[s.sourceText, on && s.sourceTextOn]}>{label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
             <View style={s.fieldWrap}>
-              <Text style={s.fieldLabel}>Pickup from (store, pharmacy, etc.)</Text>
+              <Text style={s.fieldLabel}>{fromPerson ? 'Pickup address (a friend, family, anyone)' : 'Pickup from (store, pharmacy, etc.)'}</Text>
               <View style={s.searchInputRow}>
-                <Store size={16} color="#6B7280" />
+                {fromPerson ? <Home size={16} color="#6B7280" /> : <Store size={16} color="#6B7280" />}
                 <TextInput
                   style={s.searchInput}
-                  placeholder="Search for a business"
+                  placeholder={fromPerson ? 'Search for an address' : 'Search for a business'}
                   placeholderTextColor="#9CA3AF"
                   value={pickupQuery}
                   onChangeText={(t) => { setPickupQuery(t); setPickupTypeError(null); }}
@@ -252,11 +331,82 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
               <Text style={s.locationText} numberOfLines={2}>Deliver to: {dropoffAddress || 'Current location'}</Text>
             </View>
 
+            {fromPerson ? (
+              <>
+                {idOnFile === false && (
+                  <TouchableOpacity style={s.idNotice} onPress={goAddId}>
+                    <IdCard size={18} color="#B45309" />
+                    <Text style={s.idNoticeText}>A pickup from a person needs your ID on your profile. <Text style={s.idNoticeLink}>Add it now</Text></Text>
+                  </TouchableOpacity>
+                )}
+
+                <View style={s.fieldWrap}>
+                  <Text style={s.fieldLabel}>What's the item?</Text>
+                  <TextInput
+                    style={s.input}
+                    placeholder="e.g. House keys, a phone charger, a box of clothes"
+                    placeholderTextColor="#9CA3AF"
+                    value={personItem}
+                    onChangeText={setPersonItem}
+                    maxLength={200}
+                    editable={phase === 'confirm'}
+                  />
+                </View>
+
+                <View style={s.fieldWrap}>
+                  <Text style={s.fieldLabel}>What's it worth? (up to ${rules.max_value})</Text>
+                  <View style={s.amountRow}>
+                    <Text style={s.dollar}>$</Text>
+                    <TextInput
+                      style={s.amountInput}
+                      placeholder="40"
+                      placeholderTextColor="#9CA3AF"
+                      value={valueText}
+                      onChangeText={setValueText}
+                      keyboardType="decimal-pad"
+                      maxLength={7}
+                      editable={phase === 'confirm'}
+                    />
+                  </View>
+                </View>
+
+                <View style={s.fieldWrap}>
+                  <Text style={s.fieldLabel}>Who's handing it over?</Text>
+                  <TextInput
+                    style={s.input}
+                    placeholder="Their name"
+                    placeholderTextColor="#9CA3AF"
+                    value={handoverName}
+                    onChangeText={setHandoverName}
+                    maxLength={120}
+                    editable={phase === 'confirm'}
+                  />
+                  <TextInput
+                    style={[s.input, { marginTop: 8 }]}
+                    placeholder="Their phone (optional) — shared only with the provider you hire"
+                    placeholderTextColor="#9CA3AF"
+                    value={handoverPhone}
+                    onChangeText={setHandoverPhone}
+                    keyboardType="phone-pad"
+                    maxLength={30}
+                    editable={phase === 'confirm'}
+                  />
+                </View>
+
+                <TouchableOpacity style={s.declareRow} onPress={() => setDeclared(d => !d)} disabled={phase !== 'confirm'}>
+                  {declared ? <SquareCheck size={20} color="#10B981" /> : <Square size={20} color="#6B7280" />}
+                  <Text style={s.declareText}>
+                    It isn't {rules.banned}. It will be shown to the provider before they take it — they can refuse it.
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
+
             <View style={s.fieldWrap}>
-              <Text style={s.fieldLabel}>What do you need picked up?</Text>
+              <Text style={s.fieldLabel}>{fromPerson ? 'Anything else the provider should know? (optional)' : 'What do you need picked up?'}</Text>
               <TextInput
                 style={s.notesInput}
-                placeholder="e.g. Prescription for John Smith, 2 bags of groceries…"
+                placeholder={fromPerson ? 'e.g. Ring the bell, it’s in a blue bag' : 'e.g. Prescription for John Smith, 2 bags of groceries…'}
                 placeholderTextColor="#9CA3AF"
                 value={description}
                 onChangeText={setDescription}
@@ -279,7 +429,15 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
               items={shoppingItems}
               onItemsChange={setShoppingItems}
               editable={phase === 'confirm'}
+              source={source}
             />
+
+            {fromPerson && (
+              <View style={s.safetyNote}>
+                <ShieldAlert size={14} color="#B45309" />
+                <Text style={s.safetyText}>The provider checks the item before taking it and can refuse anything on the list — the trip is still paid.</Text>
+              </View>
+            )}
 
             <View style={s.fieldWrap}>
               <Text style={s.fieldLabel}>Add photos or a video (optional)</Text>
@@ -319,14 +477,14 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
             </TouchableOpacity>
           )}
 
-          {phase === 'confirm' && hasValidPickup && description.trim().length > 0 && optionsError && (
-            <Text style={s.fieldError}>{optionsError}</Text>
+          {phase === 'confirm' && hasValidPickup && formError && (
+            <Text style={s.fieldError}>{formError}</Text>
           )}
           {phase === 'confirm' && (
             <TouchableOpacity
-              style={[s.postButton, !canPost && s.postButtonDisabled]}
+              style={[s.postButton, !ready && s.postButtonDisabled]}
               onPress={handlePost}
-              disabled={!canPost}
+              disabled={!ready}
             >
               <Text style={s.postButtonText}>Post Now</Text>
             </TouchableOpacity>
@@ -365,6 +523,15 @@ const s = StyleSheet.create({
   subtitle: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppins, color: '#6B7280', marginTop: 2 },
   closeBtn: { padding: 4 },
 
+  sourceRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  sourceChip: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 11, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB',
+  },
+  sourceChipOn: { backgroundColor: '#FFF6D6', borderColor: '#FFCE48' },
+  sourceText: { fontSize: 13, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: '#6B7280' },
+  sourceTextOn: { color: '#111827', fontFamily: Fonts.poppinsBold },
+
   fieldWrap: { position: 'relative', gap: 6, marginBottom: 14 },
   fieldLabel: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsBold, color: '#6B7280' },
   searchInputRow: {
@@ -373,6 +540,16 @@ const s = StyleSheet.create({
     paddingHorizontal: 12, height: 46, backgroundColor: '#F9FAFB',
   },
   searchInput: { flex: 1, fontSize: 14, lineHeight: 18, fontFamily: Fonts.poppins, color: '#111827' },
+  input: {
+    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 12, height: 46,
+    fontSize: 14, lineHeight: 18, fontFamily: Fonts.poppins, color: '#111827', backgroundColor: '#F9FAFB',
+  },
+  amountRow: {
+    flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
+    paddingHorizontal: 12, height: 46, backgroundColor: '#F9FAFB', width: 140,
+  },
+  dollar: { fontSize: 15, lineHeight: 20, fontFamily: Fonts.poppinsBold, color: '#111827', marginRight: 4 },
+  amountInput: { flex: 1, fontSize: 15, lineHeight: 20, fontFamily: Fonts.poppinsSemiBold, color: '#111827' },
   suggestionsBox: {
     borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
     marginTop: 4, backgroundColor: '#F9FAFB', overflow: 'hidden',
@@ -381,6 +558,17 @@ const s = StyleSheet.create({
   suggestionMainText: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: '#111827' },
   suggestionSecondaryText: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppins, color: '#6B7280', marginTop: 2 },
   fieldError: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppinsSemiBold, color: '#EF4444', marginTop: 4 },
+
+  idNotice: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12,
+    backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', marginBottom: 14,
+  },
+  idNoticeText: { flex: 1, fontSize: 12.5, lineHeight: 17, fontFamily: Fonts.poppins, color: '#92400E' },
+  idNoticeLink: { fontFamily: Fonts.poppinsBold, color: '#B45309', textDecorationLine: 'underline' },
+  declareRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 14 },
+  declareText: { flex: 1, fontSize: 12.5, lineHeight: 18, fontFamily: Fonts.poppins, color: '#374151' },
+  safetyNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 14 },
+  safetyText: { flex: 1, fontSize: 11.5, lineHeight: 16, fontFamily: Fonts.poppins, color: '#92400E' },
 
   locationRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,

@@ -992,6 +992,10 @@ export default function ChatScreen() {
         label = isMine
           ? `You cancelled — other applicants are still available${log.reason ? `: ${log.reason}` : ''}`
           : `${otherName} cancelled, but other applicants are still available${log.reason ? `: ${log.reason}` : ''}`;
+      } else if (log.event === 'pickup_refused') {
+        // A pickup from a person: the provider didn't take the item.
+        LogIcon = XCircle;
+        label = `${otherName} couldn't take the item${log.reason ? `: ${log.reason.toLowerCase()}` : ''} — the job is cancelled`;
       }
       return (
         <Animated.View entering={FadeInLeft} style={styles.callLogWrapper}>

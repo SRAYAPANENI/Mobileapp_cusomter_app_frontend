@@ -15,6 +15,7 @@ import {
   DollarSign,
   MapPin,
   Mic,
+  Package,
   Pencil,
   Plus,
   Sparkles,
@@ -314,6 +315,27 @@ export default function JobDetailsScreen() {
               </View>
               <ThemedText style={styles.metaText} numberOfLines={2}>
                 Deliver to: {resolvedDropoffAddress || 'Resolving address…'}
+              </ThemedText>
+            </View>
+          )}
+          {job.pickup_source === 'PERSON' && !!job.pickup_item && (
+            <View style={[styles.metaRow, { marginTop: 8 }]}>
+              <View style={[styles.metaIconCircle, { backgroundColor: '#FFFBEB' }]}>
+                <Package size={16} color="#B45309" />
+              </View>
+              <ThemedText style={styles.metaText} numberOfLines={2}>
+                From a person: {job.pickup_item}
+                {job.item_value != null ? ` (worth $${Number(job.item_value).toFixed(2)})` : ''}
+              </ThemedText>
+            </View>
+          )}
+          {!!job.pickup_refusal && (
+            <View style={[styles.metaRow, { marginTop: 8 }]}>
+              <View style={[styles.metaIconCircle, { backgroundColor: '#FEF2F2' }]}>
+                <X size={16} color="#DC2626" />
+              </View>
+              <ThemedText style={styles.metaText} numberOfLines={3}>
+                The provider didn't take the item: {String(job.pickup_refusal).toLowerCase()}. Their trip fee was kept.
               </ThemedText>
             </View>
           )}

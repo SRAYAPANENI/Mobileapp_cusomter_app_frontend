@@ -17,7 +17,7 @@
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { File, Paths } from 'expo-file-system';
-import type { PickupDetails, ShoppingItem } from '@/services/pickupOptions';
+import type { PersonPickupRules, PickupDetails, PickupSource, ShoppingItem } from '@/services/pickupOptions';
 
 // ─── CONFIG ─────────────────────────────────────────────────────────────────
 const DEV_LAN_IP = '192.168.1.6'; // Your machine's LAN IP for physical device testing
@@ -627,10 +627,20 @@ export const SkoFyApi = {
       purchase_limit?: number | null;
       pickup_details?: PickupDetails;
       shopping_list?: ShoppingItem[];
+      // From a store (an allowlisted business) or a person (any address):
+      // a person pickup carries the item, its value and the declaration.
+      pickup_source?: PickupSource;
+      pickup_item?: string;
+      item_value?: number;
+      item_declared?: boolean;
       // "ON_SITE" (default) or "REMOTE" — no physical location/distance
       // matching at all (e.g. hiring a developer/consultant).
       service_mode?: 'ON_SITE' | 'REMOTE';
     }) => request('/jobs', { method: 'POST', body: JSON.stringify(payload) }),
+
+    /** A pickup from a person: the value cap and what's never carried. */
+    getPersonPickupRules: async (): Promise<PersonPickupRules> =>
+      request('/jobs/pickup-from-person'),
 
     /** Pickup & Drop: add or change the store's pickup code until the order is collected. */
     updatePickupCode: async (jobId: string, pickupCode: string) =>
@@ -829,6 +839,8 @@ export const SkoFyApi = {
       destination_lng: number | null;
       distance_km: number | null;
       eta_minutes: number | null;
+      /** Set once the job is cancelled — shown to the customer (e.g. a refused pickup). */
+      cancellation_reason?: string | null;
     }> => request(`/jobs/${jobId}/track`),
   },
 

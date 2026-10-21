@@ -274,6 +274,9 @@ export default function TrackProviderScreen() {
   const [payingGoods, setPayingGoods] = useState(false);
   // Already paid: the store's pickup code, which the customer can add later.
   const [pickupCode, setPickupCode] = useState<string | null>(null);
+  // From a person (any address): no store, no store code — the provider
+  // checks the item with whoever hands it over, and may refuse it.
+  const [pickupFromPerson, setPickupFromPerson] = useState(false);
   const [invoice, setInvoice] = useState<any>(null);
   const [payingFee, setPayingFee] = useState(false);
   const [respondingToInvoice, setRespondingToInvoice] = useState(false);
@@ -334,6 +337,7 @@ export default function TrackProviderScreen() {
     setPurchaseLimit(j.pickup_purchase === 'BUY_FOR_ME' && j.purchase_limit != null ? Number(j.purchase_limit) : null);
     setGoodsAmount(j.goods_amount != null ? Number(j.goods_amount) : null);
     setPickupCode(j.pickup_details?.pickup_code ?? null);
+    setPickupFromPerson(j.pickup_source === 'PERSON');
   }, []);
 
   // One-time: who's coming, and where they're headed
@@ -474,10 +478,14 @@ export default function TrackProviderScreen() {
         // to see why, not just find themselves bounced back silently.
         if (t.job_status === 'CANCELLED' && !hasShownCancellationRef.current) {
           hasShownCancellationRef.current = true;
+          const reason = t.cancellation_reason ?? '';
+          const refused = reason.startsWith('Pickup refused');
           appAlert.show(
             'warning',
-            'Job Cancelled',
-            t.cancellation_reason
+            refused ? 'Pickup Not Completed' : 'Job Cancelled',
+            refused
+              ? `Your provider didn't take the item — ${reason.replace(/^Pickup refused:\s*/, '').toLowerCase()}. The job is cancelled and their trip fee is kept.\n\nIf that's wrong, contact support from Help.`
+              : t.cancellation_reason
               ? `The provider cancelled this job. Reason: ${t.cancellation_reason}\n\nYou can view your job in My Jobs or post a new requirement.`
               : 'The provider cancelled this job.\n\nYou can view your job in My Jobs or post a new requirement.',
             [{ text: 'View My Jobs', onPress: () => router.replace('/my-jobs' as any) }],
@@ -1094,7 +1102,7 @@ export default function TrackProviderScreen() {
               </ThemedText>
               <ThemedText style={styles.inspectionCardBody}>
                 {jobKind === 'PICKUP_DROPOFF'
-                  ? 'Pay the delivery fee so your provider can head to the store.'
+                  ? `Pay the delivery fee so your provider can head to the ${pickupFromPerson ? 'pickup' : 'store'}.`
                   : 'Pay the visiting fee so your provider can start inspecting the job once they arrive.'}
               </ThemedText>
               <TouchableOpacity
@@ -1159,11 +1167,13 @@ export default function TrackProviderScreen() {
               <ThemedText style={styles.inspectionCardBody}>
                 {purchaseLimit != null
                   ? 'Shopping money held ✓ Waiting for your provider to buy your items and confirm pickup.'
-                  : 'Waiting for your provider to arrive and confirm pickup.'}
+                  : pickupFromPerson
+                    ? "Waiting for your provider to arrive. They'll check the item before taking it, and can refuse anything that isn't allowed."
+                    : 'Waiting for your provider to arrive and confirm pickup.'}
               </ThemedText>
             </View>
           )}
-          {jobStatus === 'ACCEPTED' && jobKind === 'PICKUP_DROPOFF' && !pickupConfirmedAt && purchaseLimit == null && jobId && (
+          {jobStatus === 'ACCEPTED' && jobKind === 'PICKUP_DROPOFF' && !pickupConfirmedAt && purchaseLimit == null && !pickupFromPerson && jobId && (
             <PickupCodeEditor jobId={jobId} code={pickupCode} styles={styles} />
           )}
 

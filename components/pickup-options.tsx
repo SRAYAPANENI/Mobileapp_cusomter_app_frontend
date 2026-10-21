@@ -4,7 +4,7 @@ import { ShoppingListEditor } from '@/components/shopping-list-editor';
 import { TimePickerModal } from '@/components/time-picker-modal';
 import { Fonts } from '@/constants/theme';
 import {
-  MAX_PURCHASE_LIMIT, NOT_DELIVERED_NOTE, PickupDetails, PickupPurchase, PickupTiming, ShoppingItem,
+  MAX_PURCHASE_LIMIT, NOT_DELIVERED_NOTE, PickupDetails, PickupPurchase, PickupSource, PickupTiming, ShoppingItem,
   goodsHoldAmount, parseLimit, scheduleAt, shoppingFee,
 } from '@/services/pickupOptions';
 import { fromParts, sameDay, toParts } from '@/services/schedule-slots';
@@ -26,6 +26,8 @@ interface Props {
   items: ShoppingItem[];
   onItemsChange: (items: ShoppingItem[]) => void;
   editable: boolean;
+  /** From a store (default) or a person. */
+  source?: PickupSource;
 }
 
 // The Pickup & Drop choices the form needs beyond "what" and "where": when,
@@ -67,6 +69,9 @@ export function PickupOptions(p: Props) {
         </View>
       )}
 
+      {/* From a person nothing is bought, and who hands it over replaces the
+          store's order details (pickup-dropoff-modal asks for that). */}
+      {p.source !== 'PERSON' && (<>
       <Text style={s.label}>Paying for the order</Text>
       <Segmented
         options={[['PREPAID', 'Already paid — just collect'], ['BUY_FOR_ME', 'Buy it for me']]}
@@ -97,6 +102,7 @@ export function PickupOptions(p: Props) {
       {p.purchase === 'BUY_FOR_ME'
         ? <ShoppingListEditor items={p.items} onChange={p.onItemsChange} editable={p.editable} />
         : <PickupOrderDetails details={p.details} onChange={p.onDetailsChange} editable={p.editable} />}
+      </>)}
 
       <Text style={s.label}>Delivery instructions (optional)</Text>
       <TextInput

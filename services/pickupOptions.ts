@@ -3,6 +3,39 @@
 
 export type PickupPurchase = 'PREPAID' | 'BUY_FOR_ME';
 
+/** A store (an allowlisted business) or a person (any address — a friend's house). */
+export type PickupSource = 'STORE' | 'PERSON';
+
+/** A pickup from a person: the server's cap and list (GET /jobs/pickup-from-person). */
+export interface PersonPickupRules {
+  max_value: number;
+  banned: string;
+}
+
+export const DEFAULT_PERSON_PICKUP_RULES: PersonPickupRules = {
+  max_value: 500,
+  banned: 'alcohol, tobacco or vapes, cannabis, medication, weapons, cash, or anything illegal',
+};
+
+/** An ID number and at least one ID photo on the profile. The photos are
+ * saved as a JSON list, so removing them all leaves "[]" — that's none.
+ * Same rule as the server (customer_repo.has_id_on_file). */
+export function hasIdOnFile(profile: { id_number?: string | null; id_document_url?: string | null }): boolean {
+  const docs = (profile.id_document_url ?? '').trim();
+  return !!profile.id_number?.trim() && !!docs && docs !== '[]' && docs !== 'null';
+}
+
+/** Why a pickup from a person can't be posted yet, or null. Same rules as the server (app/domain/pickup.py). */
+export function personPickupError(
+  item: string, valueText: string, declared: boolean, rules: PersonPickupRules,
+): string | null {
+  if (!item.trim()) return 'Say what the item is — e.g. house keys, a phone charger.';
+  const value = parseLimit(valueText);
+  if (value === null || value > rules.max_value) return `Enter what it's worth — up to $${rules.max_value}.`;
+  if (!declared) return `Confirm it isn't ${rules.banned}.`;
+  return null;
+}
+
 export type PickupTiming =
   | { kind: 'ASAP' }
   | { kind: 'SCHEDULED'; at: Date | null };
@@ -75,6 +108,9 @@ export interface PickupDetails {
   order_number?: string;
   pickup_code?: string;
   store_contact?: string;
+  /** From a person: who hands it over (shown to the hired provider only). */
+  handover_name?: string;
+  handover_phone?: string;
 }
 
 export type IfUnavailable = 'SUBSTITUTE' | 'SKIP' | 'CALL';
