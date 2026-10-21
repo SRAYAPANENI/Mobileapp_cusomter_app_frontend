@@ -2,11 +2,13 @@ import { useAppAlert } from '@/components/app-alert';
 import { Colors, Fonts } from '@/constants/theme';
 import { SkoFyApi } from '@/services/api';
 import { GooglePlacesService, GooglePlaceSuggestion } from '@/services/google-places';
+import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
+import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import { Camera, CheckCircle2, Home, IdCard, MapPin, Package, ShieldAlert, Square, SquareCheck, Store, Video as VideoIcon, X } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
+import { Bookmark, Camera, ClipboardPaste, CheckCircle2, Home, IdCard, MapPin, Package, ShieldAlert, Square, SquareCheck, Store, Video as VideoIcon, X } from 'lucide-react-native';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Text, TextInput } from '@/components/scaled-text';
@@ -14,7 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PickupOptions } from '@/components/pickup-options';
 import {
   DEFAULT_PERSON_PICKUP_RULES, PersonPickupRules, PickupDetails, PickupPurchase, PickupSource, PickupTiming,
-  ShoppingItem, hasIdOnFile, newShoppingItem, parseLimit, personPickupError, pickupJobFields, purchaseError,
+  ShoppingItem, hasIdOnFile, looksLikeLink, newShoppingItem, parseLimit, personPickupError, pickupJobFields, purchaseError,
   shoppingListError, timingError,
 } from '@/services/pickupOptions';
 
@@ -37,6 +39,9 @@ interface Props {
 }
 
 type Phase = 'confirm' | 'posting' | 'success';
+
+/** A place saved on the customer's profile, with a pin. */
+type SavedAddress = { id: string; label: string; full_address: string; lat: number; lng: number };
 
 const SKILL_PROFESSION = 'Personal Errands';
 const SKILL_NAME = 'Pickup & Delivery Errands';
@@ -78,6 +83,16 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
   const [rules, setRules] = useState<PersonPickupRules>(DEFAULT_PERSON_PICKUP_RULES);
   // An ID on their profile — needed for a pickup from a person (null = still checking).
   const [idOnFile, setIdOnFile] = useState<boolean | null>(null);
+  // From a person: their saved places, one tap to use; and saving a new one.
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+  const [chosenSavedId, setChosenSavedId] = useState<string | null>(null);
+  const [saveForLater, setSaveForLater] = useState(false);
+  // The search that last finished with nothing (so it can say why), and the
+  // text a choice wrote into the box (so it doesn't search for it again).
+  const [noResultsFor, setNoResultsFor] = useState<string | null>(null);
+  const chosenTextRef = useRef<string | null>(null);
+  // A shared location link that couldn't be read, and why.
+  const [linkError, setLinkError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -90,6 +105,12 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
     setPickupDetails({}); setShoppingItems([newShoppingItem()]);
     setPersonItem(''); setValueText(''); setHandoverName(''); setHandoverPhone(''); setDeclared(false);
     setIdOnFile(null);
+    setSaveForLater(false);
+    (SkoFyApi.addresses.list() as Promise<any[]>)
+      .then((list) => setSavedAddresses((list ?? [])
+        .filter((a) => a.lat != null && a.lng != null)
+        .map((a) => ({ id: a.id, label: a.label, full_address: a.full_address, lat: a.lat, lng: a.lng }))))
+      .catch(() => setSavedAddresses([]));
     SkoFyApi.jobs.getPickupPlaceTypes().then(setAllowedPickupTypes).catch(() => {});
     SkoFyApi.jobs.getPersonPickupRules().then(setRules).catch(() => {});
     SkoFyApi.customers.getProfile()
@@ -103,6 +124,46 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
     setPickupQuery(''); setPickupSuggestions([]); setPickupTypeError(null);
     setPickupPlaceId(null); setPickupPlaceType(null);
     setPickupLat(null); setPickupLng(null);
+    setChosenSavedId(null); setNoResultsFor(null); setLinkError(null);
+    chosenTextRef.current = null;
+  };
+
+  // A pin from a shared link: shown as an address when the phone can name it.
+  const applySharedPin = async (lat: number, lng: number) => {
+    let text = `Shared location (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
+    try {
+      const [place] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+      const named = place && [place.name, place.street && place.street !== place.name ? place.street : null, place.city]
+        .filter(Boolean).join(', ');
+      if (named) text = `${named} (shared location)`;
+    } catch { /* the coordinates are enough */ }
+    chosenTextRef.current = text;
+    setPickupQuery(text);
+    setPickupPlaceId(null); setPickupPlaceType(null);
+    setPickupLat(lat); setPickupLng(lng);
+    setChosenSavedId(null);
+  };
+
+  const pasteLink = async () => {
+    const text = (await Clipboard.getStringAsync().catch(() => '')).trim();
+    if (!text) {
+      setLinkError('Nothing to paste — copy the location they sent you first.');
+      return;
+    }
+    chosenTextRef.current = null;
+    setPickupQuery(text);
+  };
+
+  // From a person: a saved place is the pickup, no search needed.
+  const chooseSaved = (a: SavedAddress) => {
+    const text = `${a.label} · ${a.full_address}`;
+    chosenTextRef.current = text;
+    setPickupQuery(text);
+    setPickupSuggestions([]); setPickupTypeError(null); setNoResultsFor(null);
+    setPickupPlaceId(null); setPickupPlaceType(null);
+    setPickupLat(a.lat); setPickupLng(a.lng);
+    setChosenSavedId(a.id);
+    setSaveForLater(false);
   };
 
   const chooseSource = (next: PickupSource) => {
@@ -129,7 +190,30 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
   };
 
   useEffect(() => {
-    if (pickupQuery.length < 2) { setPickupSuggestions([]); return; }
+    setNoResultsFor(null);
+    setLinkError(null);
+    if (pickupQuery.length < 2 || pickupQuery === chosenTextRef.current) {
+      setPickupSuggestions([]); setPickupSearching(false); return;
+    }
+    if (looksLikeLink(pickupQuery)) {
+      setPickupSuggestions([]);
+      if (source === 'STORE') {
+        setLinkError('Location links work for a pickup from a person — or search for the store by name.');
+        return;
+      }
+      let stale = false;
+      setPickupSearching(true);
+      SkoFyApi.jobs.resolveLocationLink(pickupQuery)
+        .then(async (found) => {
+          if (stale) return;
+          if (found.lat != null && found.lng != null) await applySharedPin(found.lat, found.lng);
+          else if (found.query) setPickupQuery(found.query); // a named place: search for it
+        })
+        .catch((e: any) => { if (!stale) setLinkError(e?.message || "Couldn't read that link. Type the address instead."); })
+        .finally(() => { if (!stale) setPickupSearching(false); });
+      return () => { stale = true; };
+    }
+    const controller = new AbortController();
     const handle = setTimeout(async () => {
       setPickupSearching(true);
       try {
@@ -138,18 +222,28 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
           : undefined;
         // A store: only allowlisted businesses. A person: any address.
         const results = await GooglePlacesService.searchAddress(
-          pickupQuery, undefined, bias, source === 'STORE' ? allowedPickupTypes : undefined,
+          pickupQuery, controller.signal, bias, source === 'STORE' ? allowedPickupTypes : undefined,
         );
+        if (controller.signal.aborted) return; // a newer search is on its way
         setPickupSuggestions(results);
-      } catch { setPickupSuggestions([]); }
-      setPickupSearching(false);
+        setNoResultsFor(results.length === 0 ? pickupQuery : null);
+      } catch (e) {
+        if (controller.signal.aborted) return;
+        if (__DEV__) console.warn('Pickup address search failed:', e);
+        setPickupSuggestions([]);
+        setNoResultsFor(pickupQuery);
+      } finally {
+        if (!controller.signal.aborted) setPickupSearching(false);
+      }
     }, 350);
-    return () => clearTimeout(handle);
+    return () => { clearTimeout(handle); controller.abort(); };
   }, [pickupQuery, dropoffLat, dropoffLng, allowedPickupTypes, source]);
 
   const handlePickupSelect = async (item: GooglePlaceSuggestion) => {
     setPickupSuggestions([]);
+    chosenTextRef.current = item.description;
     setPickupQuery(item.description);
+    setChosenSavedId(null);
     try {
       const details = await GooglePlacesService.getPlaceDetails(item.place_id);
       setPickupPlaceId(item.place_id);
@@ -248,6 +342,13 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
         posted_via: 'MANUAL',
         images: imageUrls,
       });
+      if (fromPerson && saveForLater && !chosenSavedId && pickupLat != null && pickupLng != null) {
+        SkoFyApi.addresses.add({
+          label: (handoverName.trim() ? `${handoverName.trim()}'s place` : 'Pickup place').slice(0, 50),
+          full_address: pickupQuery.trim(),
+          lat: pickupLat, lng: pickupLng,
+        }).catch(() => { /* the job is posted; saving the place is a nice-to-have */ });
+      }
       setPhase('success');
       setTimeout(() => onPosted(), 1400);
     } catch (e: any) {
@@ -304,10 +405,17 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
                 {fromPerson ? <Home size={16} color="#6B7280" /> : <Store size={16} color="#6B7280" />}
                 <TextInput
                   style={s.searchInput}
-                  placeholder={fromPerson ? 'Search for an address' : 'Search for a business'}
+                  placeholder={fromPerson ? 'Search an address, or paste a location link' : 'Search for a business'}
                   placeholderTextColor="#9CA3AF"
                   value={pickupQuery}
-                  onChangeText={(t) => { setPickupQuery(t); setPickupTypeError(null); }}
+                  onChangeText={(t) => {
+                    setPickupQuery(t); setPickupTypeError(null);
+                    if (chosenTextRef.current && t !== chosenTextRef.current) {
+                      chosenTextRef.current = null;
+                      setPickupLat(null); setPickupLng(null); setPickupPlaceId(null); setPickupPlaceType(null);
+                      setChosenSavedId(null);
+                    }
+                  }}
                   onBlur={() => { setTimeout(() => setPickupSuggestions([]), 200); }}
                   editable={phase === 'confirm'}
                 />
@@ -323,7 +431,53 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
                   ))}
                 </View>
               )}
+              {!!linkError && <Text style={s.fieldError}>{linkError}</Text>}
+              {fromPerson && !hasPickupPoint && phase === 'confirm' && (
+                <TouchableOpacity style={s.pasteRow} onPress={pasteLink}>
+                  <ClipboardPaste size={14} color="#0EA5E9" />
+                  <Text style={s.pasteText}>Paste a location link</Text>
+                  <Text style={s.pasteHint}>they shared on WhatsApp or Google Maps</Text>
+                </TouchableOpacity>
+              )}
+              {!!noResultsFor && !pickupSearching && pickupSuggestions.length === 0 && (
+                source === 'STORE' ? (
+                  <TouchableOpacity onPress={() => { const q = pickupQuery; chooseSource('PERSON'); setPickupQuery(q); }}>
+                    <Text style={s.hintText}>
+                      No stores match. Picking up from a friend or family? <Text style={s.hintLink}>Switch to “From a person”</Text>
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={s.hintText}>No matches — try the street and city, e.g. “12 Oak St, Dallas”.</Text>
+                )
+              )}
               {pickupTypeError && <Text style={s.fieldError}>{pickupTypeError}</Text>}
+
+              {fromPerson && savedAddresses.length > 0 && (
+                <View style={s.savedRow}>
+                  {savedAddresses.map((a) => {
+                    const on = chosenSavedId === a.id;
+                    return (
+                      <TouchableOpacity
+                        key={a.id}
+                        style={[s.savedChip, on && s.savedChipOn]}
+                        onPress={() => chooseSaved(a)}
+                        disabled={phase !== 'confirm'}
+                      >
+                        <Bookmark size={13} color={on ? '#111827' : '#6B7280'} />
+                        <Text style={[s.savedText, on && s.savedTextOn]} numberOfLines={1}>{a.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+              {fromPerson && hasPickupPoint && !chosenSavedId && (
+                <TouchableOpacity style={s.saveRow} onPress={() => setSaveForLater((v) => !v)} disabled={phase !== 'confirm'}>
+                  {saveForLater ? <SquareCheck size={18} color="#10B981" /> : <Square size={18} color="#6B7280" />}
+                  <Text style={s.saveText}>
+                    Save this address{handoverName.trim() ? ` as “${handoverName.trim()}'s place”` : ''} for next time
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             <View style={s.locationRow}>
@@ -557,6 +711,22 @@ const s = StyleSheet.create({
   suggestionRow: { paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
   suggestionMainText: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: '#111827' },
   suggestionSecondaryText: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppins, color: '#6B7280', marginTop: 2 },
+  pasteRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 6 },
+  pasteText: { fontSize: 12.5, lineHeight: 17, fontFamily: Fonts.poppinsBold, color: '#0EA5E9' },
+  pasteHint: { fontSize: 11.5, lineHeight: 16, fontFamily: Fonts.poppins, color: '#6B7280' },
+  hintText: { fontSize: 11.5, lineHeight: 16, fontFamily: Fonts.poppins, color: '#6B7280', marginTop: 4 },
+  hintLink: { fontFamily: Fonts.poppinsBold, color: '#0EA5E9' },
+  savedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  savedChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: '48%',
+    paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999,
+    borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#FFFFFF',
+  },
+  savedChipOn: { borderColor: '#111827', backgroundColor: '#FEF3C7' },
+  savedText: { flexShrink: 1, fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsSemiBold, color: '#374151' },
+  savedTextOn: { color: '#111827' },
+  saveRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  saveText: { flex: 1, fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppins, color: '#374151' },
   fieldError: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppinsSemiBold, color: '#EF4444', marginTop: 4 },
 
   idNotice: {

@@ -17,6 +17,12 @@ export const DEFAULT_PERSON_PICKUP_RULES: PersonPickupRules = {
   banned: 'alcohol, tobacco or vapes, cannabis, medication, weapons, cash, or anything illegal',
 };
 
+/** Pasted text that holds a link — a shared location, read by the server
+ * (POST /jobs/pickup-location-link) instead of searched for. */
+export function looksLikeLink(text: string): boolean {
+  return /https?:\/\//i.test(text);
+}
+
 /** An ID number and at least one ID photo on the profile. The photos are
  * saved as a JSON list, so removing them all leaves "[]" — that's none.
  * Same rule as the server (customer_repo.has_id_on_file). */
