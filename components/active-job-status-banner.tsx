@@ -1,5 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { router, useLocalSearchParams, usePathname } from 'expo-router';
+import { router, useGlobalSearchParams, usePathname } from 'expo-router';
 import { Activity, ChevronRight, X } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, PanResponder, StyleSheet, View, useWindowDimensions } from 'react-native';
@@ -65,7 +65,9 @@ export function ActiveJobStatusBanner() {
   // otherwise default to, overlapping it. A DIFFERENT active job (the
   // customer hired more than one provider at once) must still surface here
   // even while one of these screens is open for the other one.
-  const { jobId: viewedJobId } = useLocalSearchParams<{ jobId?: string }>();
+  // Global, not local: this lives in the root layout, whose own params are
+  // always empty — the open screen's jobId is only in the global ones.
+  const { jobId: viewedJobId } = useGlobalSearchParams<{ jobId?: string }>();
   const allBanners = useActiveJobStatus();
   const banners = (pathname === '/track-provider' || pathname === '/job-details')
     ? allBanners.filter(b => b.jobId !== viewedJobId)
@@ -101,19 +103,22 @@ export function ActiveJobStatusBanner() {
   // kept landing on top of whatever screen-specific content lived there —
   // the greeting name, then the home screen's voice-hero card and its
   // mascot — because that content isn't fixed-height across screens/states.
-  const [fabPos, setFabPos] = useState(() => {
-    const initial = {
-      x: width - CIRCLE_SIZE - 16,
-      y: clamp(height - CIRCLE_SIZE - insets.bottom - 110, insets.top + 8, height - CIRCLE_SIZE - insets.bottom - 8),
-    };
-    console.log('[DEBUG FAB] initial fabPos:', JSON.stringify(initial), 'width:', width, 'height:', height, 'insets:', JSON.stringify(insets));
-    return initial;
-  });
-  // Mirrors `fabPos` for the same stale-closure reason as viewStateRef —
-  // needed inside onPanResponderRelease to know which list row a tap landed
-  // on (the row "buttons" aren't real Touchables — see note there).
-  const fabPosRef = useRef(fabPos);
-  useEffect(() => { fabPosRef.current = fabPos; }, [fabPos]);
+  const [fabPos, setFabPos] = useState(() => ({
+    x: width - CIRCLE_SIZE - 16,
+    y: clamp(height - CIRCLE_SIZE - insets.bottom - 110, insets.top + 8, height - CIRCLE_SIZE - insets.bottom - 8),
+  }));
+  // The live screen size and safe-area insets, and where the box is actually
+  // drawn (fabPos clamped to the screen) — read inside the gesture callbacks,
+  // which are created once and would otherwise see the first render's values.
+  // Moves and resizes start from the drawn spot, so the box never jumps.
+  const renderPosRef = useRef(fabPos);
+  const screenRef = useRef({ width, height, top: insets.top, bottom: insets.bottom });
+  screenRef.current = { width, height, top: insets.top, bottom: insets.bottom };
+  // Where the box actually is on screen, measured when a touch starts — a
+  // tap on the list is matched to a row from this, in the same coordinates
+  // as the touch itself.
+  const boxRef = useRef<View>(null);
+  const boxPageYRef = useRef<number | null>(null);
   // Transient offset applied only while a drag gesture is in progress —
   // fabPos itself only updates once, on release, to the final settled spot.
   const dragOffset = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
@@ -182,6 +187,8 @@ export function ActiveJobStatusBanner() {
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: () => {
         dragDistanceRef.current = 0;
+        boxPageYRef.current = null;
+        boxRef.current?.measure((_x, _y, _w, _h, _pageX, pageY) => { boxPageYRef.current = pageY; });
       },
       onPanResponderMove: (_, gesture) => {
         dragDistanceRef.current = Math.abs(gesture.dx) + Math.abs(gesture.dy);
@@ -195,13 +202,19 @@ export function ActiveJobStatusBanner() {
         // circle/pill/list grows or shrinks from the same spot instead of
         // jumping — shared by every transition below (cycling size, tapping
         // a list row, or dismissing the list), not just the main cycle.
+        const { width: w, height: h, top, bottom } = screenRef.current;
         const transitionTo = (nextState: ViewState) => {
           const next = boxSizeFor(nextState, bannersRef.current.length);
-          setFabPos(prev => ({
-            x: clamp(prev.x + cur.w - next.w, 8, width - next.w - 8),
-            y: clamp(prev.y + (cur.h - next.h) / 2, insets.top + 8, height - next.h - insets.bottom - 8),
-          }));
+          const at = renderPosRef.current;
+          setFabPos({
+            x: clamp(at.x + cur.w - next.w, 8, w - next.w - 8),
+            y: clamp(at.y + (cur.h - next.h) / 2, top + 8, h - next.h - bottom - 8),
+          });
           setViewState(nextState);
+        };
+        const openJob = (jobId: string) => {
+          transitionTo('circle');
+          router.push({ pathname: '/track-provider', params: { jobId } });
         };
         if (dragDistanceRef.current < DRAG_THRESHOLD) {
           userToggledRef.current = true;
@@ -211,13 +224,13 @@ export function ActiveJobStatusBanner() {
           // apart everywhere else here), so a tap landing on a specific row
           // has to be resolved by position instead of a nested onPress.
           if (wasState === 'list') {
-            const relativeY = gesture.y0 - fabPosRef.current.y;
+            const boxTop = boxPageYRef.current;
+            const relativeY = boxTop === null ? -1 : gesture.y0 - boxTop;
             if (relativeY >= LIST_HEADER_HEIGHT) {
               const rowIndex = Math.floor((relativeY - LIST_HEADER_HEIGHT) / LIST_ROW_HEIGHT);
               const tapped = bannersRef.current[rowIndex];
               if (tapped) {
-                transitionTo('circle');
-                router.push({ pathname: '/track-provider', params: { jobId: tapped.jobId } });
+                openJob(tapped.jobId);
                 return;
               }
             }
@@ -226,36 +239,45 @@ export function ActiveJobStatusBanner() {
             return;
           }
 
-          // circle -> pill -> list (only if there's more than one job to
-          // show — with just one, the pill already shows everything there
-          // is) -> circle. A single-job case just toggles circle <-> pill,
-          // same as before.
-          transitionTo(wasState === 'circle' ? 'pill' : (bannersRef.current.length > 1 ? 'list' : 'circle'));
+          // circle -> pill (what's happening) -> the job itself; with more
+          // than one job the pill opens the list instead, and a row there
+          // opens that job.
+          if (wasState === 'circle') {
+            transitionTo('pill');
+          } else if (bannersRef.current.length > 1) {
+            transitionTo('list');
+          } else if (bannersRef.current[0]) {
+            openJob(bannersRef.current[0].jobId);
+          } else {
+            transitionTo('circle');
+          }
           return;
         }
         userToggledRef.current = true;
-        setFabPos(prev => ({
-          x: clamp(prev.x + gesture.dx, 8, width - cur.w - 8),
-          y: clamp(prev.y + gesture.dy, insets.top + 8, height - cur.h - insets.bottom - 8),
-        }));
+        const at = renderPosRef.current;
+        setFabPos({
+          x: clamp(at.x + gesture.dx, 8, w - cur.w - 8),
+          y: clamp(at.y + gesture.dy, top + 8, h - cur.h - bottom - 8),
+        });
       },
     })
   ).current;
 
-  if (!banners.length || pathname === '/track-provider') return null;
+  if (!banners.length) return null;
 
   const primary = banners[0];
   const { w: boxW, h: boxH } = boxSizeFor(viewState, banners.length);
-  console.log('[DEBUG FAB] render — viewState:', viewState, 'fabPos:', JSON.stringify(fabPos), 'boxW/H:', boxW, boxH, 'pathname:', pathname);
-  // Re-clamped against the LIVE width/height on every render (unlike the
-  // stale width/height captured inside the PanResponder's closures) — a
-  // real safety net if fabPos was ever set for a different box size or the
-  // window resizes (e.g. orientation change).
+  // Re-clamped against the live screen on every render — a safety net if
+  // fabPos was set for a different box size or the window resized (e.g.
+  // orientation change). Gestures continue from this drawn spot.
   const renderX = clamp(fabPos.x, 8, width - boxW - 8);
   const renderY = clamp(fabPos.y, insets.top + 8, height - boxH - insets.bottom - 8);
+  renderPosRef.current = { x: renderX, y: renderY };
 
   return (
     <Animated.View
+      ref={boxRef}
+      collapsable={false}
       style={[
         styles.touchArea,
         { left: renderX, top: renderY, width: boxW, height: boxH },

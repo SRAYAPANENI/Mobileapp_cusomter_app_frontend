@@ -14,7 +14,9 @@ const POLL_MS = 10000;
 // it (pay the fee, code ready, invoice raised/negotiated). IN_PROGRESS and
 // beyond aren't included: once real work has started there's no comparable
 // "waiting on you" moment that needs a global nudge.
-const TRACKED_STATUSES = ['ACCEPTED', 'INSPECTING', 'INVOICE_PENDING'];
+// IN_PROGRESS too: the provider can ask to add work mid-job, which waits on
+// the customer (docs/MONEY_RULES_DESIGN.md §11).
+const TRACKED_STATUSES = ['ACCEPTED', 'INSPECTING', 'INVOICE_PENDING', 'IN_PROGRESS'];
 
 async function describeJob(job: any): Promise<ActiveJobBanner | null> {
   let message = '';
@@ -37,6 +39,11 @@ async function describeJob(job: any): Promise<ActiveJobBanner | null> {
     else if (inv.status === 'COUNTERED') message = 'Waiting for your provider to respond to your offer';
     else if (inv.status === 'COUNTER_REJECTED') message = 'Provider declined your offer — action needed';
     else if (inv.status === 'ACCEPTED') message = 'Invoice accepted — pay now to start the job';
+  } else if (job.status === 'IN_PROGRESS') {
+    const extra = await SkoFyApi.jobs.extraWork(job.id).catch(() => null);
+    message = extra && (extra.status === 'PROPOSED' || extra.status === 'ACCEPTED')
+      ? `Your provider asks to add work — $${extra.amount.toFixed(2)}, tap to review`
+      : 'Work in progress';
   }
   return message ? { jobId: job.id, title: job.title || 'Your job', message } : null;
 }
