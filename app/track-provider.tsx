@@ -319,7 +319,10 @@ export default function TrackProviderScreen() {
   // placeholder data (jobStatus stays 'ACCEPTED', provider stays null)
   // forever, with no indication anything is wrong.
   const [jobGone, setJobGone] = useState(false);
-  const status = STATUS_LABELS[jobStatus] ?? jobStatus;
+  // Whether the provider travels to the customer — not for work at their own
+  // place or online (unknown until the job loads: assume they do).
+  const travels = steps.length === 0 || steps.includes('TRACK_EN_ROUTE');
+  const status = jobStatus === 'ACCEPTED' && !travels ? 'Booked' : STATUS_LABELS[jobStatus] ?? jobStatus;
   const orderCollected = jobKind === 'PICKUP_DROPOFF' && !!pickupConfirmedAt;
 
   useEffect(() => { jobStatusRef.current = jobStatus; }, [jobStatus]);
@@ -1063,7 +1066,7 @@ export default function TrackProviderScreen() {
           keyboardShouldPersistTaps="handled"
         >
           {/* Arrival Time */}
-          <View style={styles.arrivalRow}>
+          {travels && <View style={styles.arrivalRow}>
             <View>
               <ThemedText style={styles.arrivingLabel}>Arriving in</ThemedText>
               <ThemedText style={styles.etaText}>{eta}</ThemedText>
@@ -1071,9 +1074,9 @@ export default function TrackProviderScreen() {
             <View style={styles.distanceBadge}>
               <ThemedText style={styles.distanceText}>{distance}</ThemedText>
             </View>
-          </View>
+          </View>}
 
-          <View style={styles.divider} />
+          {travels && <View style={styles.divider} />}
 
           {/* Provider Profile — tap to view their full profile (work proof,
               reviews) read-only; hiring isn't offered here since they're

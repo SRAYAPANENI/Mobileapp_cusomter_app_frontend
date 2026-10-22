@@ -284,6 +284,8 @@ export default function ApplicantsScreen() {
   // cancelled elsewhere. Distinct from jobGone: the applicants themselves
   // are still real, just no longer actionable (hiring would 400).
   const [jobStatus, setJobStatus] = useState<string | null>(null);
+  // Priced up front (per hour/day/night): hiring books and pays the total.
+  const [paysUpfront, setPaysUpfront] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
 
@@ -317,6 +319,7 @@ export default function ApplicantsScreen() {
     SkoFyApi.jobs.get(jobId)
       .then((job: any) => {
         setJobStatus(job?.status ?? null);
+        setPaysUpfront((job?.steps ?? []).includes('PAY_UPFRONT'));
         const data = job?.applicants;
         // A real empty array (genuinely zero applicants yet) or a fetch
         // failure both used to fall back to DUMMY_APPLICANTS — fake, named
@@ -380,10 +383,11 @@ export default function ApplicantsScreen() {
       // A job priced up front (per night, per hour…): book it — pay the
       // agreed total into escrow — instead of a visiting fee.
       const hired = applicants.find((a: any) => (a.applicationId ?? a.id) === applicationId) as any;
-      if (hired?.price != null) {
+      if (paysUpfront) {
         const booking = await payBooking(jobId);
         setFeeStatusMessage(
-          booking.status === 'success' ? `Booked — $${hired.price.toFixed(2)} is held safely until the job is done.`
+          booking.status === 'success'
+            ? `Booked — ${hired?.price != null ? `$${hired.price.toFixed(2)}` : 'your payment'} is held safely until the job is done.`
           : booking.status === 'cancelled' ? 'Book and pay from the job screen to confirm it.'
           : booking.message,
         );

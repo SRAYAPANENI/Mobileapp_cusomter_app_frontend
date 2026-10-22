@@ -22,8 +22,8 @@ interface Props {
 }
 
 // Book the same provider again on a schedule (docs/MONEY_RULES_DESIGN.md §13):
-// each visit is booked for you a couple of days ahead, and a quote at or
-// under your limit is accepted and paid from your saved card.
+// each visit is booked for you a couple of days ahead, and a quote or a
+// booking price at or under your limit is paid from your saved card.
 export function RepeatBookingSheet({ job, onClose, onMessage }: Props) {
   const [cadence, setCadence] = useState<'WEEKLY' | 'BIWEEKLY' | 'MONTHLY'>('WEEKLY');
   const [day, setDay] = useState<{ label: string; iso: string } | null>(null);
@@ -82,12 +82,12 @@ export function RepeatBookingSheet({ job, onClose, onMessage }: Props) {
               <ThemedText style={[s.fieldText, !day && { color: '#9CA3AF' }]}>{time?.label ?? 'Time'}</ThemedText>
             </TouchableOpacity>
           </View>
-          <ThemedText style={s.label}>Accept a quote automatically up to ($)</ThemedText>
+          <ThemedText style={s.label}>Pay automatically up to ($)</ThemedText>
           <TextInput style={s.input} keyboardType="decimal-pad" value={upTo} onChangeText={setUpTo}
-            placeholder="Leave empty to approve each quote yourself" placeholderTextColor="#9CA3AF" />
+            placeholder="Leave empty to approve each price yourself" placeholderTextColor="#9CA3AF" />
           <ThemedText style={s.muted}>
-            Each visit is booked for you two days ahead. The visiting fee — and a quote at or under this amount — is
-            paid from your saved card, and still held until the work is done. Pause or stop any time.
+            Each visit is booked for you two days ahead. Any visiting fee, and a quote or booking price at or under this
+            amount, is paid from your saved card and still held until the work is done. Pause or stop any time.
           </ThemedText>
           <View style={s.row}>
             <TouchableOpacity style={s.secondary} onPress={onClose} disabled={sending}>

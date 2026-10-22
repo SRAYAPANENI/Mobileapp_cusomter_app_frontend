@@ -2,7 +2,7 @@ import { DatePickerModal } from '@/components/date-picker-modal';
 import { ThemedText } from '@/components/themed-text';
 import { TimePickerModal } from '@/components/time-picker-modal';
 import { Fonts } from '@/constants/theme';
-import { HowLong, InCare, JobChoice, Where, normalize, priceHint } from '@/services/job-shape';
+import { HowLong, InCare, JobChoice, Where, bookedForSetTime, normalize, priceHint } from '@/services/job-shape';
 import { fromParts } from '@/services/schedule-slots';
 import { CalendarClock, Home, MapPin, Sparkles } from 'lucide-react-native';
 import React, { useState } from 'react';
@@ -58,7 +58,8 @@ export function JobShapePicker({ value, onChange }: Props) {
 
       <ThemedText style={s.question}>How long?</ThemedText>
       <View style={s.row}>
-        {HOW_LONG.filter((h) => !(value.where === 'ONLINE' && h.value === 'DAYS')).map((h) => (
+        {HOW_LONG.filter((h) => !(value.where === 'ONLINE' && h.value === 'DAYS')
+          && !(h.value === 'ONCE' && bookedForSetTime(value))).map((h) => (
           <TouchableOpacity key={h.value} style={[s.chip, value.howLong === h.value && s.chipOn]} onPress={() => set({ howLong: h.value })}>
             <ThemedText style={[s.chipText, value.howLong === h.value && s.chipTextOn]}>{h.label}</ThemedText>
           </TouchableOpacity>

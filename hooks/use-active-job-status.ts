@@ -20,7 +20,16 @@ const TRACKED_STATUSES = ['ACCEPTED', 'INSPECTING', 'INVOICE_PENDING', 'IN_PROGR
 
 async function describeJob(job: any): Promise<ActiveJobBanner | null> {
   let message = '';
-  if (job.status === 'ACCEPTED') {
+  if (job.status === 'ACCEPTED' && (job.steps ?? []).includes('PAY_UPFRONT')) {
+    // Priced up front (CarePanel): book and pay, then a code at the start.
+    const paid = await SkoFyApi.payments.getStatus(job.id, 'JOB_COST').catch(() => null);
+    if (paid?.status !== 'HELD') {
+      message = 'Book and pay to confirm your provider';
+    } else {
+      const code = await SkoFyApi.jobs.checkInCode(job.id).catch(() => null);
+      message = code?.code ? 'Your check-in code is ready — tap to view' : 'Booked — see you at the start';
+    }
+  } else if (job.status === 'ACCEPTED') {
     const feeStatus = await SkoFyApi.payments.getStatus(job.id, 'INSPECTION_FEE').catch(() => null);
     if (feeStatus?.status !== 'HELD') {
       message = 'Pay the visiting fee to continue';

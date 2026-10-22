@@ -213,6 +213,7 @@ export default function NotificationsScreen() {
         case 'delivery_code':
         case 'job_update':
         case 'care_update':
+        case 'booking_pay':
           openJobScreen('/track-provider', item.job_id);
           break;
         case 'job_expired':

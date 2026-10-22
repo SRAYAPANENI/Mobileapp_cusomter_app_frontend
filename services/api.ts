@@ -911,6 +911,9 @@ export const SkoFyApi = {
     checkInCode: async (jobId: string): Promise<{ code: string | null; expires_in_seconds: number | null }> =>
       request(`/jobs/${jobId}/check-in/code`) as any,
     careRecord: async (jobId: string): Promise<CareRecord> => request(`/jobs/${jobId}/care-updates`) as any,
+    /** At the provider's place, nobody to check you in — reported from there. */
+    reportProviderAbsent: async (jobId: string, lat: number, lng: number): Promise<{ message: string; terms: string }> =>
+      request(`/jobs/${jobId}/provider-absent`, { method: 'POST', body: JSON.stringify({ lat, lng }) }) as any,
     startTip: async (jobId: string, amount: number): Promise<ChargeIntent> =>
       request(`/jobs/${jobId}/tip`, { method: 'POST', body: JSON.stringify({ amount }) }) as any,
     confirmTip: async (jobId: string) => request(`/jobs/${jobId}/tip/confirm`, { method: 'POST' }),

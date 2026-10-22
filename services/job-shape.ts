@@ -32,6 +32,13 @@ const VENUE: Record<Where, JobShapePayload['venue']> = {
   MY_PLACE: 'CUSTOMER_PLACE', THEIR_PLACE: 'PROVIDER_PLACE', ONLINE: 'ONLINE',
 };
 
+/** Work at their place, or with something left in their care, is booked for
+ * a set time and priced up front — not one visit with a quote (the server
+ * refuses that pairing: app/services/job_capability.py). */
+export function bookedForSetTime(choice: Pick<JobChoice, 'where' | 'inCare'>): boolean {
+  return choice.where === 'THEIR_PLACE' || choice.inCare !== 'NONE';
+}
+
 /** The choices still allowed with this one changed — online work has nothing
  * in care and no stays; a home can only be looked after at your place. */
 export function normalize(choice: JobChoice): JobChoice {
@@ -41,6 +48,7 @@ export function normalize(choice: JobChoice): JobChoice {
     if (next.howLong === 'DAYS') next.howLong = 'HOURS';
   }
   if (next.inCare === 'HOME' && next.where !== 'MY_PLACE') next.inCare = 'NONE';
+  if (next.howLong === 'ONCE' && bookedForSetTime(next)) next.howLong = 'HOURS';
   if (next.howLong === 'ONCE') { next.startISO = null; next.endISO = null; }
   return next;
 }
@@ -58,6 +66,10 @@ export function shapeFor(choice: JobChoice, now: Date = new Date()): { shape: Jo
   const end = new Date(choice.endISO);
   if (start.getTime() < now.getTime() - 2 * 60 * 1000) return { error: 'The start has already passed — choose a later one.' };
   if (end.getTime() <= start.getTime()) return { error: 'The end must be after the start.' };
+  // The server's limits (app/domain/job_shape.py _LONGEST).
+  const hours = (end.getTime() - start.getTime()) / 3600000;
+  if (choice.howLong === 'HOURS' && hours > 24) return { error: "A few hours can't run past a day — choose “Over days” instead." };
+  if (choice.howLong === 'DAYS' && hours > 90 * 24) return { error: 'A stay can be up to 90 days.' };
   if (choice.howLong === 'HOURS') {
     return { shape: { venue, timing: 'WINDOW', custody: choice.inCare, pricing_unit: 'HOUR', ends_at: end.toISOString() } };
   }

@@ -3,11 +3,13 @@ import { Fonts } from '@/constants/theme';
 import { useHirePayment } from '@/hooks/use-hire-payment';
 import { CareRecord, SkoFyApi } from '@/services/api';
 import { Image } from 'expo-image';
-import { Camera, KeyRound, MapPin } from 'lucide-react-native';
+import * as Location from 'expo-location';
+import { Camera, DoorOpen, KeyRound, MapPin } from 'lucide-react-native';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 const POLL_MS = 5000;
+const HOST_WAIT_MINUTES = 15; // settings.HOST_WAIT_MINUTES
 
 interface Props {
   jobId: string;
@@ -26,6 +28,7 @@ export function CarePanel({ jobId, onMessage }: Props) {
   const [code, setCode] = useState<string | null>(null);
   const [record, setRecord] = useState<CareRecord | null>(null);
   const [paying, setPaying] = useState(false);
+  const [reporting, setReporting] = useState(false);
 
   const load = useCallback(async () => {
     const j: any = await SkoFyApi.jobs.get(jobId).catch(() => null);
@@ -66,6 +69,25 @@ export function CarePanel({ jobId, onMessage }: Props) {
     load();
   };
 
+  // Nobody to check you in at their place, after the wait: called off, all back.
+  const hostLate = atTheirPlace && paid && job.status === 'ACCEPTED' && !!job.scheduled_at
+    && Date.now() >= new Date(job.scheduled_at).getTime() + HOST_WAIT_MINUTES * 60000;
+  const reportNobodyHere = async () => {
+    setReporting(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') throw new Error("Allow location — this only counts at the provider's place.");
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const result = await SkoFyApi.jobs.reportProviderAbsent(jobId, loc.coords.latitude, loc.coords.longitude);
+      onMessage('success', 'Booking cancelled', result.terms ?? result.message);
+      load();
+    } catch (err: any) {
+      onMessage('error', 'Not sent', err?.message ?? 'Please try again.');
+    } finally {
+      setReporting(false);
+    }
+  };
+
   return (
     <View style={s.wrap}>
       {job.status === 'ACCEPTED' && price && !paid && (
@@ -73,6 +95,11 @@ export function CarePanel({ jobId, onMessage }: Props) {
           <ThemedText style={s.title}>Book it</ThemedText>
           <ThemedText style={s.big}>{price.text}</ThemedText>
           <ThemedText style={s.muted}>You pay now; it's held safely and only paid to your provider when the job is done.</ThemedText>
+          {job.pay_by && (
+            <ThemedText style={s.warn}>
+              Pay by {new Date(job.pay_by).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} to keep this booking — after that your provider is freed for others.
+            </ThemedText>
+          )}
           <TouchableOpacity style={s.primary} onPress={book} disabled={paying}>
             {paying ? <ActivityIndicator color="#111827" /> : <ThemedText style={s.primaryText}>Book and pay ${price.total.toFixed(2)}</ThemedText>}
           </TouchableOpacity>
@@ -105,6 +132,12 @@ export function CarePanel({ jobId, onMessage }: Props) {
             <ThemedText style={s.muted}>
               {atTheirPlace ? "When you arrive, your provider asks for a code — it'll show here." : "When your provider arrives, they'll ask for a code — it'll show here."}
             </ThemedText>
+          )}
+          {hostLate && (
+            <TouchableOpacity style={s.absent} onPress={reportNobodyHere} disabled={reporting}>
+              {reporting ? <ActivityIndicator color="#B91C1C" /> : <DoorOpen size={16} color="#B91C1C" />}
+              <ThemedText style={s.absentText}>I'm here and nobody's answering</ThemedText>
+            </TouchableOpacity>
           )}
         </View>
       )}
@@ -163,6 +196,7 @@ const s = StyleSheet.create({
   big: { fontSize: 18, lineHeight: 24, fontFamily: Fonts.poppinsBold, color: '#065F46' },
   body: { fontSize: 13.5, lineHeight: 19, fontFamily: Fonts.poppins, color: '#111827' },
   muted: { fontSize: 12.5, lineHeight: 18, fontFamily: Fonts.poppins, color: '#6B7280' },
+  warn: { fontSize: 12.5, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: '#92400E' },
   primary: { paddingVertical: 13, borderRadius: 12, alignItems: 'center', backgroundColor: '#FFCE48', marginTop: 4 },
   primaryText: { fontSize: 14.5, lineHeight: 20, fontFamily: Fonts.poppinsBold, color: '#111827' },
   codeBox: { alignItems: 'center', gap: 4, padding: 12, borderRadius: 12, backgroundColor: '#FFFBEB' },
@@ -170,5 +204,7 @@ const s = StyleSheet.create({
   code: { fontSize: 30, lineHeight: 38, letterSpacing: 8, fontFamily: Fonts.poppinsBold, color: '#111827' },
   update: { gap: 6, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
   when: { fontSize: 11.5, lineHeight: 15, fontFamily: Fonts.poppinsSemiBold, color: '#6B7280' },
+  absent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: '#FECACA', backgroundColor: '#FEF2F2' },
+  absentText: { fontSize: 13.5, lineHeight: 18, fontFamily: Fonts.poppinsBold, color: '#B91C1C' },
   photo: { width: 96, height: 96, borderRadius: 10, marginRight: 8, backgroundColor: '#F3F4F6' },
 });

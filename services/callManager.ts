@@ -613,6 +613,8 @@ const JOB_UPDATE_ROUTES: Record<string, JobUpdateRoute> = {
   delivery_code: '/track-provider',
   job_update: '/track-provider',
   care_update: '/track-provider',
+  // Hired but not paid: book before the provider is freed (MONEY_RULES §14).
+  booking_pay: '/track-provider',
 };
 
 async function showJobUpdateNotification(jobId: string, title: string, body: string, route: JobUpdateRoute) {
