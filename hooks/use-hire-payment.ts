@@ -234,5 +234,11 @@ export function useHirePayment() {
     'Failed to send the tip. Please try again.',
   );
 
-  return { hireApplicant, payInspectionFee, payGoodsHold, payInvoice, payExtraWork, payTip };
+  /** A job priced up front: pay the agreed price to book it. */
+  const payBooking = (jobId: string) => payAndConfirm(
+    () => SkoFyApi.jobs.payBooking(jobId), () => SkoFyApi.jobs.confirmBooking(jobId),
+    'Failed to book. Please try again.',
+  );
+
+  return { hireApplicant, payInspectionFee, payGoodsHold, payInvoice, payExtraWork, payTip, payBooking };
 }

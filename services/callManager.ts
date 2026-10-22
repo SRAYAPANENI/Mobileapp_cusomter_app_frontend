@@ -607,6 +607,12 @@ const JOB_UPDATE_ROUTES: Record<string, JobUpdateRoute> = {
   // A held visiting fee decided on the evidence, a dispute past its deadline (§5).
   visit_decided: '/track-provider',
   dispute_overdue: '/track-provider',
+  // Priced up front / in care (JOB_SHAPE_DESIGN phase 4): the code to show,
+  // check-in and hand-over, and each update from the provider.
+  checkin_code: '/track-provider',
+  delivery_code: '/track-provider',
+  job_update: '/track-provider',
+  care_update: '/track-provider',
 };
 
 async function showJobUpdateNotification(jobId: string, title: string, body: string, route: JobUpdateRoute) {

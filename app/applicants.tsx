@@ -108,6 +108,9 @@ function ApplicantCard({
             </View>
           </View>
           <ThemedText style={styles.professionText}>{item.profession}</ThemedText>
+          {(item as any).price != null && (
+            <ThemedText style={styles.priceText}>${(item as any).price.toFixed(2)} total</ThemedText>
+          )}
           <View style={styles.ratingRow}>
             <Star size={12} color="#F59E0B" fill="#F59E0B" />
             <ThemedText style={styles.ratingText}>
@@ -247,6 +250,8 @@ function mapApiApplicant(a: any): Applicant & { applicationId: string; providerI
     avgBehaviourRating: a.avg_behaviour_rating ?? null,
     avgCommunicationRating: a.avg_communication_rating ?? null,
     reviewCount: a.review_count ?? 0,
+    // A job priced up front (per night, per hour…): this applicant's total.
+    price: a.proposed_fee != null ? Number(a.proposed_fee) : null,
   } as any;
 }
 
@@ -258,7 +263,7 @@ export default function ApplicantsScreen() {
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const insets = useSafeAreaInsets();
-  const { hireApplicant, payInspectionFee } = useHirePayment();
+  const { hireApplicant, payInspectionFee, payBooking } = useHirePayment();
   const [applicants, setApplicants] = useState<(Applicant & { applicationId?: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [hiredIds, setHiredIds] = useState<string[]>([]);
@@ -372,6 +377,21 @@ export default function ApplicantsScreen() {
       // into the same success modal below rather than a competing alert —
       // silently succeeding with zero feedback looked indistinguishable from
       // nothing having happened at all.
+      // A job priced up front (per night, per hour…): book it — pay the
+      // agreed total into escrow — instead of a visiting fee.
+      const hired = applicants.find((a: any) => (a.applicationId ?? a.id) === applicationId) as any;
+      if (hired?.price != null) {
+        const booking = await payBooking(jobId);
+        setFeeStatusMessage(
+          booking.status === 'success' ? `Booked — $${hired.price.toFixed(2)} is held safely until the job is done.`
+          : booking.status === 'cancelled' ? 'Book and pay from the job screen to confirm it.'
+          : booking.message,
+        );
+        setHiredIds(prev => [...prev, applicationId]);
+        setLastHiredName(name);
+        setShowSuccessModal(true);
+        return;
+      }
       const feeResult = await payInspectionFee(jobId);
       if (feeResult.status === 'pending') {
         // Charged, just slow to confirm — "failed" would be actively wrong
@@ -665,6 +685,9 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     fontSize: 11,
     lineHeight: 17,
     fontFamily: Fonts.poppinsBold,
+  },
+  priceText: {
+    fontSize: 14, lineHeight: 19, fontFamily: Fonts.poppinsBold, color: '#065F46', marginTop: 2,
   },
   professionText: {
     fontSize: 14,

@@ -1,5 +1,7 @@
 import { ThemedText } from '@/components/themed-text';
 import { PriceGuideNote } from '@/components/price-guide-note';
+import { JobShapePicker } from '@/components/job-shape-picker';
+import { JobChoice, deviceTimeZone, shapeFor } from '@/services/job-shape';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { usePostRequirement } from '@/context/PostRequirementContext';
@@ -48,15 +50,10 @@ export default function JobSummaryScreen() {
   const postedRef = useRef(false);
   useEffect(() => () => { if (postedRef.current) resetData(); }, []);
 
-  // On-site vs Remote is decided here, as the LAST thing before posting —
-  // not up front — same reasoning as CreateJobRequest.service_mode: a
-  // REMOTE job (e.g. hiring a remote consultant) needs no location at all,
-  // and On-site vs Remote is a decision, not information the customer had
-  // to already have when they started describing the problem.
-  const handleServiceModeChange = (mode: 'ON_SITE' | 'REMOTE') => {
-    if (mode === data.serviceMode) return;
-    updateData({ serviceMode: mode });
-  };
+  // Where (and so On-site vs Remote) is decided here, as the LAST thing
+  // before posting — not up front: a remote job needs no location at all,
+  // and where it happens is a decision, not information the customer had to
+  // have when they started describing the problem (JobShapePicker below).
 
   // A REMOTE job never needs a location; an ON_SITE one does. Since the
   // choice now happens on this screen, the "is a location required" gate
@@ -65,6 +62,12 @@ export default function JobSummaryScreen() {
   const hasLocation = data.serviceMode === 'REMOTE'
     ? true
     : (data.lat != null && data.lng != null);
+  // An ordinary job's where / how long / in care (services/job-shape.ts);
+  // a pickup and delivery has its own flow.
+  const ordinary = data.jobKind !== 'PICKUP_DROPOFF';
+  const changeChoice = (next: JobChoice) => updateData({
+    jobChoice: next, serviceMode: next.where === 'ONLINE' ? 'REMOTE' : 'ON_SITE',
+  });
 
   const urgencyMap: Record<string, string> = {
     Urgent: 'HIGH',
@@ -91,8 +94,16 @@ export default function JobSummaryScreen() {
       alert.show('error', 'Choose a Profession', 'Go back and choose who you need for this job.');
       return;
     }
+    // Where / how long / in care, as the job's shape — or what's missing.
+    const shaped = ordinary ? shapeFor(data.jobChoice) : null;
+    if (shaped && 'error' in shaped) {
+      alert.show('error', 'Almost there', shaped.error);
+      return;
+    }
     // The time may have gone by while they were deciding on this screen.
-    const when = scheduledFor();
+    const when = ordinary && data.jobChoice.howLong !== 'ONCE' && data.jobChoice.startISO
+      ? new Date(data.jobChoice.startISO)
+      : scheduledFor();
     if (when && hasPassed(when, new Date())) {
       alert.show('error', 'That Time Has Passed', 'Go back and pick a later time.');
       return;
@@ -140,9 +151,11 @@ export default function JobSummaryScreen() {
         urgency: (urgencyMap[data.jobType] || 'MEDIUM') as any,
         lat: data.lat ?? undefined,
         lng: data.lng ?? undefined,
-        scheduled_at: scheduledFor()?.toISOString(),
+        scheduled_at: when?.toISOString(),
         images: imageUrls,
         posted_via: 'MANUAL',
+        shape: shaped && 'shape' in shaped ? shaped.shape : undefined,
+        timezone: deviceTimeZone(),
         job_type: data.jobKind,
         dropoff_lat: data.jobKind === 'PICKUP_DROPOFF' ? (data.dropoffLat ?? undefined) : undefined,
         dropoff_lng: data.jobKind === 'PICKUP_DROPOFF' ? (data.dropoffLng ?? undefined) : undefined,
@@ -281,30 +294,10 @@ export default function JobSummaryScreen() {
           </Animated.View>
         </View>
 
-        {/* --- On-site / Remote — the last decision before posting --- */}
+        {/* --- Where, how long, in care — the last decision before posting --- */}
         <Animated.View entering={FadeInUp.delay(900)} style={styles.rangeSection}>
           <ThemedText style={styles.sectionTitle}>How should this be done?</ThemedText>
-
-          <View style={styles.jobKindRow}>
-            <TouchableOpacity
-              style={[styles.jobKindChip, data.serviceMode === 'ON_SITE' && styles.jobKindChipActive]}
-              onPress={() => handleServiceModeChange('ON_SITE')}
-            >
-              <MapPin size={16} color={data.serviceMode === 'ON_SITE' ? '#111827' : themeColors.textSecondary} />
-              <ThemedText style={[styles.jobKindChipText, data.serviceMode === 'ON_SITE' && styles.jobKindChipTextActive]}>
-                On-site
-              </ThemedText>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.jobKindChip, data.serviceMode === 'REMOTE' && styles.jobKindChipActive]}
-              onPress={() => handleServiceModeChange('REMOTE')}
-            >
-              <Sparkles size={16} color={data.serviceMode === 'REMOTE' ? '#111827' : themeColors.textSecondary} />
-              <ThemedText style={[styles.jobKindChipText, data.serviceMode === 'REMOTE' && styles.jobKindChipTextActive]}>
-                Remote
-              </ThemedText>
-            </TouchableOpacity>
-          </View>
+          {ordinary && <JobShapePicker value={data.jobChoice} onChange={changeChoice} />}
 
           {data.serviceMode === 'REMOTE' ? (
             <View style={styles.remoteNoticeBox}>

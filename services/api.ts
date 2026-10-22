@@ -381,6 +381,13 @@ export interface ExtraWork {
   status: 'PROPOSED' | 'ACCEPTED' | 'DECLINED' | 'WITHDRAWN' | 'PAID';
 }
 
+/** The hand-over photos and the updates while something is in care. */
+export interface CareRecord {
+  handover_at: string | null;
+  handover_photos: { url: string; taken_at: string }[];
+  updates: { id: string; note: string | null; photo_urls: string[]; created_at: string }[];
+}
+
 /** Whether a tip can be added, and three suggestions (§11). */
 export interface TipInfo { allowed: boolean; reason: string | null; tipped: number | null; suggestions: number[] }
 
@@ -686,6 +693,8 @@ export const SkoFyApi = {
       // doesn't respond within the timeout. Ignored unless target_provider_id is set.
       direct_request_queue?: string[];
       posted_via?: 'MANUAL' | 'VOICE';
+      // The customer's time zone — nights and days are counted in it.
+      timezone?: string;
       // "STANDARD" (default) or "PICKUP_DROPOFF" — see dropoff_lat/lng and
       // pickup_place_id/pickup_place_type below. lat/lng above is the
       // pickup point for a PICKUP_DROPOFF job.
@@ -895,6 +904,13 @@ export const SkoFyApi = {
       request(`/jobs/${jobId}/extra-work/pay`, { method: 'POST' }) as any,
     confirmExtraWork: async (jobId: string) => request(`/jobs/${jobId}/extra-work/confirm`, { method: 'POST' }),
     tipInfo: async (jobId: string): Promise<TipInfo> => request(`/jobs/${jobId}/tip`) as any,
+    // ── A job priced up front: book and pay; check in; care (§ phase 4) ──
+    payBooking: async (jobId: string): Promise<ChargeIntent> =>
+      request(`/jobs/${jobId}/book/pay`, { method: 'POST' }) as any,
+    confirmBooking: async (jobId: string) => request(`/jobs/${jobId}/book/confirm`, { method: 'POST' }),
+    checkInCode: async (jobId: string): Promise<{ code: string | null; expires_in_seconds: number | null }> =>
+      request(`/jobs/${jobId}/check-in/code`) as any,
+    careRecord: async (jobId: string): Promise<CareRecord> => request(`/jobs/${jobId}/care-updates`) as any,
     startTip: async (jobId: string, amount: number): Promise<ChargeIntent> =>
       request(`/jobs/${jobId}/tip`, { method: 'POST', body: JSON.stringify({ amount }) }) as any,
     confirmTip: async (jobId: string) => request(`/jobs/${jobId}/tip/confirm`, { method: 'POST' }),

@@ -1,4 +1,5 @@
 import { useAppAlert } from '@/components/app-alert';
+import { CarePanel } from '@/components/care-panel';
 import { CancelJobModal } from '@/components/cancel-job-modal';
 import { DisputeModal } from '@/components/dispute-modal';
 import { ThemedText } from '@/components/themed-text';
@@ -277,6 +278,11 @@ export default function TrackProviderScreen() {
   // a store), so the OTP card above can't apply to this job kind; a photo of
   // what was picked up substitutes for it instead.
   const [jobKind, setJobKind] = useState<'STANDARD' | 'PICKUP_DROPOFF'>('STANDARD');
+  // The job's protocol steps (docs/JOB_SHAPE_DESIGN.md). A job priced up
+  // front is paid at booking and run by CarePanel — no visiting fee or
+  // inspection code.
+  const [steps, setSteps] = useState<string[]>([]);
+  const paysUpfront = steps.includes('PAY_UPFRONT');
   const [pickupPhotoUrl, setPickupPhotoUrl] = useState<string | null>(null);
   const [pickupConfirmedAt, setPickupConfirmedAt] = useState<string | null>(null);
   // Buy it for me: the shopping money held at hire, and what was spent.
@@ -380,6 +386,7 @@ export default function TrackProviderScreen() {
       }
       setJobStatus(j.status);
       setJobKind(j.job_type === 'PICKUP_DROPOFF' ? 'PICKUP_DROPOFF' : 'STANDARD');
+      setSteps((j as any).steps ?? []);
       applyPickupFields(j);
     }).catch((err) => {
       console.error('Failed to fetch job/provider details for tracking:', err);
@@ -547,6 +554,7 @@ export default function TrackProviderScreen() {
   useEffect(() => {
     if (!jobId) return;
     const deliveryOnItsWay = jobStatus === 'IN_PROGRESS' && jobKind === 'PICKUP_DROPOFF';
+    if (paysUpfront) return; // CarePanel polls its own
     if (!['ACCEPTED', 'INSPECTING', 'INVOICE_PENDING'].includes(jobStatus) && !deliveryOnItsWay) return;
     let cancelled = false;
 
@@ -598,7 +606,7 @@ export default function TrackProviderScreen() {
     poll();
     const interval = setInterval(poll, 3000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [jobId, jobStatus, jobKind, inspectionTick]);
+  }, [jobId, jobStatus, jobKind, inspectionTick, paysUpfront]);
 
   const handlePayInspectionFee = async () => {
     if (!jobId) return;
@@ -1124,7 +1132,11 @@ export default function TrackProviderScreen() {
 
           {/* Inspection fee — pay right after hiring, before the provider
               can request the on-site inspection OTP. */}
-          {jobStatus === 'ACCEPTED' && inspectionFeeStatus !== 'HELD' && (
+          {jobId && paysUpfront && (
+            <CarePanel jobId={jobId} onMessage={(kind, title, message) => appAlert.show(kind, title, message)} />
+          )}
+
+          {jobStatus === 'ACCEPTED' && !paysUpfront && inspectionFeeStatus !== 'HELD' && (
             <View style={styles.inspectionCard}>
               <ThemedText style={styles.inspectionCardTitle}>
                 {jobKind === 'PICKUP_DROPOFF' ? 'Pay Delivery Fee' : 'Pay Visiting Fee'}
@@ -1150,7 +1162,7 @@ export default function TrackProviderScreen() {
               by then the code is already consumed and gone. Doesn't apply to
               Pickup & Drop — the customer isn't at the pickup point to hand
               over a code, see the pickup-photo card below instead. */}
-          {jobStatus === 'ACCEPTED' && jobKind !== 'PICKUP_DROPOFF' && inspectionFeeStatus === 'HELD' && inspectionOtp.otp && (
+          {jobStatus === 'ACCEPTED' && !paysUpfront && jobKind !== 'PICKUP_DROPOFF' && inspectionFeeStatus === 'HELD' && inspectionOtp.otp && (
             <CodeCard
               title="Give this code to your provider"
               code={inspectionOtp.otp}
@@ -1158,7 +1170,7 @@ export default function TrackProviderScreen() {
               styles={styles}
             />
           )}
-          {jobStatus === 'ACCEPTED' && jobKind !== 'PICKUP_DROPOFF' && inspectionFeeStatus === 'HELD' && !inspectionOtp.otp && (
+          {jobStatus === 'ACCEPTED' && !paysUpfront && jobKind !== 'PICKUP_DROPOFF' && inspectionFeeStatus === 'HELD' && !inspectionOtp.otp && (
             <View style={styles.inspectionCard}>
               <ThemedText style={styles.inspectionCardBody}>
                 Waiting for your provider to arrive and start the inspection.

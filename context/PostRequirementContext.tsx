@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState } from 'react';
+import { DEFAULT_CHOICE, JobChoice } from '@/services/job-shape';
 
 interface PostRequirementData {
   description: string;
@@ -39,6 +40,9 @@ interface PostRequirementData {
   // "ON_SITE" (default) or "REMOTE" — no physical location/distance
   // matching at all (e.g. hiring a developer/consultant).
   serviceMode: 'ON_SITE' | 'REMOTE';
+  // Where, how long, and what's left with the provider (services/job-shape.ts)
+  // — chosen on the summary screen for an ordinary job.
+  jobChoice: JobChoice;
 }
 
 interface PostRequirementContextType {
@@ -72,6 +76,7 @@ const initialData: PostRequirementData = {
   dropoffLat: null,
   dropoffLng: null,
   serviceMode: 'ON_SITE',
+  jobChoice: DEFAULT_CHOICE,
 };
 
 const PostRequirementContext = createContext<PostRequirementContextType | undefined>(undefined);

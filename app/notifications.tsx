@@ -209,6 +209,10 @@ export default function NotificationsScreen() {
         case 'invoice_countered':
         case 'counter_accepted':
         case 'counter_rejected':
+        case 'checkin_code':
+        case 'delivery_code':
+        case 'job_update':
+        case 'care_update':
           openJobScreen('/track-provider', item.job_id);
           break;
         case 'job_expired':
