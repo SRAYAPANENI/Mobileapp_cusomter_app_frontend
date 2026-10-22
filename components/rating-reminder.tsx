@@ -1,4 +1,7 @@
 import { RatingDimensions, RatingModal } from '@/components/ui/rating-modal';
+import type { OffAppAnswer } from '@/components/off-app-question';
+import { TipSheet } from '@/components/tip-sheet';
+import { useAppAlert } from '@/components/app-alert';
 import { SkoFyApi } from '@/services/api';
 import { isRatingSkipped, markRatingSkipped, markRatingSubmitted, nextPendingRating, PendingRating } from '@/services/ratingReminders';
 import { useIsFocused } from '@react-navigation/native';
@@ -20,6 +23,9 @@ export function RatingReminder() {
   // — a reminder loaded by a screen further down the stack stayed visible
   // over the tracking screen's own rating sheet: two rating popups at once.
   const isFocused = useIsFocused();
+  // After rating: an optional tip (§11).
+  const [tip, setTip] = useState<{ jobId: string; name: string } | null>(null);
+  const appAlert = useAppAlert();
 
   useFocusEffect(
     useCallback(() => {
@@ -29,11 +35,23 @@ export function RatingReminder() {
     }, [])
   );
 
-  // Answered on another screen since this one loaded it.
-  if (!pending || !isFocused || isRatingSkipped(pending.job_id)) return null;
+  const tipSheet = (
+    <>
+      <TipSheet
+        jobId={isFocused ? tip?.jobId ?? null : null}
+        providerName={tip?.name ?? 'your provider'}
+        onClose={() => setTip(null)}
+        onMessage={(kind, title, message) => appAlert.show(kind, title, message)}
+      />
+      {appAlert.element}
+    </>
+  );
 
-  const submit = async (ratings: RatingDimensions, comment: string) => {
-    await SkoFyApi.jobs.submitReview(pending.job_id, { ...ratings, comment });
+  // Answered on another screen since this one loaded it.
+  if (!pending || !isFocused || isRatingSkipped(pending.job_id)) return tipSheet;
+
+  const submit = async (ratings: RatingDimensions, comment: string, offApp: OffAppAnswer) => {
+    await SkoFyApi.jobs.submitReview(pending.job_id, { ...ratings, comment, ...offApp });
     markRatingSubmitted(pending.job_id);
   };
 
@@ -45,6 +63,7 @@ export function RatingReminder() {
       onSubmit={submit}
       onClose={() => setPending(null)}
       onSkip={() => { markRatingSkipped(pending.job_id); setPending(null); }}
+      onTip={() => { setTip({ jobId: pending.job_id, name: pending.counterpart_name }); setPending(null); }}
     />
   );
 }

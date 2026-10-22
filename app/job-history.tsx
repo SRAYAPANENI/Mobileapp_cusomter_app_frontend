@@ -1,4 +1,9 @@
 import { RatingModal, RatingDimensions } from '@/components/ui/rating-modal';
+import type { OffAppAnswer } from '@/components/off-app-question';
+import { TipSheet } from '@/components/tip-sheet';
+import { GuaranteeSheet } from '@/components/guarantee-sheet';
+import { RepeatBookingSheet } from '@/components/repeat-booking-sheet';
+import { useAppAlert } from '@/components/app-alert';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
@@ -11,6 +16,9 @@ import {
   CheckCircle2,
   ChevronLeft,
   DollarSign,
+  Gift,
+  Repeat,
+  ShieldCheck,
   Star,
   User,
   XCircle
@@ -51,6 +59,8 @@ interface JobHistoryItem {
   professional: string;
   date: string;
   price: string;
+  /** The agreed quote, if there was one — suggested as a repeat booking's limit. */
+  lastPrice: number | null;
   status: 'Completed' | 'Disputed' | 'Cancelled';
   review: JobReview | null;           // what customer gave provider
   customer_review: CustomerReview | null; // what provider gave customer
@@ -78,6 +88,10 @@ export default function JobHistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [ratingTarget, setRatingTarget] = useState<{ jobId: string; providerName: string } | null>(null);
+  const [tipTarget, setTipTarget] = useState<{ jobId: string; providerName: string } | null>(null);
+  const appAlert = useAppAlert();
+  const [guaranteeJob, setGuaranteeJob] = useState<string | null>(null);
+  const [repeatJob, setRepeatJob] = useState<{ jobId: string; providerName: string; lastPrice: number | null } | null>(null);
 
   const fetchHistory = useCallback(async () => {
     try {
@@ -92,6 +106,7 @@ export default function JobHistoryScreen() {
         professional: j.assigned_provider?.name ?? 'No provider assigned',
         date: formatDate(j.updated_at ?? j.created_at),
         price: `$ ${j.inspection_fee ?? 0}`,
+        lastPrice: j.invoice?.final_amount ?? null,
         status: j.status === 'COMPLETED' ? 'Completed' : j.status === 'DISPUTED' ? 'Disputed' : 'Cancelled',
         review: j.review ?? null,
         customer_review: j.customer_review ? {
@@ -112,9 +127,9 @@ export default function JobHistoryScreen() {
 
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
-  const handleRatingSubmit = async (ratings: RatingDimensions, comment: string) => {
+  const handleRatingSubmit = async (ratings: RatingDimensions, comment: string, offApp: OffAppAnswer) => {
     if (!ratingTarget) throw new Error('No job selected');
-    await SkoFyApi.jobs.submitReview(ratingTarget.jobId, { ...ratings, comment });
+    await SkoFyApi.jobs.submitReview(ratingTarget.jobId, { ...ratings, comment, ...offApp });
     fetchHistory();
   };
 
@@ -166,6 +181,27 @@ export default function JobHistoryScreen() {
             <ThemedText style={styles.rateBtnText}>Rate this job</ThemedText>
           </TouchableOpacity>
         </>
+      )}
+
+      {item.status === 'Completed' && (
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <TouchableOpacity style={[styles.rateBtn, { flex: 1 }]} onPress={() => setTipTarget({ jobId: item.id, providerName: item.professional })}
+            activeOpacity={0.8}>
+            <Gift size={15} color="#111827" />
+            <ThemedText style={styles.rateBtnText}>Tip</ThemedText>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.rateBtn, { flex: 1 }]} onPress={() => setGuaranteeJob(item.id)} activeOpacity={0.8}>
+            <ShieldCheck size={15} color="#111827" />
+            <ThemedText style={styles.rateBtnText}>Guarantee</ThemedText>
+          </TouchableOpacity>
+        </View>
+      )}
+      {item.status === 'Completed' && (
+        <TouchableOpacity style={styles.rateBtn} activeOpacity={0.8}
+          onPress={() => setRepeatJob({ jobId: item.id, providerName: item.professional, lastPrice: item.lastPrice })}>
+          <Repeat size={15} color="#111827" />
+          <ThemedText style={styles.rateBtnText}>Book regularly</ThemedText>
+        </TouchableOpacity>
       )}
 
       {item.review && (
@@ -308,10 +344,29 @@ export default function JobHistoryScreen() {
         />
       )}
 
+      {appAlert.element}
+      <RepeatBookingSheet
+        job={repeatJob}
+        onClose={() => setRepeatJob(null)}
+        onMessage={(kind, title, message) => appAlert.show(kind, title, message)}
+      />
+      <GuaranteeSheet
+        jobId={guaranteeJob}
+        onClose={() => setGuaranteeJob(null)}
+        onMessage={(kind, title, message) => appAlert.show(kind, title, message)}
+      />
+      <TipSheet
+        jobId={tipTarget?.jobId ?? null}
+        providerName={tipTarget?.providerName ?? 'your provider'}
+        onClose={() => setTipTarget(null)}
+        onMessage={(kind, title, message) => appAlert.show(kind, title, message)}
+      />
+
       <RatingModal
         visible={!!ratingTarget}
         providerName={ratingTarget?.providerName ?? ''}
         onClose={() => setRatingTarget(null)}
+        onTip={() => { if (ratingTarget) setTipTarget(ratingTarget); setRatingTarget(null); }}
         onSubmit={handleRatingSubmit}
         onSkip={() => {
           if (ratingTarget) markRatingSkipped(ratingTarget.jobId);

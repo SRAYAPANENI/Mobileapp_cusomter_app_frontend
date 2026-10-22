@@ -33,6 +33,8 @@ import {
   Fingerprint,
   Image as ImageIcon,
   Lock,
+  Gift,
+  Repeat,
   LogOut,
   Mail,
   Map,
@@ -1197,6 +1199,34 @@ export default function ProfileScreen() {
                 <View style={styles.settingInfo}>
                   <FileText size={20} color="#6B7280" />
                   <ThemedText style={styles.settingLabel}>Terms & Conditions</ThemedText>
+                </View>
+                <ChevronRight size={20} color="#D1D5DB" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}
+                onPress={() => {
+                  setIsSettingsOpen(false);
+                  router.push('/account-standing' as any);
+                }}
+              >
+                <View style={styles.settingInfo}>
+                  <Gift size={20} color="#6B7280" />
+                  <ThemedText style={styles.settingLabel}>Credits & account</ThemedText>
+                </View>
+                <ChevronRight size={20} color="#D1D5DB" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}
+                onPress={() => {
+                  setIsSettingsOpen(false);
+                  router.push('/regular-bookings' as any);
+                }}
+              >
+                <View style={styles.settingInfo}>
+                  <Repeat size={20} color="#6B7280" />
+                  <ThemedText style={styles.settingLabel}>Regular bookings</ThemedText>
                 </View>
                 <ChevronRight size={20} color="#D1D5DB" />
               </TouchableOpacity>

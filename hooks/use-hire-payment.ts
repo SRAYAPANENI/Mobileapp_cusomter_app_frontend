@@ -26,6 +26,10 @@ type FeePaymentResult =
   | { status: 'pending'; message: string }
   | { status: 'error'; message: string };
 
+/** A bank payment (ACH) clears in days; the job starts on its own when it does. */
+export const BANK_PAYMENT_PENDING =
+  "Your bank payment is on its way — it takes 3–5 business days to clear. The job starts automatically when it does, and we'll let you both know.";
+
 const PAYMENT_ELIGIBILITY_CODES = new Set([
   'CONNECT_ONBOARDING_INCOMPLETE',
   'BACKGROUND_CHECK_PENDING',
@@ -67,14 +71,20 @@ const SKOFY_PAYMENT_SHEET_APPEARANCE = {
 export function useHirePayment() {
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
-  const runPaymentSheet = async (clientSecret: string): Promise<PaymentResult> => {
+  // `bankPayment`: the server offered ACH too (a big job) — the sheet must
+  // allow a method that clears in days.
+  const runPaymentSheet = async (clientSecret: string, bankPayment = false): Promise<PaymentResult> => {
     const { ephemeral_key_secret, stripe_customer_id } = await SkoFyApi.payments.createEphemeralKey();
     const { error: initError } = await initPaymentSheet({
       merchantDisplayName: 'Dodorez',
       customerId: stripe_customer_id,
       customerEphemeralKeySecret: ephemeral_key_secret,
       paymentIntentClientSecret: clientSecret,
-      allowsDelayedPaymentMethods: false,
+      allowsDelayedPaymentMethods: bankPayment,
+      // Cash App Pay and pay-over-time (Affirm, Klarna) hand off to their own
+      // app or page and come back here — when the server offers them
+      // (app/domain/payment_methods.py).
+      returnURL: 'skofycustomerapp://stripe-redirect',
       // One-tap options alongside manual card entry. Google Pay works as
       // soon as the device has it set up — no extra account setup needed
       // beyond enableGooglePay in app.json's Stripe plugin config. Apple
@@ -162,7 +172,7 @@ export function useHirePayment() {
     try {
       const intentResult = await SkoFyApi.jobs.payInvoice(jobId, offerCode);
       if (intentResult.requires_payment) {
-        const sheetResult = await runPaymentSheet(intentResult.client_secret!);
+        const sheetResult = await runPaymentSheet(intentResult.client_secret!, !!intentResult.bank_payment);
         if (sheetResult.status !== 'success') return sheetResult;
       }
 
@@ -172,6 +182,11 @@ export function useHirePayment() {
           return { status: 'success' };
         } catch (err: any) {
           if (err?.error_code !== 'PAYMENT_NOT_HELD') throw err;
+          // A bank payment takes days, not seconds — say so instead of waiting.
+          const status = await SkoFyApi.payments.getStatus(jobId, 'JOB_COST').catch(() => null);
+          if (status?.processing) {
+            return { status: 'pending', message: BANK_PAYMENT_PENDING };
+          }
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
@@ -181,5 +196,43 @@ export function useHirePayment() {
     }
   };
 
-  return { hireApplicant, payInspectionFee, payGoodsHold, payInvoice };
+  /** A payment made on a job that's already running or done — work added
+   * mid-job, or a tip: open it, present the sheet, then confirm it's held. */
+  const payAndConfirm = async (
+    open: () => Promise<{ requires_payment: boolean; client_secret: string | null }>,
+    confirm: () => Promise<unknown>,
+    failMessage: string,
+  ): Promise<PaymentResult> => {
+    try {
+      const intent = await open();
+      if (intent.requires_payment) {
+        const sheetResult = await runPaymentSheet(intent.client_secret!);
+        if (sheetResult.status !== 'success') return sheetResult;
+      }
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          await confirm();
+          return { status: 'success' };
+        } catch (err: any) {
+          if (err?.error_code !== 'PAYMENT_NOT_HELD') throw err;
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+      return { status: 'pending', message: 'Your payment is still processing — this usually clears within a minute.' };
+    } catch (err: any) {
+      return { status: 'error', message: err?.message ?? failMessage };
+    }
+  };
+
+  const payExtraWork = (jobId: string) => payAndConfirm(
+    () => SkoFyApi.jobs.payExtraWork(jobId), () => SkoFyApi.jobs.confirmExtraWork(jobId),
+    'Failed to pay for the added work. Please try again.',
+  );
+
+  const payTip = (jobId: string, amount: number) => payAndConfirm(
+    () => SkoFyApi.jobs.startTip(jobId, amount), () => SkoFyApi.jobs.confirmTip(jobId),
+    'Failed to send the tip. Please try again.',
+  );
+
+  return { hireApplicant, payInspectionFee, payGoodsHold, payInvoice, payExtraWork, payTip };
 }

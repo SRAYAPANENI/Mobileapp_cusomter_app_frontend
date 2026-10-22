@@ -227,7 +227,14 @@ export function CheckoutSheet({ visible, jobId, onPay, onClose }: CheckoutSheetP
                 </View>
 
                 <View style={s.bill} accessibilityLabel={`Total ${money(breakdown.total)}`}>
-                  <BillRow label="Job amount" value={money(breakdown.job_amount)} s={s} />
+                  {breakdown.visit_credit ? (
+                    <>
+                      <BillRow label="Quote" value={money(breakdown.quote ?? breakdown.job_amount)} s={s} />
+                      <BillRow label="Visiting fee you paid" value={`−${money(breakdown.visit_credit)}`} s={s} valueColor={SUCCESS} />
+                    </>
+                  ) : (
+                    <BillRow label="Job amount" value={money(breakdown.job_amount)} s={s} />
+                  )}
                   {breakdown.discount > 0 && (
                     <BillRow
                       label={appliedCode ? `Offer (${appliedCode})` : 'Offer'}
@@ -236,7 +243,15 @@ export function CheckoutSheet({ visible, jobId, onPay, onClose }: CheckoutSheetP
                       valueColor={SUCCESS}
                     />
                   )}
-                  <BillRow label="Card processing fee" value={money(breakdown.processing_fee)} s={s} />
+                  {breakdown.service_fee > 0 && (
+                    <BillRow label="Service fee" value={money(breakdown.service_fee)} s={s} />
+                  )}
+                  {breakdown.processing_fee > 0 && (
+                    <BillRow label="Card processing fee" value={money(breakdown.processing_fee)} s={s} />
+                  )}
+                  {breakdown.credit > 0 && (
+                    <BillRow label="Dodorez credit" value={`−${money(breakdown.credit)}`} s={s} valueColor={SUCCESS} />
+                  )}
                   <View style={s.divider} />
                   <BillRow label="Total" value={money(breakdown.total)} s={s} total />
                   {breakdown.discount > 0 && (

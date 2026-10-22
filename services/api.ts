@@ -167,6 +167,8 @@ async function request<T = any>(
     'ngrok-skip-browser-warning': 'true',
     ...((fetchOptions.headers as Record<string, string>) || {}),
   };
+  // A form (photos): fetch sets the multipart boundary itself.
+  if (fetchOptions.body instanceof FormData) delete headers['Content-Type'];
 
   if (!skipAuth) {
     const token = await TokenStore.getAccessToken();
@@ -330,13 +332,86 @@ export interface SupportCallStatus {
   live_call: SupportCallView | null;
 }
 
-/** Job-cost checkout amounts — see the backend's offer_pricing.py. The
- * discount comes out of Dodorez's fee; the provider's share never changes. */
+/** Job-cost checkout amounts — see the backend's offer_pricing.py. An offer
+ * and a credit are Dodorez's cost; the provider's share never changes. */
 export interface CheckoutBreakdown {
+  /** The agreed quote, and the visiting fee already paid that counts toward
+   * it (job_amount is what's left of it) — the invoice preview only. */
+  quote?: number;
+  visit_credit?: number;
   job_amount: number;
   discount: number;
+  /** The customer fee: 3%, at most $15, the same however they pay. */
+  service_fee: number;
+  /** The old pass-through card fee — only when the server is set to it. */
   processing_fee: number;
+  /** A Dodorez credit used on this payment. */
+  credit: number;
   total: number;
+}
+
+/** The middle half of accepted quotes for a kind of job nearby (§11). */
+export interface PriceRange { low: number; typical: number; high: number; samples: number }
+
+/** A repeat booking (§13). */
+export interface Series {
+  id: string; title: string; provider_name: string | null; customer_name: string | null;
+  cadence: 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY'; next_at: string; ends_on: string | null;
+  auto_accept_up_to: number | null; status: 'PROPOSED' | 'ACTIVE' | 'PAUSED' | 'ENDED' | 'DECLINED';
+}
+
+/** A guarantee claim on a job, and whether one can be made (§12). */
+export interface GuaranteeInfo {
+  can_claim: boolean; reason: string | null; days: number;
+  claim: {
+    status: 'OPEN' | 'FIX_OFFERED' | 'FIXED' | 'REFUNDED' | 'DECLINED';
+    description: string; provider_note: string | null; decision_note: string | null; refund_amount: number | null;
+  } | null;
+}
+
+/** A payment opened on the server, for the PaymentSheet. */
+export interface ChargeIntent {
+  requires_payment: boolean; client_secret: string | null; payment_intent_id: string | null; amount: number;
+  bank_payment?: boolean;
+}
+
+/** Work the provider asked to add mid-job (§11). */
+export interface ExtraWork {
+  amount: number; description: string;
+  status: 'PROPOSED' | 'ACCEPTED' | 'DECLINED' | 'WITHDRAWN' | 'PAID';
+}
+
+/** Whether a tip can be added, and three suggestions (§11). */
+export interface TipInfo { allowed: boolean; reason: string | null; tipped: number | null; suggestions: number[] }
+
+/** What cancelling now would do with the visiting fee (docs/MONEY_RULES_DESIGN.md §3). */
+export interface CancelPreview {
+  provider_gets: number;
+  you_get_back: number;
+  credit: number;
+  explanation: string;
+  stage: 'HIRED' | 'ON_THE_WAY' | 'ARRIVED' | null;
+}
+
+/** A customer's strikes: a claim contradicted by evidence (§5), or asking to
+ * pay outside the app (§10). */
+export interface StrikeView {
+  id: string; reason: 'CONTRADICTED_CLAIM' | 'OFF_APP_PAYMENT'; job_id: string | null; note: string; created_at: string; expires_at: string;
+  active: boolean; appealed_at: string | null; revoked_at: string | null; revoke_note: string | null;
+  can_appeal: boolean; cannot_appeal_reason: string | null;
+}
+
+/** A photo for a form upload. */
+export type PhotoFile = { uri: string; mimeType: string };
+
+function photosForm(fields: Record<string, string>, photos: PhotoFile[]): FormData {
+  const form = new FormData();
+  Object.entries(fields).forEach(([k, v]) => form.append(k, v));
+  photos.forEach((p, i) => {
+    const ext = p.mimeType.split('/')[1] || 'jpg';
+    form.append('photos', { uri: p.uri, name: `photo-${i}.${ext}`, type: p.mimeType } as any);
+  });
+  return form;
 }
 
 export interface CheckoutOffer {
@@ -740,6 +815,18 @@ export const SkoFyApi = {
         body: JSON.stringify({ reason }),
       }),
 
+    /** What cancelling now would do with the visiting fee — shown before confirming. */
+    cancelPreview: async (jobId: string): Promise<CancelPreview> =>
+      request(`/jobs/${jobId}/cancel-preview`),
+
+    /** The provider's inspection report: "Yes, it's done" or "Not done yet". */
+    respondToInspection: async (jobId: string, done: boolean) =>
+      request(`/jobs/${jobId}/inspection/respond`, { method: 'POST', body: JSON.stringify({ done }) }),
+
+    /** The code to read the provider to confirm the inspection. */
+    getInspectionEndCode: async (jobId: string): Promise<{ code: string }> =>
+      request(`/jobs/${jobId}/inspection/end-code`),
+
     // Backend only accepts this for a job that's IN_PROGRESS or COMPLETED —
     // either the customer or the assigned provider may file one.
     disputeJob: async (jobId: string, reason: string) =>
@@ -757,6 +844,9 @@ export const SkoFyApi = {
       punctuality_rating: number;
       communication_rating: number;
       comment?: string;
+      // "Did the provider ask you to pay outside the app?" (§10)
+      provider_asked_off_app?: boolean | null;
+      off_app_note?: string;
     }) => request(`/jobs/${jobId}/review`, { method: 'POST', body: JSON.stringify(review) }),
 
     // Finished jobs (completed or disputed) the customer hasn't rated yet.
@@ -790,10 +880,24 @@ export const SkoFyApi = {
      * ACCEPTED, before presenting the PaymentSheet. */
     payInvoice: async (jobId: string, offerCode?: string): Promise<{
       requires_payment: boolean; client_secret: string | null; payment_intent_id: string | null; amount: number;
+      /** Bank payment (ACH) is offered too — a big job's payment. */
+      bank_payment?: boolean;
     } & Partial<CheckoutBreakdown>> => request(`/jobs/${jobId}/invoice/pay`, {
       method: 'POST',
       body: JSON.stringify({ offer_code: offerCode ?? null }),
     }),
+
+    // ── Work added mid-job, and tips (docs/MONEY_RULES_DESIGN.md §11) ─────
+    extraWork: async (jobId: string): Promise<ExtraWork | null> => request(`/jobs/${jobId}/extra-work`) as any,
+    declineExtraWork: async (jobId: string) => request(`/jobs/${jobId}/extra-work/decline`, { method: 'POST' }),
+    /** Approves the added work and opens its payment. */
+    payExtraWork: async (jobId: string): Promise<ChargeIntent> =>
+      request(`/jobs/${jobId}/extra-work/pay`, { method: 'POST' }) as any,
+    confirmExtraWork: async (jobId: string) => request(`/jobs/${jobId}/extra-work/confirm`, { method: 'POST' }),
+    tipInfo: async (jobId: string): Promise<TipInfo> => request(`/jobs/${jobId}/tip`) as any,
+    startTip: async (jobId: string, amount: number): Promise<ChargeIntent> =>
+      request(`/jobs/${jobId}/tip`, { method: 'POST', body: JSON.stringify({ amount }) }) as any,
+    confirmTip: async (jobId: string) => request(`/jobs/${jobId}/tip/confirm`, { method: 'POST' }),
 
     /** Offers the customer can use on this invoice, each with its discount. */
     invoiceOffers: async (jobId: string): Promise<CheckoutOffer[]> =>
@@ -964,11 +1068,61 @@ export const SkoFyApi = {
       request('/payments/ephemeral-key', { method: 'POST' }),
     getStatus: async (jobId: string, purpose: 'INSPECTION_FEE' | 'JOB_COST' | 'GOODS_ADVANCE' = 'JOB_COST'): Promise<{
       status: 'PENDING_CAPTURE' | 'HELD' | 'RELEASED' | 'REFUNDED' | 'FAILED';
+      /** A bank payment on its way — it takes days to clear. */
+      processing?: boolean;
       amount: number;
       held_at: string | null;
       released_at: string | null;
       refunded_at: string | null;
     }> => request(`/payments/${jobId}?purpose=${purpose}`),
+    /** Dodorez credits (from a provider letting them down) — used up at checkout. */
+    credits: async (): Promise<{ available: number; credits: { reason: string; amount: number; remaining: number; created_at: string }[] }> =>
+      request('/payments/credits'),
+  },
+
+  // ── Disputes and strikes (docs/MONEY_RULES_DESIGN.md §5) ─────────────────
+  disputes: {
+    /** "The inspection wasn't done" — the visiting fee is held while support reviews it. */
+    disputeInspection: async (jobId: string, reason: string, photos: PhotoFile[]) =>
+      request(`/disputes/jobs/${jobId}/inspection`, { method: 'POST', body: photosForm({ reason }, photos) }),
+    /** Your side, while a dispute is open. */
+    addStatement: async (jobId: string, body: string, photos: PhotoFile[]) =>
+      request(`/disputes/jobs/${jobId}/statements`, { method: 'POST', body: photosForm({ body }, photos) }),
+  },
+  // ── Repeat bookings (docs/MONEY_RULES_DESIGN.md §13) ─────────────────────
+  series: {
+    mine: async (): Promise<Series[]> => request('/series/me') as any,
+    propose: async (body: {
+      job_id: string; cadence: Series['cadence']; first_at: string; ends_on?: string; auto_accept_up_to?: number;
+      timezone?: string;
+    }): Promise<{ id: string; message: string }> => request('/series', { method: 'POST', body: JSON.stringify(body) }) as any,
+    change: async (seriesId: string, action: 'PAUSE' | 'RESUME' | 'END') =>
+      request(`/series/${seriesId}/change`, { method: 'POST', body: JSON.stringify({ action }) }),
+  },
+
+  // ── The Dodorez guarantee (docs/MONEY_RULES_DESIGN.md §12) ───────────────
+  guarantee: {
+    get: async (jobId: string): Promise<GuaranteeInfo> => request(`/protection/jobs/${jobId}/guarantee`) as any,
+    claim: async (jobId: string, description: string, photos: PhotoFile[]): Promise<{ message: string }> =>
+      request(`/protection/jobs/${jobId}/guarantee`, { method: 'POST', body: photosForm({ description }, photos) }) as any,
+    /** After the provider's fix: fixed, or still not. */
+    result: async (jobId: string, fixed: boolean, note?: string): Promise<{ message: string }> =>
+      request(`/protection/jobs/${jobId}/guarantee/result`, { method: 'POST', body: JSON.stringify({ fixed, note }) }) as any,
+  },
+
+  // ── What a job usually costs nearby (docs/MONEY_RULES_DESIGN.md §11) ────
+  priceGuide: {
+    forRequest: async (skillIds: string[], lat: number, lng: number): Promise<PriceRange | null> =>
+      request(`/price-guide?${skillIds.map((id) => `skill_id=${id}`).join('&')}&lat=${lat}&lng=${lng}`) as any,
+    forJob: async (jobId: string): Promise<{ range: PriceRange | null; quote_level: 'BELOW' | 'TYPICAL' | 'ABOVE' | null }> =>
+      request(`/price-guide/jobs/${jobId}`) as any,
+  },
+
+  strikes: {
+    mine: async (): Promise<{ level: number; consequences_enabled: boolean; strikes: StrikeView[] }> =>
+      request('/strikes/me'),
+    appeal: async (strikeId: string, reason: string): Promise<{ ticket_id: string; message: string }> =>
+      request(`/strikes/me/${strikeId}/appeal`, { method: 'POST', body: JSON.stringify({ reason }) }),
   },
 
   // ── Skills ────────────────────────────────────────────────────────────────

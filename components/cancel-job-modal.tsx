@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal, View, TouchableOpacity, Platform, StyleSheet } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from './themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { SkoFyApi } from '@/services/api';
+import { CancelPreview, SkoFyApi } from '@/services/api';
 import { AlertTriangle } from 'lucide-react-native';
 
 const PRE_HIRE_REASONS = [
@@ -61,6 +61,16 @@ export function CancelJobModal({ visible, jobId, scenario = 'pre-hire', onClose,
   const [otherReason, setOtherReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // What cancelling now does with the visiting fee — the server decides it
+  // from where the provider is (docs/MONEY_RULES_DESIGN.md §3).
+  const [preview, setPreview] = useState<CancelPreview | null>(null);
+
+  useEffect(() => {
+    if (!visible || scenario === 'pre-hire') { setPreview(null); return; }
+    let live = true;
+    SkoFyApi.jobs.cancelPreview(jobId).then((p) => { if (live) setPreview(p); }).catch(() => {});
+    return () => { live = false; };
+  }, [visible, jobId, scenario]);
 
   const handleConfirm = async () => {
     if (cancelling || !selectedReason) return;
@@ -89,21 +99,21 @@ export function CancelJobModal({ visible, jobId, scenario = 'pre-hire', onClose,
           </ThemedText>
           <ThemedText style={styles.modalSubtitle}>Please select a reason for cancelling</ThemedText>
 
-          {scenario === 'inspecting' && (
-            <View style={[styles.warningBanner, styles.warningBannerStrong]}>
-              <AlertTriangle size={16} color="#DC2626" />
-              <ThemedText style={[styles.warningText, styles.warningTextStrong]}>
-                The provider is on-site inspecting your job right now. Cancelling now means they've made the
-                trip for nothing — any visiting fee you already paid will still be refunded.
-              </ThemedText>
-            </View>
-          )}
-          {scenario === 'after-hire' && (
-            <View style={styles.warningBanner}>
-              <AlertTriangle size={16} color="#D97706" />
-              <ThemedText style={styles.warningText}>
-                The provider is already on their way. Frequent cancellations may affect your account.
-              </ThemedText>
+          {scenario !== 'pre-hire' && preview && (
+            <View style={[styles.warningBanner, preview.provider_gets > 0 && styles.warningBannerStrong]}>
+              <AlertTriangle size={16} color={preview.provider_gets > 0 ? '#DC2626' : '#D97706'} />
+              <View style={{ flex: 1 }}>
+                <ThemedText style={[styles.warningText, preview.provider_gets > 0 && styles.warningTextStrong]}>
+                  {preview.explanation}
+                </ThemedText>
+                {(preview.provider_gets > 0 || preview.you_get_back > 0) && (
+                  <ThemedText style={[styles.warningText, { marginTop: 4, fontFamily: Fonts.poppinsSemiBold }]}>
+                    Cancel now: ${preview.you_get_back.toFixed(2)} back to you
+                    {preview.provider_gets > 0 ? `, $${preview.provider_gets.toFixed(2)} to the provider for the trip` : ''}.
+                    {preview.credit > 0 ? ` Plus a $${preview.credit.toFixed(2)} credit from us.` : ''}
+                  </ThemedText>
+                )}
+              </View>
             </View>
           )}
 

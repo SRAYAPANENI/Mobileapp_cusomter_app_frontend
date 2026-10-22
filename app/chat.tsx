@@ -16,6 +16,8 @@ import {
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, BackHandler, FlatList, Keyboard, Linking, Modal, Platform, ScrollView, StyleSheet, TouchableOpacity, Vibration, View } from 'react-native';
 import { Text, TextInput } from '@/components/scaled-text';
+import { OffAppNote } from '@/components/off-app-note';
+import { NO_OFF_APP_ANSWER, OffAppAnswer, OffAppQuestion } from '@/components/off-app-question';
 // The keyboard-controller version: works with KeyboardProvider (app/_layout.tsx)
 // on Android — React Native's own one shifted the layout as the keyboard
 // closed, so a tap meant for a button could miss it.
@@ -70,6 +72,8 @@ interface ChatMessage {
   receiver_id: string;
   message: string;
   message_type?: string;
+  // Flagged by the server (docs/MONEY_RULES_DESIGN.md §10).
+  off_app?: 'CONTACT' | 'PAYMENT' | null;
   sent_at: string;
 }
 
@@ -225,7 +229,8 @@ export default function ChatScreen() {
   const callActionInFlightRef = useRef(false);
   // null until loaded — treated as open meanwhile (the server still checks).
   const [jobStatus, setJobStatus] = useState<string | null>(null);
-  const contactOpen = jobStatus === null || CONTACT_OPEN_STATUSES.has(jobStatus);
+  const [serverContactOpen, setServerContactOpen] = useState<boolean | null>(null);
+  const contactOpen = jobStatus === null || (serverContactOpen ?? CONTACT_OPEN_STATUSES.has(jobStatus));
   const refreshJobStatusRef = useRef<() => void>(() => {});
   // "Ringing…" on the caller's screen once the other phone reports it.
   const [remoteRinging, setRemoteRinging] = useState(false);
@@ -243,6 +248,7 @@ export default function ChatScreen() {
   const [ratingVisible, setRatingVisible] = useState(false);
   const [ratings, setRatings] = useState({ behaviour: 0, skill: 0, punctuality: 0, communication: 0 });
   const [ratingComment, setRatingComment] = useState('');
+  const [ratingOffApp, setRatingOffApp] = useState<OffAppAnswer>(NO_OFF_APP_ANSWER);
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
 
   // The other person's presence in the call's room (see onMediaEvent).
@@ -577,7 +583,11 @@ export default function ChatScreen() {
   const refreshJobStatus = () => {
     if (!jobId) return;
     SkoFyApi.jobs.get(jobId)
-      .then((job: any) => { if (job?.status) setJobStatus(job.status); })
+      .then((job: any) => {
+        if (job?.status) setJobStatus(job.status);
+        // The server's word on it — a finished job reopens for a guarantee fix.
+        setServerContactOpen(typeof job?.contact_open === 'boolean' ? job.contact_open : null);
+      })
       // No longer part of this job (e.g. it reopened to another provider).
       .catch((err: any) => { if (err?.error_code === 'FORBIDDEN') setJobStatus('CLOSED'); });
   };
@@ -861,7 +871,7 @@ export default function ChatScreen() {
           if (data.type === 'job_status') {
             // The job just changed (completed, disputed…) — a closed job's
             // chat and calls shut at once.
-            if (typeof data.status === 'string') setJobStatus(data.status);
+            if (typeof data.status === 'string') { setJobStatus(data.status); setServerContactOpen(null); }
             return;
           }
           if (data.type === 'presence_update') {
@@ -992,6 +1002,17 @@ export default function ChatScreen() {
         label = isMine
           ? `You cancelled — other applicants are still available${log.reason ? `: ${log.reason}` : ''}`
           : `${otherName} cancelled, but other applicants are still available${log.reason ? `: ${log.reason}` : ''}`;
+      } else if (log.event === 'customer_absent') {
+        // The provider waited at the address and nobody came (§3).
+        LogIcon = XCircle;
+        label = `${otherName} waited and couldn't reach you — the job is cancelled`;
+      } else if (log.event === 'inspection_report') {
+        // The inspection report, sent for the customer to confirm (§4).
+        LogIcon = MapPin;
+        label = `${otherName} sent the inspection report — confirm it on the tracking screen`;
+      } else if (log.event === 'inspection_not_done') {
+        LogIcon = XCircle;
+        label = "You said the inspection isn't finished yet";
       } else if (log.event === 'pickup_refused') {
         // A pickup from a person: the provider didn't take the item.
         LogIcon = XCircle;
@@ -1037,6 +1058,7 @@ export default function ChatScreen() {
             {isUser && <CheckCheck size={12} color="#fff" style={styles.statusIcon} />}
           </View>
         </View>
+        <OffAppNote mark={item.off_app} />
       </Animated.View>
     );
   };
@@ -1171,6 +1193,7 @@ export default function ChatScreen() {
                 multiline
                 numberOfLines={3}
               />
+              <OffAppQuestion providerName={name || 'the provider'} value={ratingOffApp} onChange={setRatingOffApp} />
             </ScrollView>
             <View style={styles.ratingActions}>
               <TouchableOpacity style={styles.ratingSkipBtn} onPress={() => { markRatingSkipped(jobId); setRatingVisible(false); }}>
@@ -1192,6 +1215,7 @@ export default function ChatScreen() {
                       punctuality_rating: ratings.punctuality,
                       communication_rating: ratings.communication,
                       comment: ratingComment,
+                      ...ratingOffApp,
                     });
                     markRatingSubmitted(jobId);
                     setRatingVisible(false);

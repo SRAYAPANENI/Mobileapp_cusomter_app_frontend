@@ -5,6 +5,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SkoFyApi, BASE_URL, TokenStore, getFreshAccessToken } from '@/services/api';
+import { InspectionReport, InspectionReportCard } from '@/components/inspection-report-card';
 import { kmToMiles } from '@/services/units';
 import { GOOGLE_PLACES_API_KEY } from '@/services/google-places';
 import { Image } from 'expo-image';
@@ -29,6 +30,10 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { SlideInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RatingModal, RatingDimensions } from '@/components/ui/rating-modal';
+import { ExtraWorkCard } from '@/components/extra-work-card';
+import { TipSheet } from '@/components/tip-sheet';
+import { QuoteGuide } from '@/components/price-guide-note';
+import type { OffAppAnswer } from '@/components/off-app-question';
 import { isRatingSkipped, markRatingSkipped, markRatingSubmitted } from '@/services/ratingReminders';
 import { CheckoutSheet } from '@/components/checkout-sheet';
 import { GoodsHoldCard, PickupCodeEditor, goodsReceiptLine } from '@/components/pickup-tracking';
@@ -287,6 +292,11 @@ export default function TrackProviderScreen() {
   // Sent from the customer: someone else receives it, so they need the drop-off code.
   const [recipientName, setRecipientName] = useState<string | null>(null);
   const [invoice, setInvoice] = useState<any>(null);
+  // The provider's inspection report, for the customer to confirm (§4).
+  const [inspection, setInspection] = useState<{
+    report: InspectionReport | null; completed: boolean; confirmed: boolean; disputed: boolean;
+  }>({ report: null, completed: false, confirmed: false, disputed: false });
+  const [inspectionTick, setInspectionTick] = useState(0);
   const [payingFee, setPayingFee] = useState(false);
   const [respondingToInvoice, setRespondingToInvoice] = useState(false);
   const [showCounterInput, setShowCounterInput] = useState(false);
@@ -294,6 +304,7 @@ export default function TrackProviderScreen() {
   const { payInspectionFee, payGoodsHold, payInvoice } = useHirePayment();
   const [mapError, setMapError] = useState(!MapView);
   const [showRatingModal, setShowRatingModal] = useState(false);
+  const [tipJobId, setTipJobId] = useState<string | null>(null);
   const [showCheckout, setShowCheckout] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   // Set when the job is permanently gone/inaccessible (404/403) — usually a
@@ -563,9 +574,17 @@ export default function TrackProviderScreen() {
             if (!cancelled && otpResult) setInspectionOtp(otpResult);
           }
         }
-        if (jobStatus === 'INVOICE_PENDING') {
-          const job = await SkoFyApi.jobs.get(jobId).catch(() => null);
-          if (!cancelled && job) setInvoice((job as any)?.invoice ?? null);
+        if (jobStatus === 'INSPECTING' || jobStatus === 'INVOICE_PENDING') {
+          const job: any = await SkoFyApi.jobs.get(jobId).catch(() => null);
+          if (!cancelled && job) {
+            setInvoice(job.invoice ?? null);
+            setInspection({
+              report: job.inspection_report ?? null,
+              completed: !!job.inspection_completed_at,
+              confirmed: job.inspection_confidence === 'CONFIRMED',
+              disputed: !!job.inspection_disputed_at,
+            });
+          }
         }
         if (deliveryOnItsWay) {
           const result = await SkoFyApi.jobs.getDeliveryCode(jobId).catch(() => null);
@@ -579,7 +598,7 @@ export default function TrackProviderScreen() {
     poll();
     const interval = setInterval(poll, 3000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [jobId, jobStatus, jobKind]);
+  }, [jobId, jobStatus, jobKind, inspectionTick]);
 
   const handlePayInspectionFee = async () => {
     if (!jobId) return;
@@ -828,11 +847,11 @@ export default function TrackProviderScreen() {
     appAlert.show('success', 'Dispute Filed', message, [{ text: 'OK', onPress: () => router.back() }]);
   };
 
-  const handleRatingSubmit = async (ratings: RatingDimensions, comment: string) => {
+  const handleRatingSubmit = async (ratings: RatingDimensions, comment: string, offApp: OffAppAnswer) => {
     if (!jobId) throw new Error('Missing job reference.');
     // Throws on failure — RatingModal awaits this and shows the error
     // inline instead of silently closing as if it succeeded.
-    await SkoFyApi.jobs.submitReview(jobId, { ...ratings, comment });
+    await SkoFyApi.jobs.submitReview(jobId, { ...ratings, comment, ...offApp });
     markRatingSubmitted(jobId);
   };
 
@@ -1215,13 +1234,26 @@ export default function TrackProviderScreen() {
             )
           )}
 
-          {jobStatus === 'INSPECTING' && (
+          {jobStatus === 'INSPECTING' && !inspection.completed && (
             <View style={styles.inspectionCard}>
               <ThemedText style={styles.inspectionCardTitle}>Inspection in progress</ThemedText>
               <ThemedText style={styles.inspectionCardBody}>
-                Your provider is inspecting the job on-site.
+                Your provider is inspecting the job on-site. You'll see their report here.
               </ThemedText>
             </View>
+          )}
+          {/* The report, to confirm — until it's confirmed (§4). */}
+          {jobId && (jobStatus === 'INSPECTING' || jobStatus === 'INVOICE_PENDING') && inspection.completed
+            && (!inspection.confirmed || jobStatus === 'INSPECTING') && (
+            <InspectionReportCard
+              jobId={jobId}
+              jobStatus={jobStatus}
+              report={inspection.report}
+              confirmed={inspection.confirmed}
+              disputed={inspection.disputed}
+              onChanged={() => setInspectionTick((t) => t + 1)}
+              onError={(title, message) => appAlert.show('error', title, message)}
+            />
           )}
 
           {/* Invoice — the real price, set only after inspection. */}
@@ -1252,6 +1284,18 @@ export default function TrackProviderScreen() {
                 </View>
               )}
               {invoice.notes && <ThemedText style={styles.inspectionCardBody}>{invoice.notes}</ThemedText>}
+              {invoice.status === 'PENDING' && jobId && <QuoteGuide jobId={jobId} />}
+              {invoice.visit_credit > 0 && (
+                <ThemedText style={[styles.inspectionCardBody, { marginTop: 6 }]}>
+                  The ${Number(invoice.visit_credit).toFixed(2)} visiting fee you paid counts toward this price.
+                </ThemedText>
+              )}
+              {invoice.deposit_percent > 0 && (
+                <ThemedText style={[styles.inspectionCardBody, { marginTop: 6 }]}>
+                  {invoice.deposit_percent}% goes to your provider when work starts, for parts and materials; the rest when the
+                  job is done. You pay it all now, and it's held safely until then.
+                </ThemedText>
+              )}
 
               {invoice.status === 'PENDING' && !showCounterInput && (
                 // Primary action gets its own full-width row; Counter/Reject
@@ -1380,6 +1424,11 @@ export default function TrackProviderScreen() {
             </View>
           )}
 
+          {/* Work the provider asks to add mid-job (§11). */}
+          {jobId && !isCompleted && jobStatus === 'IN_PROGRESS' && (
+            <ExtraWorkCard jobId={jobId} onMessage={(kind, title, message) => appAlert.show(kind, title, message)} />
+          )}
+
           {/* Mark as Completed Button */}
           {!isCompleted && jobStatus === 'IN_PROGRESS' && (
             <TouchableOpacity
@@ -1419,11 +1468,19 @@ export default function TrackProviderScreen() {
         visible={showRatingModal && isFocused}
         providerName={provider?.name ?? 'Provider'}
         onClose={handleRatingModalClose}
+        onTip={() => { setShowRatingModal(false); setTipJobId(jobId ?? null); }}
         onSubmit={handleRatingSubmit}
         onSkip={() => {
           if (jobId) markRatingSkipped(jobId);
           handleRatingModalClose();
         }}
+      />
+
+      <TipSheet
+        jobId={tipJobId}
+        providerName={provider?.name ?? 'your provider'}
+        onClose={() => { setTipJobId(null); handleRatingModalClose(); }}
+        onMessage={(kind, title, message) => appAlert.show(kind, title, message)}
       />
 
       {jobId && (

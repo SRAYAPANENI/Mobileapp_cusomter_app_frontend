@@ -582,7 +582,34 @@ async function showChatMessageNotification(jobId: string, title: string, body: s
   });
 }
 
-async function showJobUpdateNotification(jobId: string, title: string, body: string, route: '/applicants' | '/my-jobs' | '/track-provider' | '/chat' | '/edit-job') {
+type JobUpdateRoute = '/applicants' | '/my-jobs' | '/track-provider' | '/chat' | '/edit-job' | '/account-standing' | '/job-history' | '/regular-bookings';
+
+/** Pushes that update a job the customer is following, and where a tap
+ * opens — one list for the background and foreground listeners. */
+const JOB_UPDATE_ROUTES: Record<string, JobUpdateRoute> = {
+  inspection_otp: '/track-provider',
+  inspection_started: '/track-provider',
+  invoice_raised: '/track-provider',
+  counter_accepted: '/track-provider',
+  counter_rejected: '/track-provider',
+  // Proving the inspection, and the provider at the door (MONEY_RULES_DESIGN §3–4).
+  inspection_report: '/track-provider',
+  provider_arrived: '/track-provider',
+  // A strike from a dispute decision — where to read it and appeal (§5).
+  strike: '/account-standing',
+  // The provider asks to add work mid-job — approve it there (§11).
+  extra_work_proposed: '/track-provider',
+  // A guarantee claim moved on — the customer's history shows it (§12).
+  guarantee_claim: '/job-history',
+  // Repeat bookings: answered or ended, and a visit to pay for (§13).
+  series_answered: '/regular-bookings',
+  series_pay: '/track-provider',
+  // A held visiting fee decided on the evidence, a dispute past its deadline (§5).
+  visit_decided: '/track-provider',
+  dispute_overdue: '/track-provider',
+};
+
+async function showJobUpdateNotification(jobId: string, title: string, body: string, route: JobUpdateRoute) {
   await notifee.createChannel({
     id: JOB_UPDATE_CHANNEL_ID,
     name: 'Service Updates',
@@ -1506,18 +1533,13 @@ export function registerBackgroundHandler() {
     // isn't in this notification's visible text (see request_inspection_otp
     // on the backend) — it's meant to be ephemeral, not sitting in
     // notification history forever; track-provider fetches it live instead.
-    if (
-      remoteMessage.data?.type === 'inspection_otp' ||
-      remoteMessage.data?.type === 'inspection_started' ||
-      remoteMessage.data?.type === 'invoice_raised' ||
-      remoteMessage.data?.type === 'counter_accepted' ||
-      remoteMessage.data?.type === 'counter_rejected'
-    ) {
+    const updateRoute = JOB_UPDATE_ROUTES[remoteMessage.data?.type as string];
+    if (updateRoute) {
       await showJobUpdateNotification(
-        remoteMessage.data.job_id as string,
-        (remoteMessage.data.title as string) || 'Job update',
-        (remoteMessage.data.body as string) || 'Open the app to see what changed.',
-        '/track-provider',
+        (remoteMessage.data?.job_id as string) || '',
+        (remoteMessage.data?.title as string) || 'Job update',
+        (remoteMessage.data?.body as string) || 'Open the app to see what changed.',
+        updateRoute,
       );
       return;
     }
@@ -1708,18 +1730,13 @@ export function initCallManager() {
     // isn't in this notification's visible text — it's meant to be
     // ephemeral, not sitting in notification history forever; track-provider
     // fetches it live instead.
-    if (
-      remoteMessage.data?.type === 'inspection_otp' ||
-      remoteMessage.data?.type === 'inspection_started' ||
-      remoteMessage.data?.type === 'invoice_raised' ||
-      remoteMessage.data?.type === 'counter_accepted' ||
-      remoteMessage.data?.type === 'counter_rejected'
-    ) {
+    const updateRoute = JOB_UPDATE_ROUTES[remoteMessage.data?.type as string];
+    if (updateRoute) {
       await showJobUpdateNotification(
-        remoteMessage.data.job_id as string,
-        (remoteMessage.data.title as string) || 'Job update',
-        (remoteMessage.data.body as string) || 'Open the app to see what changed.',
-        '/track-provider',
+        (remoteMessage.data?.job_id as string) || '',
+        (remoteMessage.data?.title as string) || 'Job update',
+        (remoteMessage.data?.body as string) || 'Open the app to see what changed.',
+        updateRoute,
       );
       return;
     }

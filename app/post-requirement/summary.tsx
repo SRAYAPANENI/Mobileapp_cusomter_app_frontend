@@ -1,4 +1,5 @@
 import { ThemedText } from '@/components/themed-text';
+import { PriceGuideNote } from '@/components/price-guide-note';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { usePostRequirement } from '@/context/PostRequirementContext';
@@ -319,6 +320,9 @@ export default function JobSummaryScreen() {
               </ThemedText>
             </View>
           ) : null}
+          {data.serviceMode !== 'REMOTE' && (
+            <PriceGuideNote skillIds={data.skill_ids} lat={data.lat ?? null} lng={data.lng ?? null} />
+          )}
         </Animated.View>
       </ScrollView>
 

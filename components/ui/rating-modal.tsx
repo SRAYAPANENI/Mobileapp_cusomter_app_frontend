@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal, StyleSheet, View, TouchableOpacity } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { ThemedText } from '../themed-text';
 import { Fonts } from '@/constants/theme';
 import { Star, CheckCircle2 } from 'lucide-react-native';
+import { NO_OFF_APP_ANSWER, OffAppAnswer, OffAppQuestion } from '@/components/off-app-question';
 import Animated, { SlideInDown, FadeIn } from 'react-native-reanimated';
 
 export interface RatingDimensions {
@@ -18,11 +19,13 @@ interface RatingModalProps {
   visible: boolean;
   /** After a rating was submitted ("Done"). */
   onClose: () => void;
-  onSubmit: (ratings: RatingDimensions, comment: string) => Promise<void>;
+  onSubmit: (ratings: RatingDimensions, comment: string, offApp: OffAppAnswer) => Promise<void>;
   providerName: string;
   /** "Maybe later" — closes without rating. The rating is still owed, so the
    *  app reminds the customer again next time it's opened. */
   onSkip: () => void;
+  /** Offered after rating: tip the provider (§11). */
+  onTip?: () => void;
 }
 
 const DIMENSIONS: { key: keyof RatingDimensions; label: string; hint: string }[] = [
@@ -32,7 +35,7 @@ const DIMENSIONS: { key: keyof RatingDimensions; label: string; hint: string }[]
   { key: 'communication_rating', label: 'Communication', hint: 'Responsiveness and clarity' },
 ];
 
-export function RatingModal({ visible, onClose, onSubmit, providerName, onSkip }: RatingModalProps) {
+export function RatingModal({ visible, onClose, onSubmit, providerName, onSkip, onTip }: RatingModalProps) {
   const [ratings, setRatings] = useState<RatingDimensions>({
     skill_rating: 0,
     punctuality_rating: 0,
@@ -40,6 +43,9 @@ export function RatingModal({ visible, onClose, onSubmit, providerName, onSkip }
     communication_rating: 0,
   });
   const [comment, setComment] = useState('');
+  const [offApp, setOffApp] = useState<OffAppAnswer>(NO_OFF_APP_ANSWER);
+  // One answer per job: a sheet reused for the next job starts fresh.
+  useEffect(() => { if (visible) setOffApp(NO_OFF_APP_ANSWER); }, [visible, providerName]);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,7 +61,7 @@ export function RatingModal({ visible, onClose, onSubmit, providerName, onSkip }
     setError(null);
     setSubmitting(true);
     try {
-      await onSubmit(ratings, comment);
+      await onSubmit(ratings, comment, offApp);
       setIsSubmitted(true);
     } catch (err: any) {
       setError(err?.message ?? 'Failed to submit rating. Please try again.');
@@ -108,6 +114,8 @@ export function RatingModal({ visible, onClose, onSubmit, providerName, onSkip }
               onChangeText={setComment}
             />
 
+            <OffAppQuestion providerName={providerName} value={offApp} onChange={setOffApp} />
+
             {error && (
               <ThemedText style={styles.errorText}>{error}</ThemedText>
             )}
@@ -139,6 +147,11 @@ export function RatingModal({ visible, onClose, onSubmit, providerName, onSkip }
             <ThemedText style={styles.successSubtitle}>
               Your rating helps us improve our services and recognize good work.
             </ThemedText>
+            {onTip && (
+              <TouchableOpacity style={[styles.submitButton, styles.tipButton]} onPress={onTip}>
+                <ThemedText style={[styles.submitButtonText, styles.tipButtonText]}>Tip {providerName}</ThemedText>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.submitButton} onPress={onClose}>
               <ThemedText style={styles.submitButtonText}>Done</ThemedText>
             </TouchableOpacity>
@@ -232,6 +245,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 10,
     elevation: 4,
+  },
+  tipButton: {
+    backgroundColor: '#FFCE48',
+    marginBottom: 10,
+  },
+  tipButtonText: {
+    color: '#111827',
   },
   disabledButton: {
     backgroundColor: '#E5E7EB',
