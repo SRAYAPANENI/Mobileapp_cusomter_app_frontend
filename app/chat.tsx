@@ -229,6 +229,8 @@ export default function ChatScreen() {
   const callActionInFlightRef = useRef(false);
   // null until loaded — treated as open meanwhile (the server still checks).
   const [jobStatus, setJobStatus] = useState<string | null>(null);
+  // A business's job: its team can see this chat (docs/BUSINESS_PROVIDERS_DESIGN.md §4).
+  const [businessName, setBusinessName] = useState<string | null>(null);
   const [serverContactOpen, setServerContactOpen] = useState<boolean | null>(null);
   const contactOpen = jobStatus === null || (serverContactOpen ?? CONTACT_OPEN_STATUSES.has(jobStatus));
   const refreshJobStatusRef = useRef<() => void>(() => {});
@@ -585,6 +587,7 @@ export default function ChatScreen() {
     SkoFyApi.jobs.get(jobId)
       .then((job: any) => {
         if (job?.status) setJobStatus(job.status);
+        setBusinessName(job?.business_name ?? null);
         // The server's word on it — a finished job reopens for a guarantee fix.
         setServerContactOpen(typeof job?.contact_open === 'boolean' ? job.contact_open : null);
       })
@@ -1114,6 +1117,12 @@ export default function ChatScreen() {
         onToggleMute={toggleMute}
         onToggleSpeaker={toggleSpeaker}
       />
+
+      {businessName && (
+        <View style={[styles.closedBanner, { paddingBottom: 10 }]}>
+          <ThemedText style={styles.closedBannerText}>{businessName}'s team can see this chat.</ThemedText>
+        </View>
+      )}
 
       <FlatList keyboardShouldPersistTaps="handled"
         ref={flatListRef}

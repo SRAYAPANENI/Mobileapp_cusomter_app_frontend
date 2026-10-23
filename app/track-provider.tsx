@@ -378,7 +378,8 @@ export default function TrackProviderScreen() {
         setProvider({
           id: j.assigned_provider.provider_id,
           name: j.assigned_provider.name,
-          role: j.assigned_provider.profession ?? 'Service Provider',
+          // A business's job: the business, with its member doing it (docs/BUSINESS_PROVIDERS_DESIGN.md).
+          role: (j as any).business_name ? `${(j as any).business_name} team` : (j.assigned_provider.profession ?? 'Service Provider'),
           rating: j.assigned_provider.avg_rating ?? 0,
           image: j.assigned_provider.profile_image_url ?? null,
           phone: j.assigned_provider.phone ?? '',

@@ -103,9 +103,15 @@ function ApplicantCard({
         <View style={styles.headerInfo}>
           <View style={styles.nameRow}>
             <ThemedText style={styles.nameText}>{item.name}</ThemedText>
-            <View style={[styles.expertiseBadge, { backgroundColor: item.expertise === 'Expert' ? '#10B981' : '#9CA3AF' }]}>
-              <ThemedText style={styles.expertiseText}>{item.expertise}</ThemedText>
-            </View>
+            {(item as any).businessName ? (
+              <View style={[styles.expertiseBadge, { backgroundColor: '#2563EB' }]}>
+                <ThemedText style={styles.expertiseText}>Verified business</ThemedText>
+              </View>
+            ) : (
+              <View style={[styles.expertiseBadge, { backgroundColor: item.expertise === 'Expert' ? '#10B981' : '#9CA3AF' }]}>
+                <ThemedText style={styles.expertiseText}>{item.expertise}</ThemedText>
+              </View>
+            )}
           </View>
           <ThemedText style={styles.professionText}>{item.profession}</ThemedText>
           {(item as any).price != null && (
@@ -226,20 +232,25 @@ function mapApiApplicant(a: any): Applicant & { applicationId: string; providerI
   const nameHidden = isNameHidden(rawName);
   const name = providerTitle(rawName, a.profession);
   const hci = a.hci_score ?? 70;
+  // Applied as a business (docs/BUSINESS_PROVIDERS_DESIGN.md): the business
+  // leads, with its own record; the member who'd do it is named under it.
+  const business = a.business_name ?? null;
   return {
     id: a.application_id,
     applicationId: a.application_id,
     providerId: a.provider_id,
-    name,
+    name: business ?? name,
+    businessName: business,
+    worker: business ? name : null,
     // '' = no photo: the card shows their trade's icon instead.
     profileImage: a.provider_image ?? a.profile_image_url ?? '',
     trade: a.profession ?? null,
-    profession: nameHidden ? NAME_AFTER_HIRING : (a.profession ?? 'Service Provider'),
+    profession: business ? `${name} would do it` : nameHidden ? NAME_AFTER_HIRING : (a.profession ?? 'Service Provider'),
     expertise: hci >= 80 ? 'Expert' : hci >= 50 ? 'Intermediate' : 'Beginner',
     distance: a.distance_km ? `${kmToMiles(Number(a.distance_km)).toFixed(1)} mi away` : 'Nearby',
     skillMatch: Math.min(100, Math.round(hci)),
-    rating: a.avg_rating ?? 0,
-    jobsCompleted: a.jobs_completed ?? 0,
+    rating: business ? (a.business_avg_rating ?? 0) : (a.avg_rating ?? 0),
+    jobsCompleted: business ? (a.business_jobs_completed ?? 0) : (a.jobs_completed ?? 0),
     about: a.bio ?? 'Experienced professional ready to help.',
     skills: [],
     reviews: [],
