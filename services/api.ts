@@ -127,6 +127,8 @@ export interface AuthUser {
   // is_new_user — is_new_user alone can't distinguish those two cases.
   is_new_role: boolean;
   profile_complete: boolean;
+  /** Logging in just cancelled a deletion they'd asked for. */
+  account_restored?: boolean;
 }
 
 export interface ApiError {
@@ -437,7 +439,23 @@ export interface RTCIceServerConfig {
   credential?: string;
 }
 
+/** Deleting the account (docs/ACCOUNT_DELETION_DESIGN.md). */
+export interface AccountDeletionStatus {
+  deletion_due_at: string | null;
+  /** What has to be finished first — empty when it can be deleted now. */
+  blockers: string[];
+  grace_days: number;
+}
+
 export const SkoFyApi = {
+  account: {
+    deletionStatus: async (): Promise<AccountDeletionStatus> => request('/account/deletion') as any,
+    /** Texts a code to the number they log in with. */
+    sendDeletionCode: async (): Promise<{ sent_to: string; mock_otp?: string | null }> =>
+      request('/account/deletion/code', { method: 'POST' }) as any,
+    deleteAccount: async (code: string): Promise<{ deletion_due_at: string; message: string }> =>
+      request('/account/deletion', { method: 'POST', body: JSON.stringify({ code }) }) as any,
+  },
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   auth: {
@@ -470,6 +488,7 @@ export const SkoFyApi = {
         is_new_user: boolean;
         is_new_role: boolean;
         profile_complete: boolean;
+        account_restored?: boolean;
       }>('/auth/verify-otp', {
         method: 'POST',
         body: JSON.stringify({ phone: normalised, otp, role: 'customer' }),
@@ -490,6 +509,7 @@ export const SkoFyApi = {
         is_new_user: data.is_new_user,
         is_new_role: data.is_new_role,
         profile_complete: data.profile_complete,
+        account_restored: !!data.account_restored,
       };
       await TokenStore.setUser(user);
       return user;
@@ -508,6 +528,7 @@ export const SkoFyApi = {
         is_new_user: boolean;
         is_new_role: boolean;
         profile_complete: boolean;
+        account_restored?: boolean;
       }>('/auth/login', {
         method: 'POST',
         body: JSON.stringify({ identifier: normalised, password, role: 'customer' }),
@@ -523,6 +544,7 @@ export const SkoFyApi = {
         is_new_user: data.is_new_user,
         is_new_role: data.is_new_role,
         profile_complete: data.profile_complete,
+        account_restored: !!data.account_restored,
       };
       await TokenStore.setUser(user);
       return user;

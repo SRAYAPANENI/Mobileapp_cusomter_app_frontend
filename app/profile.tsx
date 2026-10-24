@@ -1245,6 +1245,20 @@ export default function ProfileScreen() {
                 <ChevronRight size={20} color="#D1D5DB" />
               </TouchableOpacity>
 
+              <TouchableOpacity
+                style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}
+                onPress={() => {
+                  setIsSettingsOpen(false);
+                  router.push('/delete-account' as any);
+                }}
+              >
+                <View style={styles.settingInfo}>
+                  <Trash2 size={20} color="#6B7280" />
+                  <ThemedText style={styles.settingLabel}>Delete account</ThemedText>
+                </View>
+                <ChevronRight size={20} color="#D1D5DB" />
+              </TouchableOpacity>
+
               <TouchableOpacity style={styles.settingItem} onPress={async () => {
                 setIsSettingsOpen(false);
                 // Server drops this phone's tokens; the phone also has
