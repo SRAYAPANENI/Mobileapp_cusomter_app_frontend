@@ -1,4 +1,5 @@
 import AnimatedBackground from '@/components/animated-background';
+import { BASE_URL } from '@/services/api';
 import AnimatedBrandMark from '@/components/animated-brand-mark';
 import { useAppAlert } from '@/components/app-alert';
 import { AcceptedIdDocuments } from '@/components/accepted-id-documents';
@@ -33,7 +34,7 @@ import {
   X
 } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, TouchableOpacity, View, Linking } from 'react-native';
 import { Text, TextInput } from '@/components/scaled-text';
 // The keyboard-controller version: works with KeyboardProvider (app/_layout.tsx)
 // on Android — React Native's own one shifted the layout as the keyboard
@@ -948,7 +949,7 @@ export default function RegisterScreen() {
                 ) : (
                   <Circle size={22} color={themeColors.icon} />
                 )}
-                <ThemedText style={styles.checkboxLabel}>I consent to <Text style={{ color: themeColors.brand }}>Privacy Policy</Text></ThemedText>
+                <ThemedText style={styles.checkboxLabel}>I consent to <Text style={{ color: themeColors.brand, textDecorationLine: 'underline' }} onPress={() => Linking.openURL(`${BASE_URL}/legal/privacy`)}>Privacy Policy</Text></ThemedText>
               </TouchableOpacity>
             </View>
           </Animated.View>
