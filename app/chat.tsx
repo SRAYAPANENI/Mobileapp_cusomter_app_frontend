@@ -8,7 +8,9 @@ import {
   CheckCheck,
   ChevronLeft,
   MapPin,
+  Package,
   Phone,
+  Receipt,
   Send,
   Star,
   XCircle
@@ -973,7 +975,7 @@ export default function ChatScreen() {
 
   const renderMessage = ({ item }: { item: ChatMessage }) => {
     if (item.message_type === 'SYSTEM') {
-      let log: { event?: string; duration_seconds?: number; connected?: boolean; reason?: string; outcome?: string } = {};
+      let log: { event?: string; duration_seconds?: number; connected?: boolean; reason?: string; outcome?: string; amount?: number } = {};
       try { log = JSON.parse(item.message); } catch {}
       const isMine = item.sender_id === myUserId;
       const otherName = name || 'them';
@@ -1020,6 +1022,30 @@ export default function ChatScreen() {
         // A pickup from a person: the provider didn't take the item.
         LogIcon = XCircle;
         label = `${otherName} couldn't take the item${log.reason ? `: ${log.reason.toLowerCase()}` : ''} — the job is cancelled`;
+      } else if (log.event === 'inspection_started') {
+        LogIcon = MapPin;
+        label = `${otherName} started the inspection`;
+      } else if (log.event === 'invoice_raised') {
+        // The quote after the inspection — accept or counter it on the tracking screen.
+        LogIcon = Receipt;
+        label = log.amount != null
+          ? `${otherName} sent a quote: $${log.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          : `${otherName} sent a quote`;
+      } else if (log.event === 'pickup_confirmed') {
+        LogIcon = Package;
+        label = `${otherName} picked up the item`;
+      } else if (log.event === 'delivered') {
+        LogIcon = Package;
+        label = `${otherName} delivered the item`;
+      } else if (log.event === 'provider_absent') {
+        LogIcon = XCircle;
+        label = "You reported the provider wasn't there — the job is cancelled";
+      } else if (log.event !== 'call' && log.event !== 'call_started' && log.event !== 'call_ended'
+        && !(log.event === undefined && (log.duration_seconds != null || log.connected != null || log.outcome != null))) {
+        // Anything newer than this app: never shown as a call. (An old call
+        // record, from before calls had an event name, keeps "Voice call".)
+        LogIcon = MapPin;
+        label = 'Job update';
       }
       return (
         <Animated.View entering={FadeInLeft} style={styles.callLogWrapper}>
