@@ -589,6 +589,8 @@ type JobUpdateRoute = '/applicants' | '/my-jobs' | '/track-provider' | '/chat' |
 const JOB_UPDATE_ROUTES: Record<string, JobUpdateRoute> = {
   inspection_otp: '/track-provider',
   inspection_started: '/track-provider',
+  // A pickup from someone else: the item is collected.
+  pickup_confirmed: '/track-provider',
   invoice_raised: '/track-provider',
   counter_accepted: '/track-provider',
   counter_rejected: '/track-provider',
@@ -616,6 +618,12 @@ const JOB_UPDATE_ROUTES: Record<string, JobUpdateRoute> = {
   // Hired but not paid: book before the provider is freed (MONEY_RULES §14).
   booking_pay: '/track-provider',
 };
+
+/** Where a job update opens — the same for a tapped push and a row in the
+ * notifications list. */
+export function jobUpdateRoute(type: string): JobUpdateRoute | null {
+  return JOB_UPDATE_ROUTES[type] ?? null;
+}
 
 async function showJobUpdateNotification(jobId: string, title: string, body: string, route: JobUpdateRoute) {
   await notifee.createChannel({

@@ -34,6 +34,7 @@ import {
   View,
 } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
+import { jobUpdateRoute } from '@/services/callManager';
 import { openJobScreen } from '@/services/jobScreens';
 import { openScreen, useOpenScreen } from '@/services/openScreens';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
@@ -198,29 +199,25 @@ export default function NotificationsScreen() {
         case 'incoming_call':
           openScreen('/chat', item.job_id, { jobId: item.job_id });
           break;
-        // On-site inspection + invoice — all of these are about a job
-        // that's already hired and being tracked, so they belong on
-        // track-provider (where the OTP card / invoice card actually live),
-        // not the generic /my-jobs fallback below.
-        case 'inspection_otp':
-        case 'inspection_started':
-        case 'pickup_confirmed':
-        case 'invoice_raised':
-        case 'invoice_countered':
-        case 'counter_accepted':
-        case 'counter_rejected':
-        case 'checkin_code':
-        case 'delivery_code':
-        case 'job_update':
-        case 'care_update':
-        case 'booking_pay':
+        // Their provider cancelled: choose another applicant.
+        case 'job_reopened':
+          router.push({ pathname: '/applicants', params: { jobId: item.job_id } } as any);
+          break;
+        case 'direct_request_hired':
+        case 'job_started':
           openJobScreen('/track-provider', item.job_id);
           break;
         case 'job_expired':
           router.push({ pathname: '/edit-job', params: { jobId: item.job_id } } as any);
           break;
-        default:
-          router.push('/my-jobs');
+        default: {
+          // Every other job update opens where its push opens (one list,
+          // services/callManager.ts), else My jobs.
+          const route = jobUpdateRoute(item.notif_type);
+          if (route === '/track-provider') openJobScreen(route, item.job_id);
+          else if (route) router.push({ pathname: route, params: { jobId: item.job_id } } as any);
+          else router.push('/my-jobs');
+        }
       }
     }
   };
