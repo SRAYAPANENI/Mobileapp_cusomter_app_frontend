@@ -77,6 +77,9 @@ interface ChatMessage {
   // Flagged by the server (docs/MONEY_RULES_DESIGN.md §10).
   off_app?: 'CONTACT' | 'PAYMENT' | null;
   sent_at: string;
+  // Written by the provider's business (owner or dispatcher), not the person
+  // doing the job — "Sumanth · ABC Plumbing".
+  sender_label?: string | null;
 }
 
 function formatCallLogDuration(seconds: number): string {
@@ -1067,6 +1070,7 @@ export default function ChatScreen() {
           isUser ? styles.userMessageWrapper : styles.applicantMessageWrapper
         ]}
       >
+        {!isUser && item.sender_label && <ThemedText style={styles.senderLabel}>{item.sender_label}</ThemedText>}
         <View style={[
           styles.messageBubble,
           isUser ? styles.userBubble : styles.applicantBubble
@@ -1377,6 +1381,14 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   applicantMessageWrapper: {
     alignSelf: 'flex-start',
+  },
+  senderLabel: {
+    fontSize: 11,
+    lineHeight: 16,
+    fontFamily: Fonts.poppins,
+    color: '#6B7280',
+    marginBottom: 4,
+    marginLeft: 4,
   },
   messageBubble: {
     paddingHorizontal: 16,
