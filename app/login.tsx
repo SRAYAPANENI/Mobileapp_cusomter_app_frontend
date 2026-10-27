@@ -29,8 +29,6 @@ export default function LoginScreen() {
   const [loginMethod, setLoginMethod] = useState<'otp' | 'password'>('otp');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otp, setOtp] = useState('');
-  const [email, setEmail] = useState('');
-  const [emailError, setEmailError] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showOtp, setShowOtp] = useState(true);
@@ -219,15 +217,6 @@ export default function LoginScreen() {
     }
   };
 
-  const validateEmail = (text: string) => {
-    setEmail(text);
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (text && !emailRegex.test(text)) {
-      setEmailError('Please enter a valid email address');
-    } else {
-      setEmailError('');
-    }
-  };
 
 
   const getInputStyle = (name: string) => [

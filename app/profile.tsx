@@ -10,6 +10,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useIsOnline } from '@/hooks/use-is-online';
 import { GooglePlacesService, GooglePlaceSuggestion } from '@/services/google-places';
 import { SkoFyApi } from '@/services/api';
+import { isEmail, tidyEmail } from '@/services/email';
 import { clearHomeCache } from '@/services/homeCache';
 import { AppLock } from '@/services/appLock';
 import { signOutDevice } from '@/services/callManager';
@@ -1688,14 +1689,14 @@ export default function ProfileScreen() {
                 style={[styles.closeModalButton, { flex: 1, marginTop: 0, backgroundColor: '#FFCE48' }]}
                 disabled={emailSaving}
                 onPress={async () => {
-                  if (!emailInput.includes('@')) {
-                    showAlert('error', 'Invalid Email', 'Please enter a valid email address.');
+                  if (!isEmail(emailInput)) {
+                    showAlert('error', 'Invalid Email', 'Enter a valid email, like name@example.com.');
                     return;
                   }
                   try {
                     setEmailSaving(true);
-                    await SkoFyApi.customers.updateProfile({ email: emailInput.trim() });
-                    setUserData(prev => ({ ...prev, email: emailInput.trim() }));
+                    await SkoFyApi.customers.updateProfile({ email: tidyEmail(emailInput) });
+                    setUserData(prev => ({ ...prev, email: tidyEmail(emailInput) }));
                     setIsEmailModalOpen(false);
                     setEmailInput('');
                     showAlert('success', 'Email Updated', 'Your email address has been saved.');

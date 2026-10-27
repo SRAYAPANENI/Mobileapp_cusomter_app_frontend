@@ -10,6 +10,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SkoFyApi } from '@/services/api';
+import { isEmail, tidyEmail } from '@/services/email';
 import { registerFcmToken } from '@/services/callManager';
 import { GooglePlacesService, GooglePlaceSuggestion } from '@/services/google-places';
 import { Image } from 'expo-image';
@@ -101,6 +102,8 @@ export default function RegisterScreen() {
   // was usually already gone.
   const [idDocumentDataUrls, setIdDocumentDataUrls] = useState<(string | null)[]>([null, null, null]);
   const [isOtpSent, setIsOtpSent] = useState(false);
+  // The server's answer that this email belongs to someone else, shown under the field.
+  const [emailTaken, setEmailTaken] = useState(false);
   // How long the code lasts, and when "Resend" works again.
   const codeTimer = useCodeTimer();
   const [isOtpVerified, setIsOtpVerified] = useState(false);
@@ -129,6 +132,9 @@ export default function RegisterScreen() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Steps already saved: "Try again" after a failure skips them instead of
+  // setting the password twice (the server refuses) or adding the address twice.
+  const savedSteps = useRef(new Set<string>());
   const [searchError, setSearchError] = useState<string | null>(null);
   const [selectedCoords, setSelectedCoords] = useState<{ lat: number; lng: number } | null>(null);
   const searchTimeoutRef = useRef<any>(null);
@@ -306,11 +312,22 @@ export default function RegisterScreen() {
       appAlert.show('error', 'Invalid Number', 'Enter a valid 10-digit phone number.');
       return;
     }
+    if (formData.email.trim() && !isEmail(formData.email)) {
+      appAlert.show('error', 'Invalid Email', 'Enter a valid email, like name@example.com, or leave it blank.');
+      return;
+    }
+    const email = formData.email.trim() ? tidyEmail(formData.email) : undefined;
     try {
-      const res = await SkoFyApi.auth.sendOTP(formData.mobileNumber, 'register');
+      const res = await SkoFyApi.auth.sendOTP(formData.mobileNumber, 'register', email);
       setIsOtpSent(true);
       codeTimer.start(res.expires_in_seconds);
     } catch (error: any) {
+      // Someone else's email: said before any code is sent.
+      if (error?.error_code === 'EMAIL_ALREADY_EXISTS') {
+        setEmailTaken(true);
+        appAlert.show('error', 'Email Already Used', "This email is already used by another account. Use a different email, or log in if it's yours.");
+        return;
+      }
       // Already registered here: the server says so before sending a code.
       if (error?.error_code === 'ALREADY_REGISTERED') {
         appAlert.show('error', 'Already Registered', error.message, [
@@ -363,6 +380,8 @@ export default function RegisterScreen() {
         }
         const isNewUser = resumedIsNewUser != null ? resumedIsNewUser === '1' : user.is_new_user;
         setIsAddingRole(!isNewUser);
+        // A new sign-in (maybe another number): nothing is saved for it yet.
+        savedSteps.current.clear();
         setIsOtpVerified(true);
         setIsOtpSent(false);
       } catch (error: any) {
@@ -457,7 +476,7 @@ export default function RegisterScreen() {
                   placeholder="you@example.com"
                   placeholderTextColor={themeColors.icon}
                   value={formData.email}
-                  onChangeText={(text) => setFormData({ ...formData, email: text })}
+                  onChangeText={(text) => { setFormData({ ...formData, email: text }); setEmailTaken(false); }}
                   onFocus={() => setFocusedInput('email')}
                   onBlur={() => setFocusedInput(null)}
                   keyboardType="email-address"
@@ -465,9 +484,9 @@ export default function RegisterScreen() {
                   autoCorrect={false}
                 />
               </View>
-              {!!formData.email && !formData.email.includes('@') && (
+              {!!formData.email.trim() && (!isEmail(formData.email) || emailTaken) && (
                 <ThemedText style={{ fontSize: 12, lineHeight: 18, color: '#EF4444', marginTop: 4, fontFamily: Fonts.poppins }}>
-                  Please enter a valid email address.
+                  {emailTaken ? 'This email is already used by another account.' : 'Enter a valid email, like name@example.com.'}
                 </ThemedText>
               )}
             </View>
@@ -971,16 +990,18 @@ export default function RegisterScreen() {
                   appAlert.show('warning', 'Almost There', `Please complete: ${missing.join(', ')}.`);
                   return;
                 }
-                if (formData.email && !formData.email.includes('@')) {
+                if (formData.email.trim() && !isEmail(formData.email)) {
                   appAlert.show('error', 'Invalid Email', 'Please enter a valid email address or leave it blank.');
                   return;
                 }
                 setIsSubmitting(true);
+                const done = savedSteps.current;
                 try {
-                  // 1. Save name + email + ID number
+                  // 1. Save name + email + ID number — first: the rest hangs on it,
+                  // and it's safe to send again.
                   await SkoFyApi.auth.updateProfile({
                     name: formData.fullName,
-                    email: formData.email.trim() || undefined,
+                    email: formData.email.trim() ? tidyEmail(formData.email) : undefined,
                     id_number: formData.idNumber || undefined,
                   });
 
@@ -998,50 +1019,67 @@ export default function RegisterScreen() {
                   const customerProfilePatch: { id_document_url?: string; profile_image_url?: string } = {};
                   if (docUris.length > 0) customerProfilePatch.id_document_url = JSON.stringify(docUris);
                   if (profileImageDataUrl) customerProfilePatch.profile_image_url = profileImageDataUrl;
-                  if (Object.keys(customerProfilePatch).length > 0) {
-                    await SkoFyApi.customers.updateProfile(customerProfilePatch).catch((err) => {
+                  // 2. The rest at once — none depends on another.
+                  const photos = Object.keys(customerProfilePatch).length > 0
+                    ? SkoFyApi.customers.updateProfile(customerProfilePatch).catch((err) => {
                       console.error('Failed to save profile photo/ID document:', err);
                       if (customerProfilePatch.profile_image_url) failedSteps.push('profile photo');
                       if (customerProfilePatch.id_document_url) failedSteps.push('ID document');
-                    });
-                  }
+                    })
+                    : Promise.resolve();
 
-                  // 2. Save password so user can log in with phone + password later.
+                  // Password, so user can log in with phone + password later.
                   // Skipped when adding a role to an existing account — a
                   // password already exists for this identity, and
                   // setPassword() would require current_password to change it.
-                  if (formData.password && !isAddingRole) {
-                    await SkoFyApi.auth.setPassword(formData.password);
-                  }
+                  // If an earlier try's reply was lost (timeout), the password may
+                  // already be set — the server then asks for the "current" one. On a
+                  // brand-new account, that password can only be ours.
+                  const sentBefore = done.has('password:sent');
+                  const password = formData.password && !isAddingRole && !done.has('password')
+                    ? (done.add('password:sent'), SkoFyApi.auth.setPassword(formData.password)
+                      .catch((err) => {
+                        if (!(sentBefore && err?.error_code === 'CURRENT_PASSWORD_REQUIRED')) throw err;
+                      })
+                      .then(() => { done.add('password'); }))
+                    : Promise.resolve();
 
-                  // 2. Save address if provided
-                  if (formData.address.trim()) {
-                    const label = addressType === 'Other'
-                      ? (customLabel.trim() || 'Other')
-                      : addressType;
-                    await SkoFyApi.addresses.add({
-                      label,
-                      full_address: formData.address.trim(),
+                  // Address, if provided.
+                  const address = formData.address.trim();
+                  const addressKey = `address:${address}`;
+                  const addressSave = address && !done.has(addressKey)
+                    ? SkoFyApi.addresses.add({
+                      label: addressType === 'Other' ? (customLabel.trim() || 'Other') : addressType,
+                      full_address: address,
                       lat: selectedCoords?.lat ?? undefined,
                       lng: selectedCoords?.lng ?? undefined,
                       is_default: true,
-                    }).catch((err) => {
+                    }).then(() => { done.add(addressKey); }, (err) => {
                       console.error('Failed to save address:', err);
                       failedSteps.push('address');
-                    });
-                  }
+                    })
+                    : Promise.resolve();
 
+                  // Every step finishes before a password failure is shown, so a
+                  // retry only redoes what didn't go through.
+                  const [passwordResult] = await Promise.allSettled([password, photos, addressSave]);
+                  if (passwordResult.status === 'rejected') throw passwordResult.reason;
+
+                  // The alert lives on this screen: leave only once it's been read.
                   if (failedSteps.length > 0) {
                     appAlert.show(
                       'warning',
                       'Account Created',
                       `Your account is ready, but your ${failedSteps.join(' and ')} didn't save. Please add it again from your profile.`,
+                      undefined,
+                      undefined,
+                      () => router.replace('/home'),
                     );
+                  } else {
+                    router.replace('/home');
                   }
-
-                  router.replace('/home');
                 } catch (e: any) {
-                  const message = e?.error_code === 'EMAIL_ALREADY_EXISTS'
+                  const message = ['EMAIL_ALREADY_EXISTS', 'TIMEOUT', 'NETWORK_ERROR'].includes(e?.error_code)
                     ? e.message
                     : 'Something went wrong. Please try again.';
                   appAlert.show('error', 'Account Creation Failed', message);
@@ -1050,7 +1088,14 @@ export default function RegisterScreen() {
               }}
               disabled={isSubmitting}
             >
-              <ThemedText style={styles.createButtonText}>{isSubmitting ? 'Creating Account...' : 'Create Account'}</ThemedText>
+              {isSubmitting ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <ActivityIndicator size="small" color="#000" />
+                  <ThemedText style={styles.createButtonText}>Creating Account...</ThemedText>
+                </View>
+              ) : (
+                <ThemedText style={styles.createButtonText}>Create Account</ThemedText>
+              )}
             </TouchableOpacity>
           </View>
 

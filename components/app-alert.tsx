@@ -164,15 +164,27 @@ export function useAppAlert() {
     autoDismissMs?: number;
   }>({ visible: false, type: 'info', title: '', message: '' });
 
+  // Runs however the alert closes — a button, Back, or the auto-dismiss.
+  const onCloseRef = React.useRef<(() => void) | undefined>(undefined);
+
   const show = (
     type: AlertType,
     title: string,
     message: string,
     buttons?: AlertButton[],
     autoDismissMs?: number,
-  ) => setState({ visible: true, type, title, message, buttons, autoDismissMs });
+    onClose?: () => void,
+  ) => {
+    onCloseRef.current = onClose;
+    setState({ visible: true, type, title, message, buttons, autoDismissMs });
+  };
 
-  const hide = () => setState(s => ({ ...s, visible: false }));
+  const hide = () => {
+    setState(s => ({ ...s, visible: false }));
+    const onClose = onCloseRef.current;
+    onCloseRef.current = undefined;
+    onClose?.();
+  };
 
   const element = (
     <AppAlert

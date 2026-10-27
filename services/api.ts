@@ -158,6 +158,30 @@ export function setSessionExpiredHandler(fn: () => void): void {
   _onSessionExpired = fn;
 }
 
+// fetch has no timeout of its own: on a dead connection a call can hang for
+// minutes with the button spinning. Every call gets a limit; uploads (photos,
+// videos, voice notes) get a longer one.
+const REQUEST_TIMEOUT_MS = 30_000;
+const UPLOAD_TIMEOUT_MS = 120_000;
+
+async function timedFetch(url: string, init: RequestInit, ms = REQUEST_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch {
+    throw {
+      success: false,
+      error_code: controller.signal.aborted ? 'TIMEOUT' : 'NETWORK_ERROR',
+      message: controller.signal.aborted
+        ? 'This is taking too long. Please check your connection and try again.'
+        : "Couldn't reach the server. Please check your connection and try again.",
+    } as ApiError;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function request<T = any>(
   endpoint: string,
   options: RequestInit & { skipAuth?: boolean } = {}
@@ -180,10 +204,14 @@ async function request<T = any>(
   }
 
   const fullUrl = `${BASE_URL}${endpoint}`;
+  // Forms, and photos sent inside the JSON, are uploads.
+  const limit = fetchOptions.body instanceof FormData
+    || (typeof fetchOptions.body === 'string' && fetchOptions.body.length > 200_000)
+    ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
   if (__DEV__) console.log('[fetch]', fetchOptions.method || 'GET', fullUrl);
   let response: Response;
   try {
-    response = await fetch(fullUrl, { ...fetchOptions, headers });
+    response = await timedFetch(fullUrl, { ...fetchOptions, headers }, limit);
     if (__DEV__) console.log('[fetch RESPONSE]', response.status, fullUrl);
   } catch (networkErr: any) {
     if (__DEV__) console.error('[fetch ERROR]', fullUrl, networkErr?.message ?? networkErr);
@@ -195,7 +223,7 @@ async function request<T = any>(
     const newToken = await _refreshAccessToken();
     if (newToken) {
       headers['Authorization'] = `Bearer ${newToken}`;
-      const retried = await fetch(`${BASE_URL}${endpoint}`, { ...fetchOptions, headers });
+      const retried = await timedFetch(fullUrl, { ...fetchOptions, headers }, limit);
       return _parseResponse<T>(retried);
     }
     // Refresh failed → clear tokens and force back to login
@@ -246,11 +274,21 @@ async function _refreshAccessToken(): Promise<string | null> {
     try {
       const refreshToken = await TokenStore.getRefreshToken();
       if (!refreshToken) return null;
-      const response = await fetch(`${BASE_URL}/auth/refresh`, {
+      const response = await timedFetch(`${BASE_URL}/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
         body: JSON.stringify({ refresh_token: refreshToken }),
       });
+      // Only a refusal ends the session. A server error (a 502 mid-deploy)
+      // says nothing about the token, so it's thrown as "couldn't reach the
+      // server" and the user stays signed in.
+      if (response.status >= 500) {
+        throw {
+          success: false,
+          error_code: 'NETWORK_ERROR',
+          message: "Couldn't reach the server. Please check your connection and try again.",
+        } as ApiError;
+      }
       if (!response.ok) return null;
       const json = await response.json();
       const newToken: string = json.data?.access_token;
@@ -267,7 +305,9 @@ async function _refreshAccessToken(): Promise<string | null> {
         await SecureStore.setItemAsync(REFRESH_KEY, newRefreshToken);
       }
       return newToken ?? null;
-    } catch {
+    } catch (err: any) {
+      // No answer (offline, timed out) isn't a refusal either: keep the tokens.
+      if (err?.error_code === 'TIMEOUT' || err?.error_code === 'NETWORK_ERROR') throw err;
       return null;
     } finally {
       isRefreshing = false;
@@ -299,7 +339,8 @@ export interface JobShapePayload {
 export async function getFreshAccessToken(): Promise<string | null> {
   const token = await TokenStore.getAccessToken();
   if (token && !_expiresWithin(token, 60)) return token;
-  return (await _refreshAccessToken()) ?? token;
+  // Offline: hand back the stored token; the socket just retries later.
+  return (await _refreshAccessToken().catch(() => null)) ?? token;
 }
 
 function _expiresWithin(token: string, seconds: number): boolean {
@@ -469,11 +510,12 @@ export const SkoFyApi = {
     // purpose: the server sends a code only if this number is (login) or
     // isn't yet (register) registered in this app — NO_ACCOUNT,
     // OTHER_ROLE_ONLY or ALREADY_REGISTERED otherwise.
-    sendOTP: async (phone: string, purpose?: 'login' | 'register'): Promise<{ message: string; expires_in_seconds: number; mock_otp?: string }> => {
+    // email (register only): checked with the phone before any code is sent.
+    sendOTP: async (phone: string, purpose?: 'login' | 'register', email?: string): Promise<{ message: string; expires_in_seconds: number; mock_otp?: string }> => {
       const normalised = phone.startsWith('+1') ? phone : `+1${phone.replace(/[\s\-\(\)\.]/g, '')}`;
       return request('/auth/send-otp', {
         method: 'POST',
-        body: JSON.stringify({ phone: normalised, role: 'customer', purpose }),
+        body: JSON.stringify({ phone: normalised, role: 'customer', purpose, email: email || undefined }),
         skipAuth: true,
       });
     },
@@ -778,11 +820,11 @@ export const SkoFyApi = {
         form.append('files', { uri: f.uri, type: f.type, name: f.name } as any);
       }
       const token = await TokenStore.getAccessToken();
-      const res = await fetch(`${BASE_URL}/jobs/upload-media`, {
+      const res = await timedFetch(`${BASE_URL}/jobs/upload-media`, {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: form,
-      });
+      }, UPLOAD_TIMEOUT_MS);
       if (!res.ok) return [];
       const json = await res.json();
       return json?.data ?? [];
@@ -1245,14 +1287,14 @@ export const SkoFyApi = {
       const form = new FormData();
       form.append('file', { uri: audioUri, name: 'audio.m4a', type: 'audio/m4a' } as any);
       if (language) form.append('language', language);
-      const res = await fetch(`${BASE_URL}/ai/transcribe`, {
+      const res = await timedFetch(`${BASE_URL}/ai/transcribe`, {
         method: 'POST',
         headers: {
           'ngrok-skip-browser-warning': 'true',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: form,
-      });
+      }, UPLOAD_TIMEOUT_MS);
       if (!res.ok) {
         // Previously threw a bare Error with no error_code at all — every
         // failure (a real rate limit, a Groq outage, an actual network drop)
