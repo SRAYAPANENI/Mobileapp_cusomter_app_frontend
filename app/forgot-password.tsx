@@ -1,4 +1,7 @@
 import AnimatedBackground from '@/components/animated-background';
+import { useAppAlert } from '@/components/app-alert';
+import { CodeTimerRow } from '@/components/code-timer-row';
+import { useCodeTimer } from '@/hooks/use-code-timer';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
@@ -6,22 +9,14 @@ import { useAppContext } from '@/context/AppContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SkoFyApi } from '@/services/api';
 import { router } from 'expo-router';
-import { ArrowLeft, ChevronDown, Eye, EyeOff, ShieldCheck } from 'lucide-react-native';
+import { ArrowLeft, Eye, EyeOff, ShieldCheck } from 'lucide-react-native';
 import React, { useState } from 'react';
-import { Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import type { CountryCode } from 'react-native-country-picker-modal';
-import { UsPhonePrefix, US_CALLING_CODE, US_PHONE_INPUT_MAX, formatUsPhone, usPhoneDigits } from '@/components/us-phone-prefix';
+import { UsPhonePrefix, US_PHONE_INPUT_MAX, formatUsPhone, isUsPhone, usPhoneDigits } from '@/components/us-phone-prefix';
 import Animated, { FadeInDown, Layout } from 'react-native-reanimated';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
-
-// Only US numbers actually validate server-side (_validate_phone in
-// app/schemas/auth.py) — the picker still lists other countries for visual
-// consistency with login/register, which have the same characteristic.
-const PHONE_NUMBER_LENGTH: Record<string, number> = {
-  US: 10, IN: 10, GB: 10, AE: 9, KW: 8, QA: 8, SA: 9,
-};
 
 // A 422 (request validation failure — bad phone format, malformed OTP,
 // etc.) carries the actual per-field reason in details.errors[0].message;
@@ -38,15 +33,32 @@ export default function ForgotPasswordScreen() {
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const { setIsLoading, showFeedback } = useAppContext();
+  const appAlert = useAppAlert();
+  // How long the code lasts, and when "Resend" works again.
+  const codeTimer = useCodeTimer();
+
+  // No account for this number in this app (or only in the other one): say
+  // so with a choice — a mistyped number just needs correcting.
+  const offerRegister = (err: any): boolean => {
+    if (err?.error_code !== 'NO_ACCOUNT' && err?.error_code !== 'OTHER_ROLE_ONLY') return false;
+    appAlert.show(
+      'error',
+      err.error_code === 'NO_ACCOUNT' ? 'No Account Found' : 'Not a Customer Account Yet',
+      err.message,
+      [
+        { text: 'Change number', variant: 'secondary', onPress: () => { setIsCodeSent(false); setOtp(''); codeTimer.reset(); } },
+        { text: 'Register', variant: 'primary', onPress: () => router.replace({ pathname: '/register', params: { prefillPhone: phoneNumber } }) },
+      ],
+    );
+    return true;
+  };
 
   // US launch: US numbers only — the server accepts only +1 numbers.
-  const countryCode: CountryCode = 'US';
-  const callingCode = US_CALLING_CODE;
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isCodeSent, setIsCodeSent] = useState(false);
 
   const [otp, setOtp] = useState('');
-  const [showOtp, setShowOtp] = useState(false);
+  const [showOtp, setShowOtp] = useState(true);
   const [newPassword, setNewPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -55,30 +67,22 @@ export default function ForgotPasswordScreen() {
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
 
 
-  const requiredPhoneLength = PHONE_NUMBER_LENGTH[countryCode] ?? 10;
-
   const handleSendCode = async () => {
-    // Length must match whatever the picker/maxLength above actually
-    // allows for the selected country (a fixed 10 here would make AE/KW/QA
-    // — 9 or 8 digits — impossible to ever pass, since the input can't
-    // even reach 10 digits for them). The leading-digit check catches the
-    // actual reported bug — sendOTP/resetPassword always force a +1 prefix
-    // and the backend only ever validates as a 10-digit US number
-    // regardless of country selected, so an obviously-fake test number
-    // like 1234567890 or 0000000000 passed this check before and only
-    // failed with a confusing 422 from the server.
-    if (phoneNumber.length !== requiredPhoneLength || !/^[2-9]/.test(phoneNumber)) {
-      showFeedback('error', 'Invalid Number', `Enter a valid ${requiredPhoneLength}-digit phone number.`);
+    // The server only takes a real US number: catch a bad one here, plainly.
+    if (!isUsPhone(phoneNumber)) {
+      showFeedback('error', 'Invalid Number', 'Enter a valid 10-digit phone number.');
       return;
     }
     try {
       setIsLoading(true);
       const res = await SkoFyApi.auth.sendResetOTP(phoneNumber);
       setIsCodeSent(true);
+      codeTimer.start(res.expires_in_seconds);
       if (res.mock_otp) {
         showFeedback('info', 'Dev Mode', `Your reset code is: ${res.mock_otp}`);
       }
     } catch (err: any) {
+      if (offerRegister(err)) return;
       showFeedback('error', 'Could Not Send Code', getErrorMessage(err, 'Please check your number and try again.'));
     } finally {
       setIsLoading(false);
@@ -88,6 +92,10 @@ export default function ForgotPasswordScreen() {
   const handleResetPassword = async () => {
     if (otp.length !== 6) {
       showFeedback('error', 'Invalid Code', 'Enter the 6-digit code sent to your phone.');
+      return;
+    }
+    if (codeTimer.expired) {
+      showFeedback('error', 'Code Expired', 'That code has expired. Tap Resend for a new one.');
       return;
     }
     if (newPassword.length < 8 || !/[a-zA-Z]/.test(newPassword) || !/\d/.test(newPassword)) {
@@ -104,6 +112,7 @@ export default function ForgotPasswordScreen() {
       showFeedback('success', 'Password Reset', 'Your password has been reset. Please log in with your new password.');
       router.replace('/login');
     } catch (err: any) {
+      if (offerRegister(err)) return;
       showFeedback('error', 'Could Not Reset Password', getErrorMessage(err, 'The code may be wrong or expired. Try again.'));
     } finally {
       setIsLoading(false);
@@ -160,7 +169,9 @@ export default function ForgotPasswordScreen() {
                       style={getInputStyle('phone')}
                       placeholder="Mobile number"
                       placeholderTextColor={themeColors.icon}
-                      keyboardType="numeric"
+                      keyboardType="phone-pad"
+                      autoComplete="tel-national"
+                      textContentType="telephoneNumber"
                       value={formatUsPhone(phoneNumber)}
                       onChangeText={(text) => setPhoneNumber(usPhoneDigits(text))}
                       onFocus={() => setFocusedInput('phone')}
@@ -182,7 +193,7 @@ export default function ForgotPasswordScreen() {
                 <View style={styles.inputWrapper}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <ThemedText style={styles.label}>Verification Code</ThemedText>
-                    <TouchableOpacity onPress={() => { setIsCodeSent(false); setOtp(''); }}>
+                    <TouchableOpacity onPress={() => { setIsCodeSent(false); setOtp(''); codeTimer.reset(); }}>
                       <ThemedText style={[styles.linkText, { color: themeColors.brand }]}>Change Number</ThemedText>
                     </TouchableOpacity>
                   </View>
@@ -191,24 +202,22 @@ export default function ForgotPasswordScreen() {
                       style={[getInputStyle('otp'), { paddingRight: 48 }]}
                       placeholder="Enter 6-digit code"
                       placeholderTextColor={themeColors.icon}
-                      keyboardType="numeric"
+                      keyboardType="number-pad"
+                      autoComplete="sms-otp"
+                      textContentType="oneTimeCode"
                       secureTextEntry={!showOtp}
                       value={otp}
-                      onChangeText={setOtp}
+                      onChangeText={(text) => setOtp(text.replace(/\D/g, ''))}
                       onFocus={() => setFocusedInput('otp')}
                       onBlur={() => setFocusedInput(null)}
                       maxLength={6}
                     />
-                    <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowOtp(!showOtp)}>
+                    <TouchableOpacity style={styles.eyeIcon} hitSlop={12} onPress={() => setShowOtp(!showOtp)}>
                       {showOtp ? <EyeOff size={20} color={themeColors.icon} /> : <Eye size={20} color={themeColors.icon} />}
                     </TouchableOpacity>
                   </View>
                 </View>
-                <TouchableOpacity style={[styles.resendRow, { backgroundColor: themeColors.background }]} onPress={handleSendCode}>
-                  <ThemedText style={styles.resendRowText}>
-                    Didn't get a code? <ThemedText style={[styles.resendRowText, styles.resendRowTextBold, { color: themeColors.brand }]}>Resend</ThemedText>
-                  </ThemedText>
-                </TouchableOpacity>
+                <CodeTimerRow timer={codeTimer} onResend={handleSendCode} />
 
                 <View style={styles.inputWrapper}>
                   <ThemedText style={styles.label}>New Password</ThemedText>
@@ -219,12 +228,15 @@ export default function ForgotPasswordScreen() {
                       placeholderTextColor={themeColors.icon}
                       secureTextEntry={!showNewPassword}
                       autoCapitalize="none"
+                      autoCorrect={false}
+                      autoComplete="new-password"
+                      textContentType="newPassword"
                       value={newPassword}
                       onChangeText={setNewPassword}
                       onFocus={() => setFocusedInput('newPassword')}
                       onBlur={() => setFocusedInput(null)}
                     />
-                    <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowNewPassword(!showNewPassword)}>
+                    <TouchableOpacity style={styles.eyeIcon} hitSlop={12} onPress={() => setShowNewPassword(!showNewPassword)}>
                       {showNewPassword ? <EyeOff size={20} color={themeColors.icon} /> : <Eye size={20} color={themeColors.icon} />}
                     </TouchableOpacity>
                   </View>
@@ -239,12 +251,15 @@ export default function ForgotPasswordScreen() {
                       placeholderTextColor={themeColors.icon}
                       secureTextEntry={!showConfirmPassword}
                       autoCapitalize="none"
+                      autoCorrect={false}
+                      autoComplete="new-password"
+                      textContentType="newPassword"
                       value={confirmPassword}
                       onChangeText={setConfirmPassword}
                       onFocus={() => setFocusedInput('confirmPassword')}
                       onBlur={() => setFocusedInput(null)}
                     />
-                    <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
+                    <TouchableOpacity style={styles.eyeIcon} hitSlop={12} onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
                       {showConfirmPassword ? <EyeOff size={20} color={themeColors.icon} /> : <Eye size={20} color={themeColors.icon} />}
                     </TouchableOpacity>
                   </View>
@@ -261,6 +276,7 @@ export default function ForgotPasswordScreen() {
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
+      {appAlert.element}
     </ThemedView>
   );
 }
@@ -364,23 +380,6 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   eyeIcon: {
     position: 'absolute',
     right: 20,
-  },
-  resendRow: {
-    alignSelf: 'flex-end',
-    marginTop: -10,
-    marginBottom: 20,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  resendRowText: {
-    fontSize: 13, lineHeight: 17,
-    fontFamily: Fonts.poppins,
-    opacity: 0.7,
-  },
-  resendRowTextBold: {
-    fontFamily: Fonts.poppinsBold,
-    opacity: 1,
   },
   actionButton: {
     height: 60,

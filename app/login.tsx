@@ -1,5 +1,7 @@
 import AnimatedBackground from '@/components/animated-background';
 import { useAppAlert } from '@/components/app-alert';
+import { CodeTimerRow } from '@/components/code-timer-row';
+import { useCodeTimer } from '@/hooks/use-code-timer';
 import AnimatedBrandMark from '@/components/animated-brand-mark';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -35,18 +37,12 @@ export default function LoginScreen() {
   // US launch: US numbers only — the server accepts only +1 numbers.
   const callingCode = US_CALLING_CODE;
   const [isOtpSent, setIsOtpSent] = useState(false);
-  // Seconds until "Resend" works again — stops a stream of texts from repeated taps.
-  const [resendIn, setResendIn] = useState(0);
+  // How long the code lasts, and when "Resend" works again.
+  const codeTimer = useCodeTimer();
   const [isExitModalVisible, setIsExitModalVisible] = useState(false);
 
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
   const lastBackPressTime = useRef<number>(0);
-
-  useEffect(() => {
-    if (resendIn <= 0) return;
-    const t = setTimeout(() => setResendIn((n) => n - 1), 1000);
-    return () => clearTimeout(t);
-  }, [resendIn]);
 
   useEffect(() => {
     let isMounted = true;
@@ -146,6 +142,10 @@ export default function LoginScreen() {
       showFeedback('error', 'Invalid Code', 'Enter the 6-digit code sent to your phone.');
       return;
     }
+    if (codeTimer.expired) {
+      showFeedback('error', 'Code Expired', 'That code has expired. Tap Resend for a new one.');
+      return;
+    }
     try {
       setIsLoading(true);
       const user = await SkoFyApi.auth.verifyOTP(phoneNumber, otp);
@@ -207,7 +207,7 @@ export default function LoginScreen() {
       setIsLoading(true);
       const res = await SkoFyApi.auth.sendOTP(phoneNumber, 'login');
       setIsOtpSent(true);
-      setResendIn(30);
+      codeTimer.start(res.expires_in_seconds);
       if (res.mock_otp) {
         showFeedback('info', 'Dev Mode', `Your OTP is: ${res.mock_otp}`);
       }
@@ -295,7 +295,7 @@ export default function LoginScreen() {
                   <Animated.View entering={FadeIn.duration(400)} style={[styles.inputWrapper, { marginTop: 8 }]}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                       <ThemedText style={styles.label}>One Time Password</ThemedText>
-                      <TouchableOpacity onPress={() => { setIsOtpSent(false); setOtp(''); setResendIn(0); }}>
+                      <TouchableOpacity onPress={() => { setIsOtpSent(false); setOtp(''); codeTimer.reset(); }}>
                         <ThemedText style={[styles.linkText, { color: themeColors.brand, fontSize: 12, marginBottom: 8 }]}>Change Number</ThemedText>
                       </TouchableOpacity>
                     </View>
@@ -322,14 +322,7 @@ export default function LoginScreen() {
                         )}
                       </TouchableOpacity>
                     </View>
-                    <TouchableOpacity style={[styles.resendRow, { backgroundColor: themeColors.background }]} onPress={handleSendOtp} disabled={resendIn > 0}>
-                      <ThemedText style={styles.resendRowText}>
-                        Didn't get a code?{' '}
-                        <ThemedText style={[styles.resendRowText, styles.resendRowTextBold, { color: resendIn > 0 ? themeColors.icon : themeColors.brand }]}>
-                          {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend'}
-                        </ThemedText>
-                      </ThemedText>
-                    </TouchableOpacity>
+                    <CodeTimerRow timer={codeTimer} onResend={handleSendOtp} />
                   </Animated.View>
                 )}
               </Animated.View>
@@ -567,32 +560,6 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   eyeIcon: {
     position: 'absolute',
     right: 20,
-  },
-  // A lightweight text link, not a filled button — "Resend" is a secondary
-  // action that shouldn't visually compete with the primary Login CTA
-  // below it the way a solid yellow pill would.
-  resendRow: {
-    alignSelf: 'flex-end',
-    marginTop: 10,
-    // The animated background's decorative icons float at fully random
-    // screen positions on every mount — this row (like any bare text on
-    // this screen) sits on a transparent backdrop, so whichever one
-    // happens to land here would otherwise show straight through it.
-    // Matching the page's own background color here masks that reliably,
-    // regardless of where the decoration ends up.
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  resendRowText: {
-    fontSize: 13,
-    lineHeight: 19,
-    fontFamily: Fonts.poppins,
-    opacity: 0.7,
-  },
-  resendRowTextBold: {
-    fontFamily: Fonts.poppinsBold,
-    opacity: 1,
   },
   forgotPassword: {
     alignSelf: 'stretch',

@@ -1,4 +1,6 @@
 import AnimatedBackground from '@/components/animated-background';
+import { CodeTimerRow } from '@/components/code-timer-row';
+import { useCodeTimer } from '@/hooks/use-code-timer';
 import { BASE_URL } from '@/services/api';
 import AnimatedBrandMark from '@/components/animated-brand-mark';
 import { useAppAlert } from '@/components/app-alert';
@@ -99,6 +101,8 @@ export default function RegisterScreen() {
   // was usually already gone.
   const [idDocumentDataUrls, setIdDocumentDataUrls] = useState<(string | null)[]>([null, null, null]);
   const [isOtpSent, setIsOtpSent] = useState(false);
+  // How long the code lasts, and when "Resend" works again.
+  const codeTimer = useCodeTimer();
   const [isOtpVerified, setIsOtpVerified] = useState(false);
   // True when this phone already had a Provider account and is now adding a
   // Customer profile (dual-role, same identity) — as opposed to a genuinely
@@ -303,8 +307,9 @@ export default function RegisterScreen() {
       return;
     }
     try {
-      await SkoFyApi.auth.sendOTP(formData.mobileNumber, 'register');
+      const res = await SkoFyApi.auth.sendOTP(formData.mobileNumber, 'register');
       setIsOtpSent(true);
+      codeTimer.start(res.expires_in_seconds);
     } catch (error: any) {
       // Already registered here: the server says so before sending a code.
       if (error?.error_code === 'ALREADY_REGISTERED') {
@@ -319,7 +324,11 @@ export default function RegisterScreen() {
   };
 
   const handleVerifyOtp = async () => {
-    if (formData.otp.length >= 4) {
+    if (!/^\d{6}$/.test(formData.otp)) {
+      appAlert.show('error', 'Invalid Code', 'Enter the 6-digit code sent to your phone.');
+    } else if (codeTimer.expired) {
+      appAlert.show('error', 'Code Expired', 'That code has expired. Tap Resend for a new one.');
+    } else {
       try {
         const user = await SkoFyApi.auth.verifyOTP(formData.mobileNumber, formData.otp);
         // Signing in removes this account's push tokens from its other phones
@@ -513,7 +522,7 @@ export default function RegisterScreen() {
               <Animated.View entering={FadeIn} style={styles.otpSection}>
                 <View style={styles.otpHeader}>
                   <ThemedText style={styles.fieldLabel}>Enter OTP</ThemedText>
-                  <TouchableOpacity onPress={() => setIsOtpSent(false)}>
+                  <TouchableOpacity onPress={() => { setIsOtpSent(false); setFormData((prev) => ({ ...prev, otp: '' })); codeTimer.reset(); }} hitSlop={8}>
                     <X size={16} color={themeColors.icon} />
                   </TouchableOpacity>
                 </View>
@@ -521,12 +530,14 @@ export default function RegisterScreen() {
                   <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
                     <TextInput
                       style={[getInputStyle('otp'), { flex: 1, paddingRight: 50 }]}
-                      placeholder="Enter 4-6 digit OTP"
+                      placeholder="Enter 6-digit code"
                       placeholderTextColor={themeColors.icon}
-                      keyboardType="numeric"
+                      keyboardType="number-pad"
+                      autoComplete="sms-otp"
+                      textContentType="oneTimeCode"
                       secureTextEntry={!showOtp}
                       value={formData.otp}
-                      onChangeText={(text) => setFormData({ ...formData, otp: text })}
+                      onChangeText={(text) => setFormData({ ...formData, otp: text.replace(/\D/g, '') })}
                       onFocus={() => setFocusedInput('otp')}
                       onBlur={() => setFocusedInput(null)}
                       maxLength={6}
@@ -546,6 +557,7 @@ export default function RegisterScreen() {
                     <ThemedText style={styles.verifyConfirmText}>Verify</ThemedText>
                   </TouchableOpacity>
                 </View>
+                <CodeTimerRow timer={codeTimer} onResend={handleSendOtp} />
               </Animated.View>
             )}
 
