@@ -28,6 +28,12 @@ export function formatUsPhone(digits: string): string {
 /** Characters in "(555) 123-4567". */
 export const US_PHONE_INPUT_MAX = 14;
 
+/** A real US number: 10 digits, area code not starting with 0 or 1 — what
+ * the server accepts, so a bad one is caught here with a clear message. */
+export function isUsPhone(digits: string): boolean {
+  return /^[2-9]\d{9}$/.test(digits);
+}
+
 export function UsPhonePrefix({ style, textStyle }: { style?: StyleProp<ViewStyle>; textStyle?: StyleProp<TextStyle> }) {
   return (
     <View style={[s.box, style]} accessible accessibilityLabel="United States, plus 1">

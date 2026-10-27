@@ -466,11 +466,14 @@ export const SkoFyApi = {
      * Send OTP to phone number.
      * In dev mode (OTP_MOCK_MODE=true on backend) returns mock_otp: "123456".
      */
-    sendOTP: async (phone: string): Promise<{ message: string; expires_in_seconds: number; mock_otp?: string }> => {
+    // purpose: the server sends a code only if this number is (login) or
+    // isn't yet (register) registered in this app — NO_ACCOUNT,
+    // OTHER_ROLE_ONLY or ALREADY_REGISTERED otherwise.
+    sendOTP: async (phone: string, purpose?: 'login' | 'register'): Promise<{ message: string; expires_in_seconds: number; mock_otp?: string }> => {
       const normalised = phone.startsWith('+1') ? phone : `+1${phone.replace(/[\s\-\(\)\.]/g, '')}`;
       return request('/auth/send-otp', {
         method: 'POST',
-        body: JSON.stringify({ phone: normalised, role: 'customer' }),
+        body: JSON.stringify({ phone: normalised, role: 'customer', purpose }),
         skipAuth: true,
       });
     },

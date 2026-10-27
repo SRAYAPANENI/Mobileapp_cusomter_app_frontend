@@ -40,8 +40,7 @@ import { Text, TextInput } from '@/components/scaled-text';
 // on Android — React Native's own one shifted the layout as the keyboard
 // closed, so a tap meant for a button could miss it.
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import type { CountryCode } from 'react-native-country-picker-modal';
-import { UsPhonePrefix, US_CALLING_CODE, US_PHONE_INPUT_MAX, formatUsPhone, usPhoneDigits } from '@/components/us-phone-prefix';
+import { UsPhonePrefix, US_CALLING_CODE, US_PHONE_INPUT_MAX, formatUsPhone, isUsPhone, usPhoneDigits } from '@/components/us-phone-prefix';
 import Animated, {
   FadeIn,
   FadeInLeft,
@@ -109,7 +108,6 @@ export default function RegisterScreen() {
   const [isAddingRole, setIsAddingRole] = useState(false);
 
   // US launch: US numbers only — the server accepts only +1 numbers.
-  const countryCode: CountryCode = 'US';
   const callingCode = US_CALLING_CODE;
   const [showPassword, setShowPassword] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
@@ -278,19 +276,6 @@ export default function RegisterScreen() {
   };
 
 
-  const getPhoneNumberLength = (cca2: CountryCode) => {
-    const lengths: Record<string, number> = {
-      'IN': 10,
-      'US': 10,
-      'GB': 10,
-      'AE': 9,
-      'KW': 8,
-      'QA': 8,
-      'SA': 9,
-    };
-    return lengths[cca2] || 10; // Default to 10
-  };
-
   const pickImage = async (type: 'profile' | 'document', docSlot?: number, useCamera = false) => {
     const result = useCamera
       ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: type === 'profile' ? [1, 1] : [3, 2], quality: 0.8, base64: true })
@@ -313,14 +298,23 @@ export default function RegisterScreen() {
   };
 
   const handleSendOtp = async () => {
-    const requiredLength = getPhoneNumberLength(countryCode);
-    if (formData.mobileNumber.length === requiredLength) {
-      try {
-        await SkoFyApi.auth.sendOTP(formData.mobileNumber);
-        setIsOtpSent(true);
-      } catch (error) {
-        appAlert.show('error', 'OTP Not Sent', 'Could not send OTP to this number. Please check the number and try again.');
+    if (!isUsPhone(formData.mobileNumber)) {
+      appAlert.show('error', 'Invalid Number', 'Enter a valid 10-digit phone number.');
+      return;
+    }
+    try {
+      await SkoFyApi.auth.sendOTP(formData.mobileNumber, 'register');
+      setIsOtpSent(true);
+    } catch (error: any) {
+      // Already registered here: the server says so before sending a code.
+      if (error?.error_code === 'ALREADY_REGISTERED') {
+        appAlert.show('error', 'Already Registered', error.message, [
+          { text: 'Change number', variant: 'secondary' },
+          { text: 'Go to Login', variant: 'primary', onPress: () => router.replace('/login') },
+        ]);
+        return;
       }
+      appAlert.show('error', 'OTP Not Sent', error?.message || 'Could not send OTP to this number. Please check the number and try again.');
     }
   };
 
