@@ -511,14 +511,18 @@ export const SkoFyApi = {
     // isn't yet (register) registered in this app — NO_ACCOUNT,
     // OTHER_ROLE_ONLY or ALREADY_REGISTERED otherwise.
     // email (register only): checked with the phone before any code is sent.
-    sendOTP: async (phone: string, purpose?: 'login' | 'register', email?: string): Promise<{ message: string; expires_in_seconds: number; mock_otp?: string }> => {
+    sendOTP: async (phone: string, purpose?: 'login' | 'register'): Promise<{ message: string; expires_in_seconds: number; mock_otp?: string }> => {
       const normalised = phone.startsWith('+1') ? phone : `+1${phone.replace(/[\s\-\(\)\.]/g, '')}`;
       return request('/auth/send-otp', {
         method: 'POST',
-        body: JSON.stringify({ phone: normalised, role: 'customer', purpose, email: email || undefined }),
+        body: JSON.stringify({ phone: normalised, role: 'customer', purpose }),
         skipAuth: true,
       });
     },
+
+    /** Register form: is this email free for me? Needs the signed-in session. */
+    checkEmail: async (email: string): Promise<{ available: boolean }> =>
+      request('/auth/email-check', { method: 'POST', body: JSON.stringify({ email }) }),
 
     /**
      * Verify OTP. Returns tokens + user info.

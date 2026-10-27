@@ -107,6 +107,26 @@ export default function RegisterScreen() {
   // How long the code lasts, and when "Resend" works again.
   const codeTimer = useCodeTimer();
   const [isOtpVerified, setIsOtpVerified] = useState(false);
+
+  // Is the typed email someone else's? Checked on its own, never as part of
+  // sending the number's code: when they leave the field and right after the
+  // number is verified (the check needs that signed-in session, so it can't
+  // be used to test which emails have accounts). The save checks again.
+  const emailAsked = useRef('');
+  const checkEmail = async (typed: string) => {
+    if (!isOtpVerified || !typed.trim() || !isEmail(typed)) return;
+    const email = tidyEmail(typed);
+    emailAsked.current = email;
+    try {
+      const { available } = await SkoFyApi.auth.checkEmail(email);
+      if (emailAsked.current === email) setEmailTaken(!available);
+    } catch {
+      // No answer: the save still checks.
+    }
+  };
+  useEffect(() => {
+    if (isOtpVerified) checkEmail(formData.email);
+  }, [isOtpVerified]);
   // True when this phone already had a Provider account and is now adding a
   // Customer profile (dual-role, same identity) — as opposed to a genuinely
   // brand-new account. A password already exists for this identity, so the
@@ -312,22 +332,11 @@ export default function RegisterScreen() {
       appAlert.show('error', 'Invalid Number', 'Enter a valid 10-digit phone number.');
       return;
     }
-    if (formData.email.trim() && !isEmail(formData.email)) {
-      appAlert.show('error', 'Invalid Email', 'Enter a valid email, like name@example.com, or leave it blank.');
-      return;
-    }
-    const email = formData.email.trim() ? tidyEmail(formData.email) : undefined;
     try {
-      const res = await SkoFyApi.auth.sendOTP(formData.mobileNumber, 'register', email);
+      const res = await SkoFyApi.auth.sendOTP(formData.mobileNumber, 'register');
       setIsOtpSent(true);
       codeTimer.start(res.expires_in_seconds);
     } catch (error: any) {
-      // Someone else's email: said before any code is sent.
-      if (error?.error_code === 'EMAIL_ALREADY_EXISTS') {
-        setEmailTaken(true);
-        appAlert.show('error', 'Email Already Used', "This email is already used by another account. Use a different email, or log in if it's yours.");
-        return;
-      }
       // Already registered here: the server says so before sending a code.
       if (error?.error_code === 'ALREADY_REGISTERED') {
         appAlert.show('error', 'Already Registered', error.message, [
@@ -476,9 +485,9 @@ export default function RegisterScreen() {
                   placeholder="you@example.com"
                   placeholderTextColor={themeColors.icon}
                   value={formData.email}
-                  onChangeText={(text) => { setFormData({ ...formData, email: text }); setEmailTaken(false); }}
+                  onChangeText={(text) => { setFormData({ ...formData, email: text }); setEmailTaken(false); emailAsked.current = ''; }}
                   onFocus={() => setFocusedInput('email')}
-                  onBlur={() => setFocusedInput(null)}
+                  onBlur={() => { setFocusedInput(null); checkEmail(formData.email); }}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -994,6 +1003,10 @@ export default function RegisterScreen() {
                   appAlert.show('error', 'Invalid Email', 'Please enter a valid email address or leave it blank.');
                   return;
                 }
+                if (formData.email.trim() && emailTaken) {
+                  appAlert.show('error', 'Email Already Used', "This email is already used by another account. Use a different email, or leave it blank.");
+                  return;
+                }
                 setIsSubmitting(true);
                 const done = savedSteps.current;
                 try {
@@ -1079,6 +1092,7 @@ export default function RegisterScreen() {
                     router.replace('/home');
                   }
                 } catch (e: any) {
+                  if (e?.error_code === 'EMAIL_ALREADY_EXISTS') setEmailTaken(true);
                   const message = ['EMAIL_ALREADY_EXISTS', 'TIMEOUT', 'NETWORK_ERROR'].includes(e?.error_code)
                     ? e.message
                     : 'Something went wrong. Please try again.';
