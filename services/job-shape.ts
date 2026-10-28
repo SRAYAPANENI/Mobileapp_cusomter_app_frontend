@@ -71,7 +71,9 @@ export function shapeFor(choice: JobChoice, now: Date = new Date()): { shape: Jo
   // The server's limits (app/domain/job_shape.py _LONGEST).
   const hours = (end.getTime() - start.getTime()) / 3600000;
   if (choice.howLong === 'HOURS' && hours > 24) return { error: "A few hours can't run past a day — choose “Over days” instead." };
-  if (choice.howLong === 'DAYS' && hours > 90 * 24) return { error: 'A stay can be up to 90 days.' };
+  // Things left in storage can stay up to a year; a pet or a home sit, 90 days.
+  const longestDays = choice.inCare === 'ITEM' ? 365 : 90;
+  if (choice.howLong === 'DAYS' && hours > longestDays * 24) return { error: `A stay can be up to ${longestDays} days.` };
   if (choice.howLong === 'HOURS') {
     return { shape: { venue, timing: 'WINDOW', custody: choice.inCare, pricing_unit: 'HOUR', ends_at: end.toISOString() } };
   }
@@ -88,7 +90,8 @@ export function shapeFor(choice: JobChoice, now: Date = new Date()): { shape: Jo
 export function priceHint(choice: JobChoice): string {
   if (choice.howLong === 'ONCE') return 'Your provider quotes the price after seeing the job — you approve it before paying.';
   const unit = choice.howLong === 'HOURS' ? 'hour' : choice.where === 'THEIR_PLACE' ? 'night' : 'day';
-  return `Providers have a price per ${unit} — you'll see each one's total before you choose, and pay when you book.`;
+  const longer = choice.howLong === 'DAYS' ? ' Longer stays use their weekly or monthly price when it costs less.' : '';
+  return `Providers have a price per ${unit} — you'll see each one's total before you choose, and pay when you book.${longer}`;
 }
 
 /** The customer's time zone — nights and days are counted in it. */

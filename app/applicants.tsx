@@ -117,6 +117,10 @@ function ApplicantCard({
           {(item as any).price != null && (
             <ThemedText style={styles.priceText}>${(item as any).price.toFixed(2)} total</ThemedText>
           )}
+          {/* How it's made up: "1 week × $250.00 + 3 nights × $40.00". */}
+          {!!(item as any).priceText && (
+            <ThemedText style={styles.priceBreakdown}>{String((item as any).priceText).split(' = ')[0]}</ThemedText>
+          )}
           <View style={styles.ratingRow}>
             <Star size={12} color="#F59E0B" fill="#F59E0B" />
             <ThemedText style={styles.ratingText}>
@@ -263,6 +267,7 @@ function mapApiApplicant(a: any): Applicant & { applicationId: string; providerI
     reviewCount: a.review_count ?? 0,
     // A job priced up front (per night, per hour…): this applicant's total.
     price: a.proposed_fee != null ? Number(a.proposed_fee) : null,
+    priceText: a.price_text ?? null,
   } as any;
 }
 
@@ -703,6 +708,9 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   priceText: {
     fontSize: 14, lineHeight: 19, fontFamily: Fonts.poppinsBold, color: '#065F46', marginTop: 2,
+  },
+  priceBreakdown: {
+    fontSize: 11.5, lineHeight: 16, fontFamily: Fonts.poppins, color: '#6B7280',
   },
   professionText: {
     fontSize: 14,
