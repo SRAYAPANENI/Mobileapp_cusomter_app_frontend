@@ -6,6 +6,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Camera, CheckCircle2, ClipboardCheck, ShieldAlert, X } from 'lucide-react-native';
 import React, { useState } from 'react';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
 export type InspectionReport = {
   findings?: string;
@@ -136,7 +137,7 @@ export function InspectionReportCard({ jobId, jobStatus, report, confirmed, disp
       )}
 
       <Modal visible={reporting} transparent animationType="fade" onRequestClose={() => setReporting(false)}>
-        <View style={s.overlay}>
+        <KeyboardAvoidingView behavior="padding" style={s.overlay}>
           <View style={s.sheet}>
             <Text style={s.sheetTitle}>The inspection wasn't done</Text>
             <Text style={s.sheetSub}>
@@ -179,7 +180,7 @@ export function InspectionReportCard({ jobId, jobStatus, report, confirmed, disp
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

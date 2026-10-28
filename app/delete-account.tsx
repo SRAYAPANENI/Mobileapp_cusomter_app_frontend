@@ -9,7 +9,8 @@ import { clearHomeCache } from '@/services/homeCache';
 import { router } from 'expo-router';
 import { AlertTriangle, Archive, ChevronLeft, Clock, Trash2 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StatusBar, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StatusBar, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
 // Deleting the account (docs/ACCOUNT_DELETION_DESIGN.md): says what goes and
 // what's kept, lists anything still open, then a code to their phone and
@@ -76,7 +77,7 @@ export default function DeleteAccountScreen() {
       </View>
 
       {!status ? <ActivityIndicator style={{ marginTop: 40 }} color={C.ink} /> : (
-        <ScrollView contentContainerStyle={[s.body, { paddingBottom: 40 + bottomInset }]} keyboardShouldPersistTaps="handled">
+        <KeyboardAwareScrollView bottomOffset={24} contentContainerStyle={[s.body, { paddingBottom: 40 + bottomInset }]} keyboardShouldPersistTaps="handled">
           {status.deletion_due_at ? (
             <View style={s.card}>
               <ThemedText style={s.title}>Your account is closing</ThemedText>
@@ -124,7 +125,7 @@ export default function DeleteAccountScreen() {
               </View>
             </>
           )}
-        </ScrollView>
+        </KeyboardAwareScrollView>
       )}
       {appAlert.element}
     </ThemedView>

@@ -32,6 +32,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
@@ -336,6 +337,8 @@ export default function JobHistoryScreen() {
         </View>
       ) : (
         <FlatList keyboardShouldPersistTaps="handled"
+          // Keyboard-aware: a box in a row scrolls up above the keyboard.
+          renderScrollComponent={(props) => <KeyboardAwareScrollView {...props} bottomOffset={24} />}
           data={history}
           renderItem={renderItem}
           keyExtractor={item => item.id}

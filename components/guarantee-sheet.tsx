@@ -6,6 +6,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { ShieldCheck } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
 const MAX_PHOTOS = 4;
 
@@ -59,7 +60,7 @@ export function GuaranteeSheet({ jobId, onClose, onMessage }: Props) {
   const claim = info?.claim;
   return (
     <Modal visible={!!jobId} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={s.overlay}>
+      <KeyboardAvoidingView behavior="padding" style={s.overlay}>
         <View style={s.sheet}>
           <View style={s.row}>
             <ShieldCheck size={20} color="#059669" />
@@ -115,7 +116,7 @@ export function GuaranteeSheet({ jobId, onClose, onMessage }: Props) {
             <ThemedText style={s.secondaryText}>Close</ThemedText>
           </TouchableOpacity>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

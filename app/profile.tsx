@@ -1140,8 +1140,11 @@ export default function ProfileScreen() {
         animationType="slide"
         onRequestClose={() => setIsSettingsOpen(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, modalBottomPad]}>
+        {/* Stops below the status bar and the list scrolls: with every row it
+            can be taller than a small screen, and a bottom-anchored sheet then
+            grows up under the status bar. */}
+        <View style={[styles.modalOverlay, { paddingTop: insets.top + 12 }]}>
+          <View style={[styles.modalContent, modalBottomPad, { maxHeight: '100%' }]}>
             <View style={styles.modalHeader}>
               <ThemedText style={styles.modalTitle}>Settings</ThemedText>
               <TouchableOpacity onPress={() => setIsSettingsOpen(false)}>
@@ -1149,7 +1152,7 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.settingsList}>
+            <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={styles.settingsList} showsVerticalScrollIndicator={false}>
               <View style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}>
                 <View style={styles.settingInfo}>
                   <Bell size={20} color="#6B7280" />
@@ -1278,7 +1281,7 @@ export default function ProfileScreen() {
                   <ThemedText style={[styles.settingLabel, { color: '#EF4444' }]}>Logout</ThemedText>
                 </View>
               </TouchableOpacity>
-            </View>
+            </ScrollView>
 
             <TouchableOpacity
               style={styles.closeModalButton}
@@ -1293,14 +1296,15 @@ export default function ProfileScreen() {
       {/* Terms Modal */}
       <Modal visible={isTermsOpen} animationType="slide" onRequestClose={() => setIsTermsOpen(false)}>
         <ThemedView style={{ flex: 1 }}>
-          <View style={styles.header}>
+          {/* Edge-to-edge: the modal draws under both bars, so the real heights. */}
+          <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
             <TouchableOpacity onPress={() => setIsTermsOpen(false)}>
               <ChevronLeft size={24} color="#000" />
             </TouchableOpacity>
             <ThemedText style={styles.headerTitle}>Terms & Conditions</ThemedText>
             <View style={{ width: 24 }} />
           </View>
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20 }}>
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingBottom: 20 + insets.bottom }}>
             <ThemedText style={{ fontSize: 18, lineHeight: 24, fontFamily: Fonts.poppinsBold, marginBottom: 12 }}>1. Agreement</ThemedText>
             <ThemedText style={{ color: '#4B5563', lineHeight: 24, marginBottom: 20 }}>
               By using Dodorez, you agree to connect with various service providers. We act as a platform for discovery...
@@ -1420,7 +1424,8 @@ export default function ProfileScreen() {
           activeOpacity={1}
           onPress={() => setIsPhotoSheetOpen(false)}
         >
-          <View style={styles.photoSheet}>
+          {/* Lifted above the navigation bar, whichever kind the phone uses. */}
+          <View style={[styles.photoSheet, { marginBottom: 24 + insets.bottom }]}>
             <View style={styles.photoSheetHeader}>
               <ThemedText style={styles.photoSheetTitle}>Profile Photo</ThemedText>
             </View>
@@ -1439,12 +1444,15 @@ export default function ProfileScreen() {
               <ThemedText style={styles.photoOptionText}>Choose from Gallery</ThemedText>
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.photoOption, { borderBottomWidth: 0 }]} onPress={removeImage}>
-              <View style={[styles.optionIconBox, { backgroundColor: '#FEF2F2' }]}>
-                <Trash2 size={20} color="#EF4444" />
-              </View>
-              <ThemedText style={[styles.photoOptionText, { color: '#EF4444' }]}>Remove Photo</ThemedText>
-            </TouchableOpacity>
+            {/* Only when there's a photo to remove. */}
+            {!!userData.profileImage && (
+              <TouchableOpacity style={[styles.photoOption, { borderBottomWidth: 0 }]} onPress={removeImage}>
+                <View style={[styles.optionIconBox, { backgroundColor: '#FEF2F2' }]}>
+                  <Trash2 size={20} color="#EF4444" />
+                </View>
+                <ThemedText style={[styles.photoOptionText, { color: '#EF4444' }]}>Remove Photo</ThemedText>
+              </TouchableOpacity>
+            )}
           </View>
         </TouchableOpacity>
       </Modal>

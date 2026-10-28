@@ -312,7 +312,8 @@ export default function ProviderDetailsScreen() {
       {/* Media Viewer Modal */}
       <Modal visible={viewerVisible} transparent animationType="fade" onRequestClose={closeMedia}>
         <View style={styles.viewerContainer}>
-          <TouchableOpacity style={styles.closeViewer} onPress={closeMedia}>
+          {/* Edge-to-edge: placed by the real bar heights, not fixed numbers. */}
+          <TouchableOpacity style={[styles.closeViewer, { top: insets.top + 16 }]} onPress={closeMedia}>
             <X size={30} color="#fff" />
           </TouchableOpacity>
 
@@ -334,7 +335,7 @@ export default function ProviderDetailsScreen() {
             />
           )}
 
-          <View style={styles.viewerFooter}>
+          <View style={[styles.viewerFooter, { bottom: 32 + insets.bottom }]}>
             <View style={styles.viewerTag}>
               <Layers size={14} color="#FFCE48" />
               <ThemedText style={styles.viewerTagText}>{selectedMedia?.skill}</ThemedText>

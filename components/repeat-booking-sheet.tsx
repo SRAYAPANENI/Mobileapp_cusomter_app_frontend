@@ -8,6 +8,7 @@ import { fromParts } from '@/services/schedule-slots';
 import { Repeat } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
 const CADENCES: { value: 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY'; label: string }[] = [
   { value: 'WEEKLY', label: 'Every week' },
@@ -60,7 +61,7 @@ export function RepeatBookingSheet({ job, onClose, onMessage }: Props) {
   return (
     <>
     <Modal visible={!!job && !picker} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={s.overlay}>
+      <KeyboardAvoidingView behavior="padding" style={s.overlay}>
         <View style={s.sheet}>
           <View style={s.row}>
             <Repeat size={20} color="#111827" />
@@ -98,7 +99,7 @@ export function RepeatBookingSheet({ job, onClose, onMessage }: Props) {
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
       <DatePickerModal
         visible={picker === 'day'}
