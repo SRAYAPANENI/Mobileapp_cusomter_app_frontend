@@ -24,6 +24,8 @@ export interface JobShapePayload {
   custody: InCare;
   pricing_unit: 'QUOTE' | 'HOUR' | 'DAY' | 'NIGHT';
   ends_at?: string;
+  /** What's left in care — each pet's needs, or the item (services/care-sheet.ts). */
+  care_sheet?: Record<string, unknown>;
 }
 
 export const DEFAULT_CHOICE: JobChoice = { where: 'MY_PLACE', howLong: 'ONCE', inCare: 'NONE', startISO: null, endISO: null };

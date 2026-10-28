@@ -328,6 +328,10 @@ export interface JobShapePayload {
   recurrence?: Record<string, unknown> | null;
   requirements?: string[];
   details?: Record<string, string>;
+  /** What's left in care — each pet's needs, or the item (services/care-sheet.ts).
+   * Sent when posting; read back without the vet and emergency contact
+   * unless you're the customer or the hired provider. */
+  care_sheet?: Record<string, unknown> | null;
 }
 
 // ─── TOKEN FOR LIVE CONNECTIONS ──────────────────────────────────────────────

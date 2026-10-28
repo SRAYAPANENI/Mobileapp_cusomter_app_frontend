@@ -1,6 +1,8 @@
 import { ThemedText } from '@/components/themed-text';
 import { PriceGuideNote } from '@/components/price-guide-note';
 import { JobShapePicker } from '@/components/job-shape-picker';
+import { CareSheetForm } from '@/components/care-sheet-form';
+import { careSheetPayload, careSheetProblem } from '@/services/care-sheet';
 import { JobChoice, deviceTimeZone, shapeFor } from '@/services/job-shape';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
@@ -25,12 +27,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
-  ScrollView,
   StyleSheet,
   TouchableOpacity,
   View
 } from 'react-native';
-import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import Animated, { FadeInUp, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -100,6 +101,12 @@ export default function JobSummaryScreen() {
       alert.show('error', 'Almost there', shaped.error);
       return;
     }
+    // What the provider needs to look after a pet or an item.
+    const careProblem = ordinary ? careSheetProblem(data.jobChoice.inCare, data.careSheet) : null;
+    if (careProblem) {
+      alert.show('error', 'Almost there', careProblem);
+      return;
+    }
     // The time may have gone by while they were deciding on this screen.
     const when = ordinary && data.jobChoice.howLong !== 'ONCE' && data.jobChoice.startISO
       ? new Date(data.jobChoice.startISO)
@@ -154,7 +161,9 @@ export default function JobSummaryScreen() {
         scheduled_at: when?.toISOString(),
         images: imageUrls,
         posted_via: 'MANUAL',
-        shape: shaped && 'shape' in shaped ? shaped.shape : undefined,
+        shape: shaped && 'shape' in shaped
+          ? { ...shaped.shape, care_sheet: careSheetPayload(data.jobChoice.inCare, data.careSheet) }
+          : undefined,
         timezone: deviceTimeZone(),
         job_type: data.jobKind,
         dropoff_lat: data.jobKind === 'PICKUP_DROPOFF' ? (data.dropoffLat ?? undefined) : undefined,
@@ -181,7 +190,10 @@ export default function JobSummaryScreen() {
         ],
       );
     } catch (err: any) {
-      alert.show('error', 'Failed to Post', err?.message || 'Something went wrong. Please try again.');
+      // A field the server refused (e.g. in the care details) carries its
+      // reason in details.errors, under a generic "Request validation failed."
+      const reason = err?.details?.errors?.[0]?.message?.replace(/^Value error, /, '');
+      alert.show('error', 'Failed to Post', reason || err?.message || 'Something went wrong. Please try again.');
     } finally {
       setIsPosting(false);
     }
@@ -189,8 +201,9 @@ export default function JobSummaryScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
-        <ScrollView keyboardShouldPersistTaps="handled"
+      <View style={{ flex: 1 }}>
+        {/* Keyboard-aware: the box being typed in (the care details) stays above the keyboard. */}
+        <KeyboardAwareScrollView keyboardShouldPersistTaps="handled" bottomOffset={24}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
@@ -298,6 +311,13 @@ export default function JobSummaryScreen() {
         <Animated.View entering={FadeInUp.delay(900)} style={styles.rangeSection}>
           <ThemedText style={styles.sectionTitle}>How should this be done?</ThemedText>
           {ordinary && <JobShapePicker value={data.jobChoice} onChange={changeChoice} />}
+          {ordinary && (
+            <CareSheetForm
+              custody={data.jobChoice.inCare}
+              value={data.careSheet}
+              onChange={(careSheet) => updateData({ careSheet })}
+            />
+          )}
 
           {data.serviceMode === 'REMOTE' ? (
             <View style={styles.remoteNoticeBox}>
@@ -317,7 +337,7 @@ export default function JobSummaryScreen() {
             <PriceGuideNote skillIds={data.skill_ids} lat={data.lat ?? null} lng={data.lng ?? null} />
           )}
         </Animated.View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       {/* Footer Button */}
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12 }]}>
@@ -335,7 +355,7 @@ export default function JobSummaryScreen() {
           </ThemedText>
         </TouchableOpacity>
       </View>
-      </KeyboardAvoidingView>
+      </View>
 
       {alert.element}
     </ThemedView>

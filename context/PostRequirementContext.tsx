@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState } from 'react';
 import { DEFAULT_CHOICE, JobChoice } from '@/services/job-shape';
+import { CareSheet, EMPTY_CARE_SHEET } from '@/services/care-sheet';
 
 interface PostRequirementData {
   description: string;
@@ -43,6 +44,9 @@ interface PostRequirementData {
   // Where, how long, and what's left with the provider (services/job-shape.ts)
   // — chosen on the summary screen for an ordinary job.
   jobChoice: JobChoice;
+  // What's left with the provider — each pet's needs, or the item
+  // (services/care-sheet.ts); asked when "A pet" or "An item" is chosen.
+  careSheet: CareSheet;
 }
 
 interface PostRequirementContextType {
@@ -77,6 +81,7 @@ const initialData: PostRequirementData = {
   dropoffLng: null,
   serviceMode: 'ON_SITE',
   jobChoice: DEFAULT_CHOICE,
+  careSheet: EMPTY_CARE_SHEET,
 };
 
 const PostRequirementContext = createContext<PostRequirementContextType | undefined>(undefined);

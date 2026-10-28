@@ -1,4 +1,5 @@
 import { useAppAlert } from '@/components/app-alert';
+import { CareSheetSummary } from '@/components/care-sheet-summary';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
@@ -340,6 +341,8 @@ export default function JobDetailsScreen() {
             </View>
           )}
         </View>
+
+        <CareSheetSummary custody={job.shape?.custody} sheet={job.care_sheet} />
 
         <View style={styles.mainCard}>
           <ThemedText style={styles.sectionLabel}>Description</ThemedText>
