@@ -1,3 +1,4 @@
+import { isValidPassword } from '@/services/password';
 import { EmptyJobsState } from '@/components/empty-jobs-state';
 import { NoInternetState } from '@/components/no-internet-state';
 import { Skeleton } from '@/components/skeleton';
@@ -170,10 +171,13 @@ export default function ProfileScreen() {
   });
 
   const [profileLoading, setProfileLoading] = useState(true);
+  // Loading failed: the form would show blanks, and saving them would wipe the name.
+  const [profileLoadFailed, setProfileLoadFailed] = useState(false);
   const isOnline = useIsOnline();
 
   const loadProfile = React.useCallback(async () => {
       setProfileLoading(true);
+      setProfileLoadFailed(false);
       try {
         const [profile, addressList, summary] = await Promise.all([
           SkoFyApi.customers.getProfile(),
@@ -247,6 +251,7 @@ export default function ProfileScreen() {
         }
       } catch (error) {
         console.error('Failed to load profile', error);
+        setProfileLoadFailed(true);
       } finally {
         setProfileLoading(false);
       }
@@ -445,12 +450,14 @@ export default function ProfileScreen() {
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
       const dataUrl = `data:image/jpeg;base64,${asset.base64}`;
+      const prevImage = userData.profileImage;
       setUserData(prev => ({ ...prev, profileImage: asset.uri }));
       try {
         await SkoFyApi.customers.updateProfile({ profile_image_url: dataUrl });
         setTimeout(() => showAlert('success', 'Saved', 'Profile photo updated.'), 300);
       } catch (err) {
         console.error('Failed to save profile photo:', err);
+        setUserData(prev => ({ ...prev, profileImage: prevImage }));
         setTimeout(() => showAlert('error', 'Error', 'Failed to save photo. Try again.'), 300);
       }
     }
@@ -536,8 +543,16 @@ export default function ProfileScreen() {
   };
 
   const handleUpdateProfile = async () => {
+    if (userData.name.trim().length < 2) {
+      showAlert('error', 'Name Needed', 'Your name must be at least 2 characters.');
+      return;
+    }
+    if (userData.addresses.some(a => !a.address.trim())) {
+      showAlert('error', 'Address Needed', "An address can't be empty — type it in, or delete it.");
+      return;
+    }
     try {
-      await SkoFyApi.customers.updateProfile({ name: userData.name, id_number: userData.idNumber || undefined });
+      await SkoFyApi.customers.updateProfile({ name: userData.name.trim(), id_number: userData.idNumber.trim() || undefined });
       // Save text edits on existing addresses
       const editPromises = userData.addresses
         .filter(a => a.id && (a.address !== a._origAddress || a.type !== a._origType))
@@ -549,8 +564,8 @@ export default function ProfileScreen() {
       }));
       setIsEditing(false);
       showAlert('success', 'Saved', 'Profile updated successfully.');
-    } catch {
-      showAlert('error', 'Error', 'Failed to save profile. Please try again.');
+    } catch (e: any) {
+      showAlert('error', 'Error', e?.message || 'Failed to save profile. Please try again.');
     }
   };
 
@@ -590,7 +605,7 @@ export default function ProfileScreen() {
       showAlert('error', 'Current Password Required', 'Enter your current password to change it.');
       return;
     }
-    if (!newPassword || newPassword.length < 8 || !/[a-zA-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+    if (!isValidPassword(newPassword)) {
       showAlert('error', 'Weak Password', 'Password must be at least 8 characters and contain a letter and a number.');
       return;
     }
@@ -708,7 +723,7 @@ export default function ProfileScreen() {
   // This used to render the full form immediately with userData's zeroed-
   // out defaults (0 Total Jobs, 0% HCI, $0 Spent) indistinguishable from a
   // real empty profile — no loading state ever existed here at all.
-  if (profileLoading) {
+  if (profileLoading || profileLoadFailed) {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.header}>
@@ -720,6 +735,13 @@ export default function ProfileScreen() {
         </View>
         {!isOnline ? (
           <NoInternetState onRetry={loadProfile} />
+        ) : profileLoadFailed ? (
+          <View style={{ paddingHorizontal: 24, paddingTop: 64, alignItems: 'center', gap: 16 }}>
+            <ThemedText style={{ textAlign: 'center' }}>We couldn't load your profile. Please try again.</ThemedText>
+            <TouchableOpacity onPress={loadProfile} style={{ paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, backgroundColor: themeColors.brand }}>
+              <ThemedText style={{ fontFamily: Fonts.poppinsBold, color: '#000' }}>Retry</ThemedText>
+            </TouchableOpacity>
+          </View>
         ) : (
           <View style={{ paddingHorizontal: 24, paddingTop: 32, gap: 24 }}>
             <View style={{ alignItems: 'center', gap: 12 }}>
@@ -850,6 +872,7 @@ export default function ProfileScreen() {
                   style={styles.editableInput}
                   value={userData.name}
                   onChangeText={text => setUserData(prev => ({ ...prev, name: text }))}
+                  maxLength={100}
                   placeholder="Enter your name"
                   placeholderTextColor={themeColors.icon}
                 />
@@ -1341,6 +1364,8 @@ export default function ProfileScreen() {
                 placeholder="Enter current password"
                 placeholderTextColor={themeColors.icon}
                 secureTextEntry={!showCurrentPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
                 value={currentPassword}
                 onChangeText={setCurrentPassword}
                 style={[styles.editableInput, { flex: 1, paddingRight: 44 }]}
@@ -1362,6 +1387,8 @@ export default function ProfileScreen() {
                 placeholder="Min 8 characters, 1 letter + 1 number"
                 placeholderTextColor={themeColors.icon}
                 secureTextEntry={!showNewPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
                 value={newPassword}
                 onChangeText={setNewPassword}
                 style={[styles.editableInput, { flex: 1, paddingRight: 44 }]}
@@ -1383,6 +1410,8 @@ export default function ProfileScreen() {
                 placeholder="Repeat password"
                 placeholderTextColor={themeColors.icon}
                 secureTextEntry={!showConfirmPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 style={[styles.editableInput, { flex: 1, paddingRight: 44 }]}

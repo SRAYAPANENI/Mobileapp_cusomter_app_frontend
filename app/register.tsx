@@ -9,8 +9,9 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { SkoFyApi } from '@/services/api';
+import { SkoFyApi, TokenStore } from '@/services/api';
 import { isEmail, tidyEmail } from '@/services/email';
+import { PASSWORD_RULE, isValidPassword } from '@/services/password';
 import { registerFcmToken } from '@/services/callManager';
 import { GooglePlacesService, GooglePlaceSuggestion } from '@/services/google-places';
 import { Image } from 'expo-image';
@@ -181,7 +182,7 @@ export default function RegisterScreen() {
     if (isOtpVerified) completed++;
     if (formData.address) completed++;
     if (addressType) completed++; // Always has a value
-    if (!isAddingRole && formData.password && formData.password === formData.confirmPassword && formData.password.length >= 6) completed++;
+    if (!isAddingRole && formData.password && formData.password === formData.confirmPassword && isValidPassword(formData.password)) completed++;
     if (agreedToTerms && agreedToPrivacy) completed++;
 
     const idNumberFilled = formData.idNumber ? 1 : 0;
@@ -198,8 +199,8 @@ export default function RegisterScreen() {
     if (!formData.fullName) missing.push('Full Name');
     if (!isOtpVerified) missing.push('Mobile Number Verification (tap "Verify with OTP")');
     if (!formData.address) missing.push('Address');
-    if (!isAddingRole && !(formData.password && formData.password === formData.confirmPassword && formData.password.length >= 6)) {
-      missing.push('Password (at least 6 characters, matching in both fields)');
+    if (!isAddingRole && !(formData.password && formData.password === formData.confirmPassword && isValidPassword(formData.password))) {
+      missing.push(`Password (${PASSWORD_RULE.toLowerCase()}, matching in both fields)`);
     }
     if (!(agreedToTerms && agreedToPrivacy)) missing.push('Agree to Terms & Conditions and Privacy Policy');
     return missing;
@@ -217,7 +218,9 @@ export default function RegisterScreen() {
 
   const getPasswordStrength = (pass: string) => {
     if (!pass) return { label: '', color: '#E5E7EB', width: '0%', score: 0 };
-    if (pass.length < 6) return { label: 'Too Short', color: '#FF4B4B', width: '20%', score: 1 };
+    if (pass.length < 8) return { label: 'Too Short', color: '#FF4B4B', width: '20%', score: 1 };
+    // The server needs a letter and a number — not "Weak", not allowed at all.
+    if (!isValidPassword(pass)) return { label: 'Add a letter and a number', color: '#FF4B4B', width: '25%', score: 1 };
 
     let score = 0;
     if (pass.length >= 8) score++;
@@ -387,6 +390,7 @@ export default function RegisterScreen() {
           );
           return;
         }
+        TokenStore.markRegistering().catch(() => {});
         const isNewUser = resumedIsNewUser != null ? resumedIsNewUser === '1' : user.is_new_user;
         setIsAddingRole(!isNewUser);
         // A new sign-in (maybe another number): nothing is saved for it yet.
@@ -471,6 +475,7 @@ export default function RegisterScreen() {
                 placeholderTextColor={themeColors.icon}
                 value={formData.fullName}
                 onChangeText={(text) => setFormData({ ...formData, fullName: text })}
+                maxLength={100}
                 onFocus={() => setFocusedInput('fullName')}
                 onBlur={() => setFocusedInput(null)}
               />
@@ -558,7 +563,7 @@ export default function RegisterScreen() {
                   <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
                     <TextInput
                       style={[getInputStyle('otp'), { flex: 1, paddingRight: 50 }]}
-                      placeholder="Enter 6-digit code"
+                      placeholder="6-digit code"
                       placeholderTextColor={themeColors.icon}
                       keyboardType="number-pad"
                       autoComplete="sms-otp"
@@ -600,7 +605,9 @@ export default function RegisterScreen() {
               <View style={styles.passwordInputContainer}>
                 <TextInput
                   style={[getInputStyle('password'), { flex: 1, paddingRight: 50 }]}
-                  placeholder="Password"
+                  placeholder={PASSWORD_RULE}
+                  autoCapitalize="none"
+                  autoCorrect={false}
                   placeholderTextColor={themeColors.icon}
                   secureTextEntry={!showPassword}
                   value={formData.password}
@@ -647,6 +654,8 @@ export default function RegisterScreen() {
                 <TextInput
                   style={[getInputStyle('confirmPassword'), { flex: 1, paddingRight: 50 }]}
                   placeholder="Confirm Password"
+                  autoCapitalize="none"
+                  autoCorrect={false}
                   placeholderTextColor={themeColors.icon}
                   secureTextEntry={!showConfirmPassword}
                   value={formData.confirmPassword}
@@ -1078,6 +1087,7 @@ export default function RegisterScreen() {
                   const [passwordResult] = await Promise.allSettled([password, photos, addressSave]);
                   if (passwordResult.status === 'rejected') throw passwordResult.reason;
 
+                  await TokenStore.finishRegistering().catch(() => {});
                   // The alert lives on this screen: leave only once it's been read.
                   if (failedSteps.length > 0) {
                     appAlert.show(
@@ -1093,7 +1103,7 @@ export default function RegisterScreen() {
                   }
                 } catch (e: any) {
                   if (e?.error_code === 'EMAIL_ALREADY_EXISTS') setEmailTaken(true);
-                  const message = ['EMAIL_ALREADY_EXISTS', 'TIMEOUT', 'NETWORK_ERROR'].includes(e?.error_code)
+                  const message = ['EMAIL_ALREADY_EXISTS', 'TIMEOUT', 'NETWORK_ERROR', 'VALIDATION_ERROR'].includes(e?.error_code)
                     ? e.message
                     : 'Something went wrong. Please try again.';
                   appAlert.show('error', 'Account Creation Failed', message);

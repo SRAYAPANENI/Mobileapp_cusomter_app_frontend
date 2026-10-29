@@ -53,6 +53,8 @@ export const STRIPE_PUBLISHABLE_KEY = 'pk_test_51TvsauRyqsQEDt0RCd5L6d51XipE7Ho1
 const TOKEN_KEY = 'skofy_access_token';
 const REFRESH_KEY = 'skofy_refresh_token';
 const USER_KEY = 'skofy_user';
+// Register verified the number but Create Account hasn't finished yet.
+const REGISTERING_KEY = 'skofy_registering';
 
 export const TokenStore = {
   async setTokens(access: string, refresh: string) {
@@ -72,10 +74,21 @@ export const TokenStore = {
     const raw = await SecureStore.getItemAsync(USER_KEY);
     return raw ? JSON.parse(raw) : null;
   },
+  // Verifying the number on Register creates a blank account and signs it in.
+  // Until Create Account finishes it isn't a real account — the server's
+  // sign-in check agrees — so a launch in between starts over at Login
+  // instead of opening the app as a nameless "New User".
+  async markRegistering() {
+    await SecureStore.setItemAsync(REGISTERING_KEY, '1');
+  },
+  async finishRegistering() {
+    await SecureStore.deleteItemAsync(REGISTERING_KEY);
+  },
   async clear() {
     await SecureStore.deleteItemAsync(TOKEN_KEY);
     await SecureStore.deleteItemAsync(REFRESH_KEY);
     await SecureStore.deleteItemAsync(USER_KEY);
+    await SecureStore.deleteItemAsync(REGISTERING_KEY);
   },
 };
 
@@ -105,6 +118,8 @@ function getInstallMarkerFile(): File | null {
 
 export async function clearStaleSessionAfterReinstall(): Promise<void> {
   try {
+    // A registration left unfinished last time (see TokenStore.markRegistering).
+    if (await SecureStore.getItemAsync(REGISTERING_KEY)) await TokenStore.clear();
     const marker = getInstallMarkerFile();
     if (!marker || marker.exists) return;
     await TokenStore.clear();

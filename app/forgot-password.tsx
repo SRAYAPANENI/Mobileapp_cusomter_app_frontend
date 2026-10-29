@@ -1,3 +1,4 @@
+import { isValidPassword } from '@/services/password';
 import AnimatedBackground from '@/components/animated-background';
 import { useAppAlert } from '@/components/app-alert';
 import { CodeTimerRow } from '@/components/code-timer-row';
@@ -98,7 +99,7 @@ export default function ForgotPasswordScreen() {
       showFeedback('error', 'Code Expired', 'That code has expired. Tap Resend for a new one.');
       return;
     }
-    if (newPassword.length < 8 || !/[a-zA-Z]/.test(newPassword) || !/\d/.test(newPassword)) {
+    if (!isValidPassword(newPassword)) {
       showFeedback('error', 'Weak Password', 'Password must be at least 8 characters with a letter and a number.');
       return;
     }
