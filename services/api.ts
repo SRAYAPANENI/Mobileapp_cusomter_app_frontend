@@ -18,6 +18,7 @@ import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { File, Paths } from 'expo-file-system';
 import type { PersonPickupRules, PickupDetails, PickupSource, ShoppingItem } from '@/services/pickupOptions';
+import { deviceTimeZone } from '@/services/job-shape';
 
 // ─── CONFIG ─────────────────────────────────────────────────────────────────
 const DEV_LAN_IP = '192.168.1.6'; // Your machine's LAN IP for physical device testing
@@ -1285,7 +1286,8 @@ export const SkoFyApi = {
       // An AI reply can take longer than an ordinary request when the model is busy.
       timeoutMs: 60_000,
       method: 'POST',
-      body: JSON.stringify({ messages, ...(language ? { language } : {}) }),
+      // The phone's time zone, so "tomorrow at 9" is the customer's 9.
+      body: JSON.stringify({ messages, ...(language ? { language } : {}), ...(deviceTimeZone() ? { timezone: deviceTimeZone() } : {}) }),
     }) as any,
 
     // language: an ISO-639-1 code (e.g. "en", "te") echoed back from a PRIOR
