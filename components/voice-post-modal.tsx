@@ -110,7 +110,7 @@ function waveColorAt(t: number): string {
 const SPEECH_THRESHOLD = -22;  // dB — must exceed this to count as real speech
 const SILENCE_THRESHOLD = -38; // dB — below this after speech = silence
 const MIN_SPEECH_FRAMES = 4;   // need ≥4 frames (~0.8s) of speech before listening for silence
-const SILENCE_FRAMES = 10;     // 10 × 200ms = 2s silence after confirmed speech → stop
+const SILENCE_FRAMES = 6;      // 6 × 200ms = 1.2s silence after confirmed speech → stop (2s felt slow)
 
 // Opening line per voice language (see greetingText() for the English
 // variants that name a chosen provider or service).

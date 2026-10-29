@@ -184,9 +184,9 @@ async function timedFetch(url: string, init: RequestInit, ms = REQUEST_TIMEOUT_M
 
 async function request<T = any>(
   endpoint: string,
-  options: RequestInit & { skipAuth?: boolean } = {}
+  options: RequestInit & { skipAuth?: boolean; timeoutMs?: number } = {}
 ): Promise<T> {
-  const { skipAuth = false, ...fetchOptions } = options;
+  const { skipAuth = false, timeoutMs, ...fetchOptions } = options;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -205,9 +205,9 @@ async function request<T = any>(
 
   const fullUrl = `${BASE_URL}${endpoint}`;
   // Forms, and photos sent inside the JSON, are uploads.
-  const limit = fetchOptions.body instanceof FormData
+  const limit = timeoutMs ?? (fetchOptions.body instanceof FormData
     || (typeof fetchOptions.body === 'string' && fetchOptions.body.length > 200_000)
-    ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+    ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
   if (__DEV__) console.log('[fetch]', fetchOptions.method || 'GET', fullUrl);
   let response: Response;
   try {
@@ -1282,6 +1282,8 @@ export const SkoFyApi = {
       diagnosis_check: boolean;
       ask_photo: boolean;
     }> => request('/ai/voice-chat', {
+      // An AI reply can take longer than an ordinary request when the model is busy.
+      timeoutMs: 60_000,
       method: 'POST',
       body: JSON.stringify({ messages, ...(language ? { language } : {}) }),
     }) as any,

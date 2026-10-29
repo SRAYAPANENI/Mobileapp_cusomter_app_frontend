@@ -2,7 +2,7 @@ import { DatePickerModal } from '@/components/date-picker-modal';
 import { ThemedText } from '@/components/themed-text';
 import { TimePickerModal } from '@/components/time-picker-modal';
 import { Fonts } from '@/constants/theme';
-import { HowLong, InCare, JobChoice, PRICING_RULES, SkillPricing, Where, bookedForSetTime, normalize, priceHint } from '@/services/job-shape';
+import { HowLong, InCare, JobChoice, PRICING_RULES, SkillPricing, Where, bookedForSetTime, normalize, priceHint, wheresFor } from '@/services/job-shape';
 import { fromParts } from '@/services/schedule-slots';
 import { CalendarClock, Home, MapPin, Sparkles } from 'lucide-react-native';
 import React, { useState } from 'react';
@@ -36,14 +36,17 @@ interface Props {
   onChange: (next: JobChoice) => void;
   /** How the chosen skill is priced — only the questions it needs are asked. */
   pricing?: SkillPricing | null;
+  /** Where the skill is done ("C,P,O") — only those places are offered. */
+  venues?: string | null;
 }
 
 // Three plain questions instead of a form (docs/JOB_SHAPE_DESIGN.md): where,
 // how long, and what's left with the provider. The price unit follows from
 // them (services/job-shape.ts) and is explained in one line.
-export function JobShapePicker({ value, onChange, pricing }: Props) {
-  const set = (patch: Partial<JobChoice>) => onChange(normalize({ ...value, ...patch }, pricing));
+export function JobShapePicker({ value, onChange, pricing, venues }: Props) {
+  const set = (patch: Partial<JobChoice>) => onChange(normalize({ ...value, ...patch }, pricing, venues));
   const rules = pricing ? PRICING_RULES[pricing] : null;
+  const wheres = wheresFor(pricing, venues);
   const [picking, setPicking] = useState<{ field: 'startISO' | 'endISO'; step: 'day' | 'time'; dayISO?: string } | null>(null);
   const isDays = value.howLong === 'DAYS';
 
@@ -51,7 +54,7 @@ export function JobShapePicker({ value, onChange, pricing }: Props) {
     <View style={s.wrap}>
       <ThemedText style={s.question}>Where?</ThemedText>
       <View style={s.row}>
-        {WHERE.filter((w) => !rules || rules.wheres.includes(w.value)).map(({ value: v, label, Icon }) => (
+        {WHERE.filter((w) => wheres.includes(w.value)).map(({ value: v, label, Icon }) => (
           <TouchableOpacity key={v} style={[s.chip, value.where === v && s.chipOn]} onPress={() => set({ where: v })}>
             <Icon size={15} color="#111827" />
             <ThemedText style={[s.chipText, value.where === v && s.chipTextOn]}>{label}</ThemedText>

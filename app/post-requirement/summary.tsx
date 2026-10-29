@@ -70,6 +70,7 @@ export default function JobSummaryScreen() {
   // How the chosen skill is priced (one standard way per profession) — only
   // the questions it needs are asked, and the job is posted that way.
   const [pricing, setPricing] = useState<SkillPricing | null>(null);
+  const [venues, setVenues] = useState<string | null>(null);
   useEffect(() => {
     if (!ordinary || !data.profession) return;
     let live = true;
@@ -78,9 +79,12 @@ export default function JobSummaryScreen() {
         const skills: any[] = Array.isArray(list) ? list : [];
         const main = skills.find((sk) => sk.id === data.skill_ids[0]) ?? skills[0];
         const found = (main?.pricing ?? null) as SkillPricing | null;
+        const places = (main?.venues ?? null) as string | null;
         if (!live) return;
         setPricing(found);
-        if (found) updateData({ jobChoice: normalize(data.jobChoice, found) });
+        setVenues(places);
+        // Through changeChoice, so on-site / remote follows the place.
+        if (found || places) changeChoice(normalize(data.jobChoice, found, places));
       })
       .catch(() => {});
     return () => { live = false; };
@@ -331,7 +335,7 @@ export default function JobSummaryScreen() {
         {/* --- Where, how long, in care — the last decision before posting --- */}
         <Animated.View entering={FadeInUp.delay(900)} style={styles.rangeSection}>
           <ThemedText style={styles.sectionTitle}>How should this be done?</ThemedText>
-          {ordinary && <JobShapePicker value={data.jobChoice} onChange={changeChoice} pricing={pricing} />}
+          {ordinary && <JobShapePicker value={data.jobChoice} onChange={changeChoice} pricing={pricing} venues={venues} />}
           {ordinary && (
             <CareSheetForm
               custody={data.jobChoice.inCare}

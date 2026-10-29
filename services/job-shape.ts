@@ -61,15 +61,29 @@ export const PRICING_RULES: Record<SkillPricing, PricingRules> = {
     note: "Priced per day — longer stays use the provider's weekly or monthly price when it costs less." },
 };
 
+// The catalogue's place codes → the places offered (pick-up & drop-off is its own flow).
+// R (movers, towing, a courier) collects at your place — offered as "At my place".
+const CODE_WHERE: Record<string, Where> = { C: 'MY_PLACE', P: 'THEIR_PLACE', O: 'ONLINE', R: 'MY_PLACE' };
+
+/** The places to offer: those the pricing type allows, and where the skill is
+ * actually done ("C,O" from the catalogue). Never empty. */
+export function wheresFor(pricing?: SkillPricing | null, venues?: string | null): Where[] {
+  const byPricing = pricing ? PRICING_RULES[pricing].wheres : (['MY_PLACE', 'THEIR_PLACE', 'ONLINE'] as Where[]);
+  const done = (venues ?? '').split(',').map((c) => CODE_WHERE[c.trim()]).filter(Boolean);
+  const both = done.length ? byPricing.filter((w) => done.includes(w)) : byPricing;
+  return both.length ? both : byPricing;
+}
+
 /** The choices still allowed with this one changed — online work has nothing
  * in care and no stays; a home can only be looked after at your place. With
  * the skill's pricing known, it decides how long and what fits. */
-export function normalize(choice: JobChoice, pricing?: SkillPricing | null): JobChoice {
+export function normalize(choice: JobChoice, pricing?: SkillPricing | null, venues?: string | null): JobChoice {
   const next = { ...choice };
+  const wheres = wheresFor(pricing, venues);
+  if (!wheres.includes(next.where)) next.where = wheres[0];
   if (pricing) {
     const rules = PRICING_RULES[pricing];
     next.howLong = rules.howLong;
-    if (!rules.wheres.includes(next.where)) next.where = rules.wheres[0];
     if (!rules.inCares.includes(next.inCare)) next.inCare = rules.inCares[0];
   }
   if (next.where === 'ONLINE') {
