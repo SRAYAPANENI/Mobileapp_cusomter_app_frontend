@@ -2,7 +2,7 @@ import { DatePickerModal } from '@/components/date-picker-modal';
 import { ThemedText } from '@/components/themed-text';
 import { TimePickerModal } from '@/components/time-picker-modal';
 import { Fonts } from '@/constants/theme';
-import { HowLong, InCare, JobChoice, Where, bookedForSetTime, normalize, priceHint } from '@/services/job-shape';
+import { HowLong, InCare, JobChoice, PRICING_RULES, SkillPricing, Where, bookedForSetTime, normalize, priceHint } from '@/services/job-shape';
 import { fromParts } from '@/services/schedule-slots';
 import { CalendarClock, Home, MapPin, Sparkles } from 'lucide-react-native';
 import React, { useState } from 'react';
@@ -34,13 +34,16 @@ const show = (iso: string | null) => iso
 interface Props {
   value: JobChoice;
   onChange: (next: JobChoice) => void;
+  /** How the chosen skill is priced — only the questions it needs are asked. */
+  pricing?: SkillPricing | null;
 }
 
 // Three plain questions instead of a form (docs/JOB_SHAPE_DESIGN.md): where,
 // how long, and what's left with the provider. The price unit follows from
 // them (services/job-shape.ts) and is explained in one line.
-export function JobShapePicker({ value, onChange }: Props) {
-  const set = (patch: Partial<JobChoice>) => onChange(normalize({ ...value, ...patch }));
+export function JobShapePicker({ value, onChange, pricing }: Props) {
+  const set = (patch: Partial<JobChoice>) => onChange(normalize({ ...value, ...patch }, pricing));
+  const rules = pricing ? PRICING_RULES[pricing] : null;
   const [picking, setPicking] = useState<{ field: 'startISO' | 'endISO'; step: 'day' | 'time'; dayISO?: string } | null>(null);
   const isDays = value.howLong === 'DAYS';
 
@@ -48,7 +51,7 @@ export function JobShapePicker({ value, onChange }: Props) {
     <View style={s.wrap}>
       <ThemedText style={s.question}>Where?</ThemedText>
       <View style={s.row}>
-        {WHERE.map(({ value: v, label, Icon }) => (
+        {WHERE.filter((w) => !rules || rules.wheres.includes(w.value)).map(({ value: v, label, Icon }) => (
           <TouchableOpacity key={v} style={[s.chip, value.where === v && s.chipOn]} onPress={() => set({ where: v })}>
             <Icon size={15} color="#111827" />
             <ThemedText style={[s.chipText, value.where === v && s.chipTextOn]}>{label}</ThemedText>
@@ -56,15 +59,20 @@ export function JobShapePicker({ value, onChange }: Props) {
         ))}
       </View>
 
-      <ThemedText style={s.question}>How long?</ThemedText>
-      <View style={s.row}>
-        {HOW_LONG.filter((h) => !(value.where === 'ONLINE' && h.value === 'DAYS')
-          && !(h.value === 'ONCE' && bookedForSetTime(value))).map((h) => (
-          <TouchableOpacity key={h.value} style={[s.chip, value.howLong === h.value && s.chipOn]} onPress={() => set({ howLong: h.value })}>
-            <ThemedText style={[s.chipText, value.howLong === h.value && s.chipTextOn]}>{h.label}</ThemedText>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {/* The skill's pricing fixes how long — the question is only asked without it. */}
+      {!rules && (
+        <>
+          <ThemedText style={s.question}>How long?</ThemedText>
+          <View style={s.row}>
+            {HOW_LONG.filter((h) => !(value.where === 'ONLINE' && h.value === 'DAYS')
+              && !(h.value === 'ONCE' && bookedForSetTime(value))).map((h) => (
+              <TouchableOpacity key={h.value} style={[s.chip, value.howLong === h.value && s.chipOn]} onPress={() => set({ howLong: h.value })}>
+                <ThemedText style={[s.chipText, value.howLong === h.value && s.chipTextOn]}>{h.label}</ThemedText>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </>
+      )}
 
       {value.howLong !== 'ONCE' && (
         <View style={s.dates}>
@@ -82,11 +90,12 @@ export function JobShapePicker({ value, onChange }: Props) {
         </View>
       )}
 
-      {value.where !== 'ONLINE' && (
+      {value.where !== 'ONLINE' && (!rules || rules.inCares.length > 1) && (
         <>
           <ThemedText style={s.question}>Leaving anything with them?</ThemedText>
           <View style={[s.row, { flexWrap: 'wrap' }]}>
-            {IN_CARE.filter((c) => c.value !== 'HOME' || value.where === 'MY_PLACE').map((c) => (
+            {IN_CARE.filter((c) => (c.value !== 'HOME' || value.where === 'MY_PLACE')
+              && (!rules || rules.inCares.includes(c.value))).map((c) => (
               <TouchableOpacity key={c.value} style={[s.chip, s.small, value.inCare === c.value && s.chipOn]}
                 onPress={() => set({ inCare: c.value })}>
                 <ThemedText style={[s.chipText, value.inCare === c.value && s.chipTextOn]}>{c.label}</ThemedText>
@@ -96,7 +105,7 @@ export function JobShapePicker({ value, onChange }: Props) {
         </>
       )}
 
-      <ThemedText style={s.hint}>{priceHint(value)}</ThemedText>
+      <ThemedText style={s.hint}>{priceHint(value, pricing)}</ThemedText>
       {(value.inCare === 'LIVING_BEING' || value.inCare === 'HOME') && (
         <ThemedText style={s.hint}>
           Only background-checked providers can take this. You'll get photos at hand-over{value.howLong !== 'ONCE' ? ' and at least one update a day' : ''}.

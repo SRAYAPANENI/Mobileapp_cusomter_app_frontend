@@ -6,6 +6,9 @@
 // the provider sees the job.
 
 export type Where = 'MY_PLACE' | 'THEIR_PLACE' | 'ONLINE';
+/** How the skill is priced — one standard way per profession
+ * (skofy-backend/app/domain/skill_pricing.py). Decides which questions apply. */
+export type SkillPricing = 'QUOTE' | 'HOUR' | 'VISIT' | 'NIGHT' | 'DAY';
 export type HowLong = 'ONCE' | 'HOURS' | 'DAYS';
 export type InCare = 'NONE' | 'LIVING_BEING' | 'ITEM' | 'HOME';
 
@@ -22,7 +25,7 @@ export interface JobShapePayload {
   venue: 'CUSTOMER_PLACE' | 'PROVIDER_PLACE' | 'ONLINE';
   timing: 'ONCE' | 'WINDOW' | 'STAY';
   custody: InCare;
-  pricing_unit: 'QUOTE' | 'HOUR' | 'DAY' | 'NIGHT';
+  pricing_unit: 'QUOTE' | 'HOUR' | 'DAY' | 'NIGHT' | 'VISIT';
   ends_at?: string;
   /** What's left in care — each pet's needs, or the item (services/care-sheet.ts). */
   care_sheet?: Record<string, unknown>;
@@ -41,25 +44,52 @@ export function bookedForSetTime(choice: Pick<JobChoice, 'where' | 'inCare'>): b
   return choice.where === 'THEIR_PLACE' || choice.inCare !== 'NONE';
 }
 
+interface PricingRules { howLong: HowLong; wheres: Where[]; inCares: InCare[]; note: string }
+
+/** What a pricing type allows: how long is fixed by it, and only the places
+ * and things-in-care that fit. */
+export const PRICING_RULES: Record<SkillPricing, PricingRules> = {
+  QUOTE: { howLong: 'ONCE', wheres: ['MY_PLACE', 'ONLINE'], inCares: ['NONE'],
+    note: 'Priced by a quote: the provider sees the job, then sends their price for you to approve.' },
+  VISIT: { howLong: 'ONCE', wheres: ['MY_PLACE', 'THEIR_PLACE', 'ONLINE'], inCares: ['NONE', 'LIVING_BEING', 'ITEM'],
+    note: "One visit at the provider's set price — you'll see each one's price before you choose, and pay when you book." },
+  HOUR: { howLong: 'HOURS', wheres: ['MY_PLACE', 'THEIR_PLACE', 'ONLINE'], inCares: ['NONE', 'LIVING_BEING', 'ITEM', 'HOME'],
+    note: "Booked by the hour — you'll see each provider's total before you choose, and pay when you book." },
+  NIGHT: { howLong: 'DAYS', wheres: ['THEIR_PLACE', 'MY_PLACE'], inCares: ['LIVING_BEING', 'ITEM', 'HOME', 'NONE'],
+    note: "Priced per night — longer stays use the provider's weekly or monthly price when it costs less." },
+  DAY: { howLong: 'DAYS', wheres: ['THEIR_PLACE', 'MY_PLACE'], inCares: ['LIVING_BEING', 'ITEM', 'HOME', 'NONE'],
+    note: "Priced per day — longer stays use the provider's weekly or monthly price when it costs less." },
+};
+
 /** The choices still allowed with this one changed — online work has nothing
- * in care and no stays; a home can only be looked after at your place. */
-export function normalize(choice: JobChoice): JobChoice {
+ * in care and no stays; a home can only be looked after at your place. With
+ * the skill's pricing known, it decides how long and what fits. */
+export function normalize(choice: JobChoice, pricing?: SkillPricing | null): JobChoice {
   const next = { ...choice };
+  if (pricing) {
+    const rules = PRICING_RULES[pricing];
+    next.howLong = rules.howLong;
+    if (!rules.wheres.includes(next.where)) next.where = rules.wheres[0];
+    if (!rules.inCares.includes(next.inCare)) next.inCare = rules.inCares[0];
+  }
   if (next.where === 'ONLINE') {
     next.inCare = 'NONE';
     if (next.howLong === 'DAYS') next.howLong = 'HOURS';
   }
   if (next.inCare === 'HOME' && next.where !== 'MY_PLACE') next.inCare = 'NONE';
-  if (next.howLong === 'ONCE' && bookedForSetTime(next)) next.howLong = 'HOURS';
+  if (!pricing && next.howLong === 'ONCE' && bookedForSetTime(next)) next.howLong = 'HOURS';
   if (next.howLong === 'ONCE') { next.startISO = null; next.endISO = null; }
   return next;
 }
 
-/** The shape to post, or what's missing — in words fit to show. */
-export function shapeFor(choice: JobChoice, now: Date = new Date()): { shape: JobShapePayload } | { error: string } {
+/** The shape to post, or what's missing — in words fit to show. The skill's
+ * pricing sets the unit (the server checks it the same way). */
+export function shapeFor(
+  choice: JobChoice, now: Date = new Date(), pricing?: SkillPricing | null,
+): { shape: JobShapePayload } | { error: string } {
   const venue = VENUE[choice.where];
   if (choice.howLong === 'ONCE') {
-    return { shape: { venue, timing: 'ONCE', custody: choice.inCare, pricing_unit: 'QUOTE' } };
+    return { shape: { venue, timing: 'ONCE', custody: choice.inCare, pricing_unit: pricing === 'VISIT' ? 'VISIT' : 'QUOTE' } };
   }
   if (!choice.startISO || !choice.endISO) {
     return { error: choice.howLong === 'DAYS' ? 'Choose the drop-off and pick-up times.' : 'Choose when it starts and ends.' };
@@ -77,17 +107,15 @@ export function shapeFor(choice: JobChoice, now: Date = new Date()): { shape: Jo
   if (choice.howLong === 'HOURS') {
     return { shape: { venue, timing: 'WINDOW', custody: choice.inCare, pricing_unit: 'HOUR', ends_at: end.toISOString() } };
   }
+  const stayUnit = pricing === 'NIGHT' || pricing === 'DAY' ? pricing : choice.where === 'THEIR_PLACE' ? 'NIGHT' : 'DAY';
   return {
-    shape: {
-      venue, timing: 'STAY', custody: choice.inCare,
-      pricing_unit: choice.where === 'THEIR_PLACE' ? 'NIGHT' : 'DAY',
-      ends_at: end.toISOString(),
-    },
+    shape: { venue, timing: 'STAY', custody: choice.inCare, pricing_unit: stayUnit, ends_at: end.toISOString() },
   };
 }
 
 /** One line under the choices: how the price works. */
-export function priceHint(choice: JobChoice): string {
+export function priceHint(choice: JobChoice, pricing?: SkillPricing | null): string {
+  if (pricing) return PRICING_RULES[pricing].note;
   if (choice.howLong === 'ONCE') return 'Your provider quotes the price after seeing the job — you approve it before paying.';
   const unit = choice.howLong === 'HOURS' ? 'hour' : choice.where === 'THEIR_PLACE' ? 'night' : 'day';
   const longer = choice.howLong === 'DAYS' ? ' Longer stays use their weekly or monthly price when it costs less.' : '';

@@ -3,7 +3,7 @@ import { PriceGuideNote } from '@/components/price-guide-note';
 import { JobShapePicker } from '@/components/job-shape-picker';
 import { CareSheetForm } from '@/components/care-sheet-form';
 import { careSheetPayload, careSheetProblem } from '@/services/care-sheet';
-import { JobChoice, deviceTimeZone, shapeFor } from '@/services/job-shape';
+import { JobChoice, SkillPricing, deviceTimeZone, normalize, shapeFor } from '@/services/job-shape';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { usePostRequirement } from '@/context/PostRequirementContext';
@@ -66,6 +66,27 @@ export default function JobSummaryScreen() {
   // An ordinary job's where / how long / in care (services/job-shape.ts);
   // a pickup and delivery has its own flow.
   const ordinary = data.jobKind !== 'PICKUP_DROPOFF';
+
+  // How the chosen skill is priced (one standard way per profession) — only
+  // the questions it needs are asked, and the job is posted that way.
+  const [pricing, setPricing] = useState<SkillPricing | null>(null);
+  useEffect(() => {
+    if (!ordinary || !data.profession) return;
+    let live = true;
+    SkoFyApi.skills.list(data.profession)
+      .then((list: any) => {
+        const skills: any[] = Array.isArray(list) ? list : [];
+        const main = skills.find((sk) => sk.id === data.skill_ids[0]) ?? skills[0];
+        const found = (main?.pricing ?? null) as SkillPricing | null;
+        if (!live) return;
+        setPricing(found);
+        if (found) updateData({ jobChoice: normalize(data.jobChoice, found) });
+      })
+      .catch(() => {});
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ordinary, data.profession, data.skill_ids[0]]);
+
   const changeChoice = (next: JobChoice) => updateData({
     jobChoice: next, serviceMode: next.where === 'ONLINE' ? 'REMOTE' : 'ON_SITE',
   });
@@ -96,7 +117,7 @@ export default function JobSummaryScreen() {
       return;
     }
     // Where / how long / in care, as the job's shape — or what's missing.
-    const shaped = ordinary ? shapeFor(data.jobChoice) : null;
+    const shaped = ordinary ? shapeFor(data.jobChoice, new Date(), pricing) : null;
     if (shaped && 'error' in shaped) {
       alert.show('error', 'Almost there', shaped.error);
       return;
@@ -310,7 +331,7 @@ export default function JobSummaryScreen() {
         {/* --- Where, how long, in care — the last decision before posting --- */}
         <Animated.View entering={FadeInUp.delay(900)} style={styles.rangeSection}>
           <ThemedText style={styles.sectionTitle}>How should this be done?</ThemedText>
-          {ordinary && <JobShapePicker value={data.jobChoice} onChange={changeChoice} />}
+          {ordinary && <JobShapePicker value={data.jobChoice} onChange={changeChoice} pricing={pricing} />}
           {ordinary && (
             <CareSheetForm
               custody={data.jobChoice.inCare}
