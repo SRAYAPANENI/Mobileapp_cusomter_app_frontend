@@ -12,11 +12,12 @@ import {
   MessageCircle,
   Search
 } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { TextInput } from '@/components/scaled-text';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
+import { usePullRefresh } from '@/hooks/use-pull-refresh';
 
 const FAQS = [
   {
@@ -76,12 +77,12 @@ export default function HelpSupportScreen() {
     return faq.question.toLowerCase().includes(q) || faq.answer.toLowerCase().includes(q);
   });
 
-  useEffect(() => {
-    SkoFyApi.supportTickets.list()
-      .then((data: any) => setTickets(Array.isArray(data) ? data : []))
-      .catch((err: unknown) => console.warn('Failed to load support tickets:', err))
-      .finally(() => setLoadingTickets(false));
-  }, []);
+  const loadTickets = useCallback(() => SkoFyApi.supportTickets.list()
+    .then((data: any) => setTickets(Array.isArray(data) ? data : []))
+    .catch((err: unknown) => console.warn('Failed to load support tickets:', err))
+    .finally(() => setLoadingTickets(false)), []);
+  useEffect(() => { loadTickets(); }, [loadTickets]);
+  const refreshControl = usePullRefresh(loadTickets);
 
   return (
     <ThemedView style={styles.container}>
@@ -94,7 +95,7 @@ export default function HelpSupportScreen() {
         <Headphones size={24} color="#111827" />
       </View>
 
-      <KeyboardAwareScrollView bottomOffset={24} keyboardShouldPersistTaps="handled" contentContainerStyle={padBottom(styles.scrollContent, bottomInset)} showsVerticalScrollIndicator={false}>
+      <KeyboardAwareScrollView refreshControl={refreshControl} bottomOffset={24} keyboardShouldPersistTaps="handled" contentContainerStyle={padBottom(styles.scrollContent, bottomInset)} showsVerticalScrollIndicator={false}>
         {/* Search */}
         <View style={styles.searchContainer}>
           <Search size={20} color="#9CA3AF" />

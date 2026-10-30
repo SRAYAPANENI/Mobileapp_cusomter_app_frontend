@@ -33,6 +33,7 @@ import {
   View,
 } from 'react-native';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
+import { usePullRefresh } from '@/hooks/use-pull-refresh';
 
 // Map handled dynamically, same as track-provider.tsx / provider-map.tsx —
 // prevents crashes/web errors if react-native-maps isn't available.
@@ -139,7 +140,7 @@ export default function JobDetailsScreen() {
       setLoading(true);
       setLoadError(false);
     }
-    SkoFyApi.jobs.get(jobId)
+    return SkoFyApi.jobs.get(jobId)
       .then((data: any) => {
         setJob(data);
         hasLoadedOnceRef.current = true;
@@ -152,7 +153,9 @@ export default function JobDetailsScreen() {
       .finally(() => { if (isFirstLoad) setLoading(false); });
   }, [jobId]);
 
-  useFocusEffect(loadJob);
+  useFocusEffect(useCallback(() => { loadJob(); }, [loadJob]));
+  // After the first load, reloads are already quiet.
+  const refreshControl = usePullRefresh(loadJob);
 
   const canEditPhotos = (job?.applicant_count ?? 0) === 0;
 
@@ -245,7 +248,7 @@ export default function JobDetailsScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView refreshControl={refreshControl} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.mainCard}>
           <View style={styles.titleRow}>
             <ThemedText style={styles.title}>{job.title}</ThemedText>

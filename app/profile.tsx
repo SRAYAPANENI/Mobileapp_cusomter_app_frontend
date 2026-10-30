@@ -58,6 +58,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { usePushPreference } from '@/hooks/use-push-preference';
 import { padBottom } from '@/hooks/use-bottom-inset';
+import { usePullRefresh } from '@/hooks/use-pull-refresh';
 
 interface JobHistory {
   id: string;
@@ -175,8 +176,8 @@ export default function ProfileScreen() {
   const [profileLoadFailed, setProfileLoadFailed] = useState(false);
   const isOnline = useIsOnline();
 
-  const loadProfile = React.useCallback(async () => {
-      setProfileLoading(true);
+  const loadProfile = React.useCallback(async (quiet = false) => {
+      if (!quiet) setProfileLoading(true);
       setProfileLoadFailed(false);
       try {
         const [profile, addressList, summary] = await Promise.all([
@@ -251,7 +252,8 @@ export default function ProfileScreen() {
         }
       } catch (error) {
         console.error('Failed to load profile', error);
-        setProfileLoadFailed(true);
+        // A failed pull-down keeps what's shown; a failed first load offers Retry.
+        if (!quiet) setProfileLoadFailed(true);
       } finally {
         setProfileLoading(false);
       }
@@ -260,6 +262,7 @@ export default function ProfileScreen() {
   useEffect(() => {
     loadProfile();
   }, [loadProfile]);
+  const profileRefresh = usePullRefresh(() => loadProfile(true));
 
   useEffect(() => {
     (async () => {
@@ -734,11 +737,11 @@ export default function ProfileScreen() {
           <View style={{ width: 22 }} />
         </View>
         {!isOnline ? (
-          <NoInternetState onRetry={loadProfile} />
+          <NoInternetState onRetry={() => loadProfile()} />
         ) : profileLoadFailed ? (
           <View style={{ paddingHorizontal: 24, paddingTop: 64, alignItems: 'center', gap: 16 }}>
             <ThemedText style={{ textAlign: 'center' }}>We couldn't load your profile. Please try again.</ThemedText>
-            <TouchableOpacity onPress={loadProfile} style={{ paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, backgroundColor: themeColors.brand }}>
+            <TouchableOpacity onPress={() => loadProfile()} style={{ paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, backgroundColor: themeColors.brand }}>
               <ThemedText style={{ fontFamily: Fonts.poppinsBold, color: '#000' }}>Retry</ThemedText>
             </TouchableOpacity>
           </View>
@@ -778,7 +781,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={padBottom(styles.scrollContent, barClearance)}>
+      <ScrollView refreshControl={profileRefresh} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={padBottom(styles.scrollContent, barClearance)}>
         {/* Profile Info */}
         <Animated.View entering={FadeInUp.duration(600)} style={styles.profileSection}>
           <View style={styles.avatarContainer}>

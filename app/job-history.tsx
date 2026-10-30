@@ -24,17 +24,11 @@ import {
   XCircle
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Platform,
-  StyleSheet,
-  TouchableOpacity,
-  View
-} from 'react-native';
+import { ActivityIndicator, FlatList, Platform, StyleSheet, TouchableOpacity, View, ScrollView } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
+import { usePullRefresh } from '@/hooks/use-pull-refresh';
 
 interface JobReview {
   skill_rating: number;
@@ -94,7 +88,7 @@ export default function JobHistoryScreen() {
   const [guaranteeJob, setGuaranteeJob] = useState<string | null>(null);
   const [repeatJob, setRepeatJob] = useState<{ jobId: string; providerName: string; lastPrice: number | null } | null>(null);
 
-  const fetchHistory = useCallback(async () => {
+  const fetchHistory = useCallback(async (quiet = false) => {
     try {
       const jobs = await SkoFyApi.jobs.list();
       const filtered = (Array.isArray(jobs) ? jobs : [])
@@ -119,14 +113,17 @@ export default function JobHistoryScreen() {
           comment: j.customer_review.comment ?? null,
         } : null,
       })));
+      setLoadError(false);
     } catch {
-      setLoadError(true);
+      if (!quiet) setLoadError(true);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
+  // Quiet unless the error is showing: then a good reload replaces it.
+  const refreshControl = usePullRefresh(() => fetchHistory(!loadError));
 
   const handleRatingSubmit = async (ratings: RatingDimensions, comment: string, offApp: OffAppAnswer) => {
     if (!ratingTarget) throw new Error('No job selected');
@@ -324,19 +321,20 @@ export default function JobHistoryScreen() {
           <ActivityIndicator size="large" color={themeColors.brand} />
         </View>
       ) : loadError ? (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+        <ScrollView refreshControl={refreshControl} contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
           <ThemedText style={{ fontFamily: Fonts.poppinsSemiBold, color: themeColors.textSecondary, textAlign: 'center' }}>
-            Couldn't load your job history. Pull to refresh or try again later.
+            Couldn't load your job history. Pull down to try again.
           </ThemedText>
-        </View>
+        </ScrollView>
       ) : history.length === 0 ? (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+        <ScrollView refreshControl={refreshControl} contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
           <ThemedText style={{ fontFamily: Fonts.poppinsSemiBold, color: themeColors.textSecondary, textAlign: 'center' }}>
             No completed or cancelled jobs yet.
           </ThemedText>
-        </View>
+        </ScrollView>
       ) : (
         <FlatList keyboardShouldPersistTaps="handled"
+          refreshControl={refreshControl}
           // Keyboard-aware: a box in a row scrolls up above the keyboard.
           renderScrollComponent={(props) => <KeyboardAwareScrollView {...props} bottomOffset={24} />}
           data={history}

@@ -23,6 +23,7 @@ import {
   View,
 } from 'react-native';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
+import { usePullRefresh } from '@/hooks/use-pull-refresh';
 
 const AUDIENCE_LABELS: Record<string, string> = {
   ALL: 'Everyone',
@@ -72,6 +73,7 @@ export default function OfferDetailScreen() {
   }, [offerId]);
 
   useEffect(() => { load(); }, [load]);
+  const refreshControl = usePullRefresh(load);
 
   const handleClaim = async () => {
     if (!offerId) return;
@@ -118,7 +120,7 @@ export default function OfferDetailScreen() {
           <ThemedText style={styles.emptyText}>This offer isn't available anymore.</ThemedText>
         </View>
       ) : (
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={padBottom(styles.scrollContent, bottomInset)} showsVerticalScrollIndicator={false}>
+        <ScrollView refreshControl={refreshControl} keyboardShouldPersistTaps="handled" contentContainerStyle={padBottom(styles.scrollContent, bottomInset)} showsVerticalScrollIndicator={false}>
           {offer.image_url ? (
             <Image source={{ uri: offer.image_url }} style={styles.banner} contentFit="cover" />
           ) : (

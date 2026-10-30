@@ -43,6 +43,7 @@ import Animated, {
   FadeInUp,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { usePullRefresh } from '@/hooks/use-pull-refresh';
 
 const { width } = Dimensions.get('window');
 
@@ -112,6 +113,15 @@ export default function ProviderDetailsScreen() {
 
   // Bumped by "Try again" on the error screen to re-run the load below.
   const [reloadKey, setReloadKey] = useState(0);
+  // A pull-down reload: keep what's shown (no full spinner, no error screen),
+  // and tell the spinner at the top when it's done.
+  const quietReloadRef = useRef(false);
+  const reloadDoneRef = useRef<(() => void) | null>(null);
+  const refreshControl = usePullRefresh(() => new Promise<void>((resolve) => {
+    quietReloadRef.current = true;
+    reloadDoneRef.current = resolve;
+    setReloadKey((k) => k + 1);
+  }));
 
   useEffect(() => {
     if (!providerId) {
@@ -119,8 +129,12 @@ export default function ProviderDetailsScreen() {
       setLoadError(true);
       return;
     }
-    setLoading(true);
-    setLoadError(false);
+    const quiet = quietReloadRef.current;
+    quietReloadRef.current = false;
+    if (!quiet) {
+      setLoading(true);
+      setLoadError(false);
+    }
     (async () => {
       try {
         const [profileData, docsData, reviewsData, historyData, jobData] = await Promise.all([
@@ -169,9 +183,11 @@ export default function ProviderDetailsScreen() {
           review_comment: h.review_comment ?? null,
         })));
       } catch {
-        setLoadError(true);
+        if (!quiet) setLoadError(true);
       } finally {
         setLoading(false);
+        reloadDoneRef.current?.();
+        reloadDoneRef.current = null;
       }
     })();
   }, [providerId, jobId, reloadKey]);
@@ -386,7 +402,7 @@ export default function ProviderDetailsScreen() {
         </View>
       </View>
 
-      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView refreshControl={refreshControl} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Quick Stats */}
         <Animated.View entering={FadeInUp.delay(300)} style={styles.statsRow}>
           <View style={styles.statItem}>

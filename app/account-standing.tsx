@@ -10,6 +10,7 @@ import { ChevronLeft, Gift, ShieldCheck, ShieldAlert } from 'lucide-react-native
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Modal, ScrollView, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import { usePullRefresh } from '@/hooks/use-pull-refresh';
 
 const date = (iso: string) => new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
 
@@ -28,9 +29,10 @@ export default function AccountStandingScreen() {
   const [reason, setReason] = useState('');
   const [sending, setSending] = useState(false);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    Promise.all([SkoFyApi.payments.credits().catch(() => null), SkoFyApi.strikes.mine().catch(() => null)])
+  // Quiet: a pull-down reload keeps the screen and turns the small spinner.
+  const load = useCallback((quiet = false) => {
+    if (!quiet) setLoading(true);
+    return Promise.all([SkoFyApi.payments.credits().catch(() => null), SkoFyApi.strikes.mine().catch(() => null)])
       .then(([c, s]) => {
         setCredit(c?.available ?? 0);
         setCreditNotes((c?.credits ?? []).filter((x) => x.remaining > 0));
@@ -38,7 +40,8 @@ export default function AccountStandingScreen() {
       })
       .finally(() => setLoading(false));
   }, []);
-  useFocusEffect(load);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const refreshControl = usePullRefresh(() => load(true));
 
   const sendAppeal = async () => {
     if (!appealing) return;
@@ -70,7 +73,7 @@ export default function AccountStandingScreen() {
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color="#111827" />
       ) : (
-        <ScrollView contentContainerStyle={padBottom([s.body, { paddingBottom: 24 }], bottomInset)}>
+        <ScrollView refreshControl={refreshControl} contentContainerStyle={padBottom([s.body, { paddingBottom: 24 }], bottomInset)}>
           <View style={s.card}>
             <View style={s.row}>
               <Gift size={18} color="#059669" />

@@ -8,18 +8,11 @@ import { discountText, expiryText, isExpiryUrgent, OFFER_CARD_COLORS } from '@/u
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { ChevronLeft, Tag, TicketPercent } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Platform,
-  StatusBar,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, FlatList, Platform, StatusBar, StyleSheet, TouchableOpacity, View, ScrollView } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
+import { usePullRefresh } from '@/hooks/use-pull-refresh';
 
 interface Offer {
   id: string;
@@ -41,7 +34,7 @@ export default function OffersScreen() {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const load = useCallback(() =>
     SkoFyApi.offers.list()
       .then((data: unknown) => {
         const list = Array.isArray(data) ? (data as OfferResponse[]) : [];
@@ -58,8 +51,9 @@ export default function OffersScreen() {
         })));
       })
       .catch((err: unknown) => console.warn('Failed to load offers:', err))
-      .finally(() => setLoading(false));
-  }, []);
+      .finally(() => setLoading(false)), []);
+  useEffect(() => { load(); }, [load]);
+  const refreshControl = usePullRefresh(load);
 
   const openOffer = (offerId: string) => {
     router.push({ pathname: '/offer-detail', params: { offerId } } as any);
@@ -119,11 +113,12 @@ export default function OffersScreen() {
           <ActivityIndicator color={themeColors.textPrimary} />
         </View>
       ) : offers.length === 0 ? (
-        <View style={styles.loadingContainer}>
+        <ScrollView refreshControl={refreshControl} contentContainerStyle={[styles.loadingContainer, { flexGrow: 1 }]}>
           <ThemedText style={styles.emptyText}>No offers available right now.</ThemedText>
-        </View>
+        </ScrollView>
       ) : (
         <FlatList keyboardShouldPersistTaps="handled"
+          refreshControl={refreshControl}
           data={offers}
           renderItem={renderOffer}
           keyExtractor={item => item.id}
