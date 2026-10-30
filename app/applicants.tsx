@@ -246,8 +246,9 @@ function mapApiApplicant(a: any): Applicant & { applicationId: string; providerI
     name: business ?? name,
     businessName: business,
     worker: business ? name : null,
-    // '' = no photo: the card shows their trade's icon instead.
-    profileImage: a.provider_image ?? a.profile_image_url ?? '',
+    // '' = no photo: the card shows their trade's icon instead. A business
+    // shows its logo (not the member's own photo), as it leads the card.
+    profileImage: business ? (a.business_logo_url ?? '') : (a.provider_image ?? a.profile_image_url ?? ''),
     trade: a.profession ?? null,
     profession: business ? `${name} would do it` : nameHidden ? NAME_AFTER_HIRING : (a.profession ?? 'Service Provider'),
     expertise: hci >= 80 ? 'Expert' : hci >= 50 ? 'Intermediate' : 'Beginner',
