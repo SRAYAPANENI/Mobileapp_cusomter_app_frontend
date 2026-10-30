@@ -646,7 +646,7 @@ export default function RegisterScreen() {
               <View style={styles.passwordInputContainer}>
                 <TextInput
                   style={[getInputStyle('password'), { flex: 1, paddingRight: 50 }]}
-                  placeholder={PASSWORD_RULE}
+                  placeholder="Create a password"
                   autoCapitalize="none"
                   autoCorrect={false}
                   placeholderTextColor={themeColors.icon}
@@ -687,6 +687,9 @@ export default function RegisterScreen() {
                   </ThemedText>
                 )}
               </View>
+              {formData.password.length === 0 && (
+                <ThemedText style={[styles.strengthText, { color: themeColors.icon }]}>{PASSWORD_RULE}</ThemedText>
+              )}
             </View>
 
             <View style={styles.inputGroup}>
@@ -938,7 +941,7 @@ export default function RegisterScreen() {
               <ThemedText style={styles.fieldLabel}>ID number</ThemedText>
               <TextInput
                 style={getInputStyle('idNumber')}
-                placeholder="e.g. your driver's license number"
+                placeholder="e.g. driver's license number"
                 placeholderTextColor={themeColors.icon}
                 value={formData.idNumber}
                 onChangeText={(text) => setFormData({ ...formData, idNumber: text })}

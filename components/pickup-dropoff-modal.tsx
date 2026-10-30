@@ -556,7 +556,7 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
                   <Text style={s.fieldLabel}>What's the item?</Text>
                   <TextInput
                     style={s.input}
-                    placeholder="e.g. House keys, a phone charger, a box of clothes"
+                    placeholder="e.g. keys, a charger, a box"
                     placeholderTextColor="#9CA3AF"
                     value={personItem}
                     onChangeText={setPersonItem}

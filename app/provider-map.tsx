@@ -455,7 +455,7 @@ export default function ProviderMapScreen() {
             <Search size={16} color="#9CA3AF" />
             <TextInput
               style={s.searchInput}
-              placeholder="Search by profession (e.g. Electrician)"
+              placeholder="Search a profession"
               placeholderTextColor="#9CA3AF"
               value={search}
               onChangeText={setSearch}

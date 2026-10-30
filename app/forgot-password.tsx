@@ -225,7 +225,7 @@ export default function ForgotPasswordScreen() {
                   <View style={styles.passwordInputContainer}>
                     <TextInput
                       style={[getInputStyle('newPassword'), { paddingRight: 48 }]}
-                      placeholder="At least 8 characters, with a number"
+                      placeholder="New password"
                       placeholderTextColor={themeColors.icon}
                       secureTextEntry={!showNewPassword}
                       autoCapitalize="none"

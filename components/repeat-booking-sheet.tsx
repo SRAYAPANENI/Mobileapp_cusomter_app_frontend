@@ -85,9 +85,9 @@ export function RepeatBookingSheet({ job, onClose, onMessage }: Props) {
           </View>
           <ThemedText style={s.label}>Pay automatically up to ($)</ThemedText>
           <TextInput style={s.input} keyboardType="decimal-pad" value={upTo} onChangeText={setUpTo}
-            placeholder="Leave empty to approve each price yourself" placeholderTextColor="#9CA3AF" />
+            placeholder="No limit" placeholderTextColor="#9CA3AF" />
           <ThemedText style={s.muted}>
-            Each visit is booked for you two days ahead. Any visiting fee, and a quote or booking price at or under this
+            Leave it empty to approve each price yourself. Each visit is booked for you two days ahead. Any visiting fee, and a quote or booking price at or under this
             amount, is paid from your saved card and still held until the work is done. Pause or stop any time.
           </ThemedText>
           <View style={s.row}>

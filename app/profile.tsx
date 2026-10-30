@@ -1076,7 +1076,7 @@ export default function ProfileScreen() {
                   style={styles.editableInput}
                   value={userData.idNumber}
                   onChangeText={text => setUserData(prev => ({ ...prev, idNumber: text }))}
-                  placeholder="e.g. your driver's license number"
+                  placeholder="e.g. driver's license number"
                   placeholderTextColor={themeColors.icon}
                 />
               ) : (
@@ -1398,7 +1398,7 @@ export default function ProfileScreen() {
             <ThemedText style={styles.inputLabel}>New Password</ThemedText>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
               <TextInput
-                placeholder="Min 8 characters, 1 letter + 1 number"
+                placeholder="New password"
                 placeholderTextColor={themeColors.icon}
                 secureTextEntry={!showNewPassword}
                 autoCapitalize="none"
