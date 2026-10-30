@@ -670,7 +670,7 @@ export const SkoFyApi = {
     },
 
     /** Complete profile after first login. */
-    updateProfile: async (data: { name: string; email?: string; id_number?: string }) =>
+    updateProfile: async (data: { name: string; first_name?: string; middle_name?: string; last_name?: string; email?: string; id_number?: string }) =>
       request('/auth/profile/customer', { method: 'POST', body: JSON.stringify(data) }),
 
     /** Register FCM push token for this device. */
@@ -702,6 +702,9 @@ export const SkoFyApi = {
     getProfile: async (): Promise<{
       user_id: string;
       name: string;
+      first_name?: string;
+      middle_name?: string;
+      last_name?: string;
       phone: string;
       email?: string;
       profile_image_url?: string;
@@ -712,7 +715,7 @@ export const SkoFyApi = {
       review_count: number;
     }> => request('/customers/me'),
 
-    updateProfile: async (data: { name?: string; email?: string; id_number?: string; id_document_url?: string; profile_image_url?: string }) =>
+    updateProfile: async (data: { name?: string; first_name?: string; middle_name?: string; last_name?: string; email?: string; id_number?: string; id_document_url?: string; profile_image_url?: string }) =>
       request('/customers/me', { method: 'PATCH', body: JSON.stringify(data) }),
 
     /** Providers this customer has booked more than once, most-booked first

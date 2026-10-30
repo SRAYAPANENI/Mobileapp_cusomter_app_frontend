@@ -1,3 +1,4 @@
+import { NAME_PART_MAX, fullName, hasFullName, namePayload } from '@/services/name';
 import { isValidPassword } from '@/services/password';
 import { EmptyJobsState } from '@/components/empty-jobs-state';
 import { NoInternetState } from '@/components/no-internet-state';
@@ -158,6 +159,7 @@ export default function ProfileScreen() {
 
   const [userData, setUserData] = useState({
     name: '',
+    nameParts: { first: '', middle: '', last: '' },
     phone: '',
     email: '',
     profileImage: null as string | null,
@@ -217,6 +219,7 @@ export default function ProfileScreen() {
         setUserData(prev => ({
           ...prev,
           name: profile.name || '',
+          nameParts: { first: profile.first_name ?? '', middle: profile.middle_name ?? '', last: profile.last_name ?? '' },
           phone: profile.phone || '',
           email: profile.email || '',
           profileImage: profile.profile_image_url || null,
@@ -546,8 +549,8 @@ export default function ProfileScreen() {
   };
 
   const handleUpdateProfile = async () => {
-    if (userData.name.trim().length < 2) {
-      showAlert('error', 'Name Needed', 'Your name must be at least 2 characters.');
+    if (!hasFullName(userData.nameParts)) {
+      showAlert('error', 'Name Needed', 'Enter your first and last name.');
       return;
     }
     if (userData.addresses.some(a => !a.address.trim())) {
@@ -555,7 +558,8 @@ export default function ProfileScreen() {
       return;
     }
     try {
-      await SkoFyApi.customers.updateProfile({ name: userData.name.trim(), id_number: userData.idNumber.trim() || undefined });
+      await SkoFyApi.customers.updateProfile({ ...namePayload(userData.nameParts), id_number: userData.idNumber.trim() || undefined });
+      setUserData(prev => ({ ...prev, name: fullName(prev.nameParts) }));
       // Save text edits on existing addresses
       const editPromises = userData.addresses
         .filter(a => a.id && (a.address !== a._origAddress || a.type !== a._origType))
@@ -871,14 +875,20 @@ export default function ProfileScreen() {
             <View style={styles.infoContent}>
               <ThemedText style={styles.infoLabel}>Full Name</ThemedText>
               {isEditing ? (
-                <TextInput
-                  style={styles.editableInput}
-                  value={userData.name}
-                  onChangeText={text => setUserData(prev => ({ ...prev, name: text }))}
-                  maxLength={100}
-                  placeholder="Enter your name"
-                  placeholderTextColor={themeColors.icon}
-                />
+                <View style={{ gap: 8 }}>
+                  {([['first', 'First name *'], ['middle', 'Middle name (optional)'], ['last', 'Last name *']] as const).map(([part, hint]) => (
+                    <TextInput
+                      key={part}
+                      style={styles.editableInput}
+                      value={userData.nameParts[part]}
+                      onChangeText={text => setUserData(prev => ({ ...prev, nameParts: { ...prev.nameParts, [part]: text } }))}
+                      maxLength={NAME_PART_MAX}
+                      autoCapitalize="words"
+                      placeholder={hint}
+                      placeholderTextColor={themeColors.icon}
+                    />
+                  ))}
+                </View>
               ) : (
                 <ThemedText style={styles.infoValue}>{userData.name || '—'}</ThemedText>
               )}

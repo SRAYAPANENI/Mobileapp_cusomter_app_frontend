@@ -11,6 +11,7 @@ import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SkoFyApi, TokenStore } from '@/services/api';
 import { isEmail, tidyEmail } from '@/services/email';
+import { NAME_PART_MAX, hasFullName, namePayload } from '@/services/name';
 import { PASSWORD_RULE, isValidPassword } from '@/services/password';
 import { registerFcmToken } from '@/services/callManager';
 import { GooglePlacesService, GooglePlaceSuggestion } from '@/services/google-places';
@@ -54,6 +55,9 @@ import Animated, {
 } from 'react-native-reanimated';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
+const nameOf = (f: { firstName: string; middleName: string; lastName: string }) =>
+  ({ first: f.firstName, middle: f.middleName, last: f.lastName });
+
 export default function RegisterScreen() {
   const bottomInset = useBottomInset();
   const colorScheme = useColorScheme() ?? 'light';
@@ -76,7 +80,9 @@ export default function RegisterScreen() {
   const { prefillPhone, resumedIsNewUser } = useLocalSearchParams<{ prefillPhone?: string; resumedIsNewUser?: string }>();
 
   const [formData, setFormData] = useState({
-    fullName: '',
+    firstName: '',
+    middleName: '',
+    lastName: '',
     email: '',
     mobileNumber: prefillPhone ?? '',
     otp: '',
@@ -178,7 +184,7 @@ export default function RegisterScreen() {
     // tracked below (idNumberFilled/idDocFilled) so filling them in nudges
     // the progress bar, just not required to reach 100%.
     const total = isAddingRole ? 5 : 6; // Name, OTP, Address, AddressType, [Password], Terms
-    if (formData.fullName) completed++;
+    if (hasFullName(nameOf(formData))) completed++;
     if (isOtpVerified) completed++;
     if (formData.address) completed++;
     if (addressType) completed++; // Always has a value
@@ -196,7 +202,7 @@ export default function RegisterScreen() {
   // of several sections they'd missed.
   const getMissingSteps = (): string[] => {
     const missing: string[] = [];
-    if (!formData.fullName) missing.push('Full Name');
+    if (!hasFullName(nameOf(formData))) missing.push('First and last name');
     if (!isOtpVerified) missing.push('Mobile Number Verification (tap "Verify with OTP")');
     if (!formData.address) missing.push('Address');
     if (!isAddingRole && !(formData.password && formData.password === formData.confirmPassword && isValidPassword(formData.password))) {
@@ -468,15 +474,50 @@ export default function RegisterScreen() {
             </View>
 
             <View style={styles.inputGroup}>
-              <ThemedText style={styles.fieldLabel}>Full Name<ThemedText style={styles.requiredMark}> *</ThemedText></ThemedText>
+              <ThemedText style={styles.fieldLabel}>First name<ThemedText style={styles.requiredMark}> *</ThemedText></ThemedText>
               <TextInput
-                style={getInputStyle('fullName')}
-                placeholder="Full Name"
+                style={getInputStyle('firstName')}
+                placeholder="First name"
                 placeholderTextColor={themeColors.icon}
-                value={formData.fullName}
-                onChangeText={(text) => setFormData({ ...formData, fullName: text })}
-                maxLength={100}
-                onFocus={() => setFocusedInput('fullName')}
+                value={formData.firstName}
+                onChangeText={(text) => setFormData({ ...formData, firstName: text })}
+                maxLength={NAME_PART_MAX}
+                autoCapitalize="words"
+                autoComplete="name-given"
+                textContentType="givenName"
+                onFocus={() => setFocusedInput('firstName')}
+                onBlur={() => setFocusedInput(null)}
+              />
+            </View>
+            <View style={styles.inputGroup}>
+              <ThemedText style={styles.fieldLabel}>Middle name</ThemedText>
+              <TextInput
+                style={getInputStyle('middleName')}
+                placeholder="Optional"
+                placeholderTextColor={themeColors.icon}
+                value={formData.middleName}
+                onChangeText={(text) => setFormData({ ...formData, middleName: text })}
+                maxLength={NAME_PART_MAX}
+                autoCapitalize="words"
+                autoComplete="name-middle"
+                textContentType="middleName"
+                onFocus={() => setFocusedInput('middleName')}
+                onBlur={() => setFocusedInput(null)}
+              />
+            </View>
+            <View style={styles.inputGroup}>
+              <ThemedText style={styles.fieldLabel}>Last name<ThemedText style={styles.requiredMark}> *</ThemedText></ThemedText>
+              <TextInput
+                style={getInputStyle('lastName')}
+                placeholder="Last name"
+                placeholderTextColor={themeColors.icon}
+                value={formData.lastName}
+                onChangeText={(text) => setFormData({ ...formData, lastName: text })}
+                maxLength={NAME_PART_MAX}
+                autoCapitalize="words"
+                autoComplete="name-family"
+                textContentType="familyName"
+                onFocus={() => setFocusedInput('lastName')}
                 onBlur={() => setFocusedInput(null)}
               />
             </View>
@@ -1022,7 +1063,7 @@ export default function RegisterScreen() {
                   // 1. Save name + email + ID number — first: the rest hangs on it,
                   // and it's safe to send again.
                   await SkoFyApi.auth.updateProfile({
-                    name: formData.fullName,
+                    ...namePayload(nameOf(formData)),
                     email: formData.email.trim() ? tidyEmail(formData.email) : undefined,
                     id_number: formData.idNumber || undefined,
                   });
