@@ -785,7 +785,8 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView refreshControl={profileRefresh} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={padBottom(styles.scrollContent, barClearance)}>
+      {/* No pull-down while editing: a reload would replace what's being typed. */}
+      <ScrollView refreshControl={isEditing ? undefined : profileRefresh} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={padBottom(styles.scrollContent, barClearance)}>
         {/* Profile Info */}
         <Animated.View entering={FadeInUp.duration(600)} style={styles.profileSection}>
           <View style={styles.avatarContainer}>
