@@ -19,6 +19,8 @@ import * as SecureStore from 'expo-secure-store';
 import { File, Paths } from 'expo-file-system';
 import type { PersonPickupRules, PickupDetails, PickupSource, ShoppingItem } from '@/services/pickupOptions';
 import { deviceTimeZone } from '@/services/job-shape';
+import { queryClient } from '@/services/query-client';
+import { afterWrite } from '@/services/queries/invalidate';
 
 // ─── CONFIG ─────────────────────────────────────────────────────────────────
 const DEV_LAN_IP = '192.168.1.6'; // Your machine's LAN IP for physical device testing
@@ -89,6 +91,8 @@ export const TokenStore = {
     await SecureStore.deleteItemAsync(REFRESH_KEY);
     await SecureStore.deleteItemAsync(USER_KEY);
     await SecureStore.deleteItemAsync(REGISTERING_KEY);
+    // Nothing of this account's stays on hand for the next one.
+    queryClient.clear();
   },
 };
 
@@ -240,7 +244,9 @@ async function request<T = any>(
     if (newToken) {
       headers['Authorization'] = `Bearer ${newToken}`;
       const retried = await timedFetch(fullUrl, { ...fetchOptions, headers }, limit);
-      return _parseResponse<T>(retried);
+      const result = await _parseResponse<T>(retried);
+      afterWrite(endpoint, fetchOptions.method);
+      return result;
     }
     // Refresh failed → clear tokens and force back to login
     await TokenStore.clear();
@@ -255,7 +261,10 @@ async function request<T = any>(
     sessionExpiredNotified = false;
   }
 
-  return _parseResponse<T>(response);
+  const result = await _parseResponse<T>(response);
+  // What this write changed is read again, wherever it's shown.
+  afterWrite(endpoint, fetchOptions.method);
+  return result;
 }
 
 async function _parseResponse<T>(response: Response): Promise<T> {

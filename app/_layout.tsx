@@ -7,6 +7,8 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from '@/services/query-client';
 import 'react-native-reanimated';
 
 import {
@@ -116,6 +118,7 @@ export default function RootLayout() {
 
   return (
     <View style={{ flex: 1 }} onLayout={handleRootLayout}>
+      <QueryClientProvider client={queryClient}>
       <KeyboardProvider>
         <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY}>
           <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
@@ -150,6 +153,7 @@ export default function RootLayout() {
           </ThemeProvider>
         </StripeProvider>
       </KeyboardProvider>
+      </QueryClientProvider>
     </View>
   );
 }

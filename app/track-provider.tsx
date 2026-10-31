@@ -223,6 +223,71 @@ function CodeCard({ title, code, body, styles, action }: {
   );
 }
 
+type GlideRefs = {
+  from: React.MutableRefObject<LatLng | null>;
+  to: React.MutableRefObject<LatLng | null>;
+  startedAt: React.MutableRefObject<number>;
+  current: React.MutableRefObject<LatLng | null>;
+  speed: React.MutableRefObject<number>;
+  heading: React.MutableRefObject<number>;
+};
+
+/** The provider's vehicle icon, gliding smoothly toward the latest location
+ * instead of snapping to it — if a new one arrives mid-glide, it redirects
+ * from wherever the dot currently is rather than jumping back to the old
+ * start. Its own component: the 20 frames a second used to redraw the whole
+ * screen (docs/APP_DATA_ARCHITECTURE.md). */
+const GlidingProviderMarker = React.memo(function GlidingProviderMarker({ glide, onMove }: {
+  glide: GlideRefs; onMove: (point: LatLng) => void;
+}) {
+  const [loc, setLoc] = useState<LatLng | null>(null);
+  useEffect(() => {
+    const tick = () => {
+      const to = glide.to.current;
+      const from = glide.from.current;
+      if (!to) return;
+      let point: LatLng;
+      if (!from) {
+        point = to;
+      } else {
+        const elapsed = Date.now() - glide.startedAt.current;
+        const progress = elapsed / TRACK_POLL_INTERVAL_MS;
+        if (progress < 1) {
+          // Glide toward the latest confirmed GPS fix
+          point = {
+            latitude: from.latitude + (to.latitude - from.latitude) * progress,
+            longitude: from.longitude + (to.longitude - from.longitude) * progress,
+          };
+        } else {
+          // Dead reckoning: keep moving in last known direction while waiting
+          // for the next GPS fix. Only extrapolate if actually moving (>0.5 m/s).
+          // Cap at 5 s of extrapolation so the marker doesn't drift far on stale data.
+          const extraSec = Math.min((elapsed - TRACK_POLL_INTERVAL_MS) / 1000, 5);
+          point = glide.speed.current > 0.5
+            ? deadReckon(to, glide.speed.current, glide.heading.current, extraSec)
+            : to;
+        }
+      }
+      if (point === glide.current.current) return;   // standing still: nothing to draw
+      glide.current.current = point;
+      setLoc(point);
+      onMove(point);
+    };
+    const interval = setInterval(tick, ANIM_TICK_MS);
+    return () => clearInterval(interval);
+  }, [glide, onMove]);
+  if (!loc) return null;
+  return (
+    <Marker
+      coordinate={loc}
+      image={require('@/assets/images/provider-marker.png')}
+      anchor={{ x: 0.5, y: 0.5 }}
+      rotation={glide.heading.current}
+      flat
+    />
+  );
+});
+
 export default function TrackProviderScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
@@ -264,7 +329,6 @@ export default function TrackProviderScreen() {
   const [routeCoords, setRouteCoords] = useState<LatLng[]>([]);
   const [provider, setProvider] = useState<TrackedProvider | null>(null);
   const [destination, setDestination] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [providerLoc, setProviderLoc] = useState<LatLng | null>(null);
   const [eta, setEta] = useState('—');
   const [distance, setDistance] = useState('—');
   const [jobStatus, setJobStatus] = useState('ACCEPTED');
@@ -712,41 +776,6 @@ export default function TrackProviderScreen() {
     }
   };
 
-  // Glide the marker smoothly toward the latest poll result instead of
-  // snapping to it — if a new result arrives mid-glide, redirect from
-  // wherever the dot currently is rather than jumping back to the old start.
-  useEffect(() => {
-    const tick = () => {
-      if (!animToRef.current) return;
-      if (!animFromRef.current) {
-        currentPosRef.current = animToRef.current;
-        setProviderLoc(animToRef.current);
-        return;
-      }
-      const elapsed = Date.now() - animStartTimeRef.current;
-      const progress = elapsed / TRACK_POLL_INTERVAL_MS;
-      let point: LatLng;
-      if (progress < 1) {
-        // Glide toward the latest confirmed GPS fix
-        point = {
-          latitude: animFromRef.current.latitude + (animToRef.current.latitude - animFromRef.current.latitude) * progress,
-          longitude: animFromRef.current.longitude + (animToRef.current.longitude - animFromRef.current.longitude) * progress,
-        };
-      } else {
-        // Dead reckoning: keep moving in last known direction while waiting
-        // for the next GPS fix. Only extrapolate if actually moving (>0.5 m/s).
-        // Cap at 5 s of extrapolation so the marker doesn't drift far on stale data.
-        const extraSec = Math.min((elapsed - TRACK_POLL_INTERVAL_MS) / 1000, 5);
-        point = speedRef.current > 0.5
-          ? deadReckon(animToRef.current, speedRef.current, headingRef.current, extraSec)
-          : animToRef.current;
-      }
-      currentPosRef.current = point;
-      setProviderLoc(point);
-    };
-    const interval = setInterval(tick, ANIM_TICK_MS);
-    return () => clearInterval(interval);
-  }, []);
 
   // Each poll: trim the route so the blue line always starts at the provider's
   // current position (Google Maps style), and re-fetch the full route only
@@ -799,24 +828,30 @@ export default function TrackProviderScreen() {
     }, 800);
   }, [polledLoc]);
 
-  // Camera follow — locks onto the provider icon when follow mode is active
-  useEffect(() => {
-    if (!isFollowingRef.current || !providerLoc || !mapRef.current) return;
+  // Camera follow — locks onto the provider icon when follow mode is active.
+  // Called by the marker as it glides (GlidingProviderMarker); stable.
+  const followMarker = useCallback((point: LatLng) => {
+    if (!isFollowingRef.current || !mapRef.current) return;
     const now = Date.now();
     if (now - lastFollowTickRef.current < 100) return;
     lastFollowTickRef.current = now;
     mapRef.current.animateToRegion(
-      { ...providerLoc, latitudeDelta: 0.003, longitudeDelta: 0.003 },
+      { ...point, latitudeDelta: 0.003, longitudeDelta: 0.003 },
       80,
     );
-  }, [providerLoc]);
+  }, []);
+  const glide = React.useMemo(() => ({
+    from: animFromRef, to: animToRef, startedAt: animStartTimeRef,
+    current: currentPosRef, speed: speedRef, heading: headingRef,
+  }), []);
 
   const handleLocateMe = () => {
     isFollowingRef.current = true;
     setIsFollowing(true);
-    if (providerLoc && mapRef.current) {
+    const here = currentPosRef.current;
+    if (here && mapRef.current) {
       mapRef.current.animateToRegion(
-        { ...providerLoc, latitudeDelta: 0.003, longitudeDelta: 0.003 },
+        { ...here, latitudeDelta: 0.003, longitudeDelta: 0.003 },
         600,
       );
     }
@@ -927,8 +962,8 @@ export default function TrackProviderScreen() {
       );
     }
 
-    const region = providerLoc
-      ? { latitude: (providerLoc.latitude + destination.latitude) / 2, longitude: (providerLoc.longitude + destination.longitude) / 2, latitudeDelta: 0.02, longitudeDelta: 0.02 }
+    const region = polledLoc
+      ? { latitude: (polledLoc.latitude + destination.latitude) / 2, longitude: (polledLoc.longitude + destination.longitude) / 2, latitudeDelta: 0.02, longitudeDelta: 0.02 }
       : { ...destination, latitudeDelta: 0.01, longitudeDelta: 0.01 };
 
     return (
@@ -978,15 +1013,7 @@ export default function TrackProviderScreen() {
             couldn't be a reliable JS overlay either (swims during zoom).
             The bottom sheet's "Arriving in / X min" already shows the same
             information without either problem. */}
-        {providerLoc && (
-          <Marker
-            coordinate={providerLoc}
-            image={require('@/assets/images/provider-marker.png')}
-            anchor={{ x: 0.5, y: 0.5 }}
-            rotation={headingRef.current}
-            flat
-          />
-        )}
+        <GlidingProviderMarker glide={glide} onMove={followMarker} />
       </MapView>
     );
   };

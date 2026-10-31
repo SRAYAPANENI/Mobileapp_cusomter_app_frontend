@@ -18,7 +18,7 @@ import Reanimated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
 import { ThemedText } from '@/components/themed-text';
 import { VoicePostModal } from '@/components/voice-post-modal';
 import { Fonts } from '@/constants/theme';
-import { SkoFyApi } from '@/services/api';
+import { useActiveJobs, useCustomerProfile } from '@/services/queries/customer';
 
 interface SkoFyBottomBarProps {
   activeTab: 'home' | 'my-jobs' | 'book' | 'profile';
@@ -51,9 +51,14 @@ export function useBottomBarClearance(): number {
 
 export function SkoFyBottomBar({ activeTab, onBookPress }: SkoFyBottomBarProps) {
   const insets = useSafeAreaInsets();
-  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
-  const [userName, setUserName] = useState<string>('');
-  const [activeJobsCount, setActiveJobsCount] = useState<number>(0);
+  // Shared with Home (one request between them).
+  const profile: any = useCustomerProfile().data;
+  const profileImageUrl: string | null = profile?.profile_image_url || null;
+  const userName: string = profile?.name ?? '';
+  const activeJobs = useActiveJobs().data;
+  const activeJobsCount = Array.isArray(activeJobs)
+    ? activeJobs.filter((j: any) => !['COMPLETED', 'CANCELLED', 'EXPIRED'].includes(j.status)).length
+    : 0;
   const [voiceModalVisible, setVoiceModalVisible] = useState(false);
 
   // ── JioHotstar-style auto-collapsing voice prompt nudge ──────────────────
@@ -98,26 +103,6 @@ export function SkoFyBottomBar({ activeTab, onBookPress }: SkoFyBottomBarProps) 
     pulse.start();
     return () => pulse.stop();
   }, [orbScale]);
-
-  useEffect(() => {
-    SkoFyApi.customers.getProfile()
-      .then((p: any) => {
-        if (p?.name) setUserName(p.name);
-        if (p?.profile_image_url) setProfileImageUrl(p.profile_image_url);
-      })
-      .catch(() => {});
-
-    SkoFyApi.dashboard.getActiveJobs()
-      .then((jobs: any[]) => {
-        if (Array.isArray(jobs)) {
-          const active = jobs.filter((j: any) =>
-            !['COMPLETED', 'CANCELLED', 'EXPIRED'].includes(j.status)
-          );
-          setActiveJobsCount(active.length);
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   const handleVoiceTrigger = useCallback(() => {
     setVoiceModalVisible(true);

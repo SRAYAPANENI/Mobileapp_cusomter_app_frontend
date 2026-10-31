@@ -25,6 +25,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import * as SecureStore from 'expo-secure-store';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
+import { useRefreshOnFocus } from '@/hooks/use-refresh-on-focus';
+import { useCustomerProfile, useSavedAddresses } from '@/services/queries/customer';
+import { qk } from '@/services/queries/keys';
 import {
   AlertTriangle,
   Bell,
@@ -264,7 +268,15 @@ function SearchingDots() {
   );
 }
 
+/** For a state update from a poll: keeps what's shown when nothing changed,
+ * so a poll with nothing new doesn't redraw Home (docs/APP_DATA_ARCHITECTURE.md). */
+function keepIfSame<T>(next: T) {
+  const text = JSON.stringify(next);
+  return (prev: T) => (JSON.stringify(prev) === text ? prev : next);
+}
+
 export default function HomeScreen() {
+  const queryClient = useQueryClient();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -355,19 +367,6 @@ export default function HomeScreen() {
         refreshDashboard(location.coords.latitude, location.coords.longitude);
       }
 
-      (SkoFyApi.addresses.list() as Promise<any[]>)
-        .then(list => setSavedAddresses((list ?? []).map((a: any) => ({
-          id: a.id, label: a.label, full_address: a.full_address,
-          lat: a.lat ?? undefined, lng: a.lng ?? undefined,
-        }))))
-        .catch(() => {});
-
-      SkoFyApi.customers.getProfile()
-        .then((p: any) => {
-          if (p?.name) setUserName(p.name);
-          if (p?.profile_image_url) setProfileImageUrl(p.profile_image_url);
-        })
-        .catch(() => {});
       SkoFyApi.notifications.unreadCount()
         .then(setUnreadNotifCount)
         .catch(() => {});
@@ -413,6 +412,7 @@ export default function HomeScreen() {
   );
 
   const [jobs, setJobs] = useState<ActiveJob[]>([]);
+  const jobAddressRef = useRef<Record<string, string>>({});
   const [dismissedJobIds, setDismissedJobIds] = useState<Set<string>>(new Set());
   const [dismissedIdsReady, setDismissedIdsReady] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -443,7 +443,7 @@ export default function HomeScreen() {
   const fetchRegularProviders = async () => {
     try {
       const data = await SkoFyApi.customers.getRepeatProviders();
-      setRegularProviders(Array.isArray(data) ? data : []);
+      setRegularProviders(keepIfSame(Array.isArray(data) ? data : []));
     } catch { /* dashboard still works without this section */ }
   };
   // On every focus, not just first mount — returning to Home after finishing
@@ -566,7 +566,7 @@ export default function HomeScreen() {
         const mapped = providers
           .filter(p => p.lat != null && p.lng != null)
           .map(p => ({ id: p.provider_id, latitude: p.lat!, longitude: p.lng!, name: p.name, profession: p.profession ?? null }));
-        setServiceProviders(mapped);
+        setServiceProviders(keepIfSame<ServiceProvider[]>(mapped));
         // Only a non-empty result counts as "live data arrived" for the
         // cache-priming race guard — if this came back empty, letting a
         // still-in-flight cache read show last-known providers is better
@@ -587,9 +587,12 @@ export default function HomeScreen() {
         // Map backend field names to ActiveJob shape
         const jobData = await SkoFyApi.dashboard.getActiveJobs();
         if (Array.isArray(jobData)) {
-          const mapped = jobData.map(mapApiJob);
+          queryClient.setQueryData(qk.jobs.active, jobData);
+          // A job's looked-up address is kept: each poll used to look it up again.
+          const mapped = jobData.map(mapApiJob)
+            .map(j => !j.location && jobAddressRef.current[j.id] ? { ...j, location: jobAddressRef.current[j.id] } : j);
           liveDataArrivedRef.current = true;
-          setJobs(mapped);
+          setJobs(keepIfSame(mapped));
           writeHomeCache({ jobs: mapped });
           // Reverse-geocode jobs that were created via map-tap (no address_id → no full_address)
           mapped.forEach(async (j) => {
@@ -599,7 +602,10 @@ export default function HomeScreen() {
                 if (geo.length > 0) {
                   const g = geo[0];
                   const addr = [g.name, g.street, g.city, g.region].filter(Boolean).join(', ');
-                  if (addr) setJobs(prev => prev.map(p => p.id === j.id ? { ...p, location: addr } : p));
+                  if (addr) {
+                    jobAddressRef.current[j.id] = addr;
+                    setJobs(prev => prev.map(p => p.id === j.id ? { ...p, location: addr } : p));
+                  }
                 }
               } catch { /* leave blank */ }
             }
@@ -669,39 +675,35 @@ export default function HomeScreen() {
       }
     });
 
-    // Load user name + profile image on mount
-    SkoFyApi.customers.getProfile()
-      .then(p => {
-        liveDataArrivedRef.current = true;
-        if (p?.name) { setUserName(p.name); writeHomeCache({ userName: p.name }); }
-        if ((p as any)?.profile_image_url) {
-          setProfileImageUrl((p as any).profile_image_url);
-          writeHomeCache({ profileImageUrl: (p as any).profile_image_url });
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to fetch profile:', err);
-      });
     SkoFyApi.notifications.unreadCount()
       .then(c => { liveDataArrivedRef.current = true; setUnreadNotifCount(c); writeHomeCache({ unreadNotifCount: c }); })
       .catch(() => {});
 
-    (SkoFyApi.addresses.list() as Promise<any[]>)
-      .then(list => {
-        liveDataArrivedRef.current = true;
-        const mapped = (list ?? []).map((a: any) => ({
-          id: a.id, label: a.label, full_address: a.full_address,
-          lat: a.lat ?? undefined, lng: a.lng ?? undefined,
-        }));
-        setSavedAddresses(mapped);
-        writeHomeCache({ savedAddresses: mapped });
-      })
-      .catch((err) => {
-        console.error('Failed to fetch saved addresses:', err);
-      });
-
     fetchLocationAndRefresh();
   }, []);
+
+  // The name, photo and saved addresses — from the shared data layer (one
+  // request for Home and the bottom bar; read again after a change to them,
+  // and when Home comes back into view out of date).
+  const profileQuery = useCustomerProfile();
+  const addressesQuery = useSavedAddresses();
+  useRefreshOnFocus(profileQuery, addressesQuery);
+  useEffect(() => {
+    const p: any = profileQuery.data;
+    if (!p) return;
+    liveDataArrivedRef.current = true;
+    if (p.name) { setUserName(p.name); writeHomeCache({ userName: p.name }); }
+    if (p.profile_image_url) {
+      setProfileImageUrl(p.profile_image_url);
+      writeHomeCache({ profileImageUrl: p.profile_image_url });
+    }
+  }, [profileQuery.data]);
+  useEffect(() => {
+    if (!addressesQuery.data) return;
+    liveDataArrivedRef.current = true;
+    setSavedAddresses(addressesQuery.data);
+    writeHomeCache({ savedAddresses: addressesQuery.data });
+  }, [addressesQuery.data]);
 
   // Pulled out of the mount effect so the "tap to retry" affordance (header
   // address text, Providers Near You card) can re-run the exact same flow
@@ -795,18 +797,6 @@ export default function HomeScreen() {
       cardGlow.value = withTiming(0.8, { duration: 500 });
     }
   }, [activeJob?.applicantCount]);
-
-  // Periodic jitter to simulate providers moving (Uber style)
-  useEffect(() => {
-    const jitter = setInterval(() => {
-      setServiceProviders(prev => prev.map(p => ({
-        ...p,
-        latitude: p.latitude + (Math.random() - 0.5) * 0.00002, // Smaller jitter for street level
-        longitude: p.longitude + (Math.random() - 0.5) * 0.00002,
-      })));
-    }, 3000);
-    return () => clearInterval(jitter);
-  }, []);
 
 
   // Orb breathing + dot wave animations — both start once on mount
