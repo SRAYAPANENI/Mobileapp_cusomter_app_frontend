@@ -19,7 +19,7 @@ import {
   Send
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActionSheetIOS, ActivityIndicator, Alert, FlatList, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 // The keyboard-controller version: works with KeyboardProvider (app/_layout.tsx)
 // on Android — React Native's own one shifted the layout as the keyboard
@@ -346,15 +346,22 @@ export default function SupportChatScreen() {
   const handleAttach = () => {
     if (sending || creatingTicket) return;
     Keyboard.dismiss();
-    alert.show('info', 'Send a photo', 'Show support what happened — the problem, a receipt, an error on screen.', [
-      { text: 'Camera', variant: 'secondary', onPress: () => { sendPhoto(true); } },
-      { text: 'Gallery', variant: 'primary', onPress: () => { sendPhoto(false); } },
-    ]);
+    // The phone's own chooser: the bottom sheet on iPhone, the system dialog on Android.
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { title: 'Send a photo', options: ['Take Photo', 'Choose from Library', 'Cancel'], cancelButtonIndex: 2 },
+        (index) => { if (index === 0) sendPhoto(true); else if (index === 1) sendPhoto(false); },
+      );
+      return;
+    }
+    Alert.alert('Send a photo', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Gallery', onPress: () => { sendPhoto(false); } },
+      { text: 'Camera', onPress: () => { sendPhoto(true); } },
+    ], { cancelable: true });
   };
 
   const sendPhoto = async (useCamera: boolean) => {
-    // The prompt is still fading out: iOS won't show the picker over it.
-    if (Platform.OS === 'ios') await new Promise(resolve => setTimeout(resolve, 400));
     const permission = useCamera
       ? await ImagePicker.requestCameraPermissionsAsync()
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
