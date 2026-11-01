@@ -7,16 +7,19 @@ import { SkoFyApi } from '@/services/api';
 import { useOpenScreen } from '@/services/openScreens';
 import { useSupportCall } from '@/services/call/supportCall';
 import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
+import * as WebBrowser from 'expo-web-browser';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
   ChevronLeft,
+  FileText,
   HelpCircle,
   Phone,
   Paperclip,
   Send
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Keyboard, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 // The keyboard-controller version: works with KeyboardProvider (app/_layout.tsx)
 // on Android — React Native's own one shifted the layout as the keyboard
@@ -32,9 +35,13 @@ interface Message {
    * server's copy replaces it, so it doesn't slide in a second time. */
   key?: string;
   text: string;
+  /** A photo or PDF sent with it; `text` is then its caption, possibly empty. */
+  attachment?: string | null;
   sender: 'user' | 'agent';
   timestamp: string;
 }
+
+const isPdf = (url: string) => /\.pdf($|\?)/i.test(url);
 
 // No WebSocket for support tickets (unlike job chat) — a plain interval
 // while the screen is focused is how new admin replies get picked up.
@@ -237,6 +244,7 @@ export default function SupportChatScreen() {
           id: m.id,
           key: key ?? m.id,
           text: m.message,
+          attachment: m.attachment_url ?? null,
           // 'system' messages (automatic answers recorded on older tickets) are
           // from support too — they used to render as the user's own messages.
           sender,
@@ -332,6 +340,68 @@ export default function SupportChatScreen() {
     }
   };
 
+  // The paperclip: a photo from the camera or the gallery, sent with whatever
+  // is typed as its caption. Not optimistic — the bubble appears once it's saved.
+  const [viewing, setViewing] = useState<string | null>(null);
+  const handleAttach = () => {
+    if (sending || creatingTicket) return;
+    Keyboard.dismiss();
+    alert.show('info', 'Send a photo', 'Show support what happened — the problem, a receipt, an error on screen.', [
+      { text: 'Camera', variant: 'secondary', onPress: () => { sendPhoto(true); } },
+      { text: 'Gallery', variant: 'primary', onPress: () => { sendPhoto(false); } },
+    ]);
+  };
+
+  const sendPhoto = async (useCamera: boolean) => {
+    // The prompt is still fading out: iOS won't show the picker over it.
+    if (Platform.OS === 'ios') await new Promise(resolve => setTimeout(resolve, 400));
+    const permission = useCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      alert.show('error', 'Permission Needed', `Allow ${useCamera ? 'camera' : 'photo'} access to send a photo.`, undefined, 3000);
+      return;
+    }
+    const result = useCamera
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7 })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
+    const asset = !result.canceled ? result.assets[0] : null;
+    if (!asset) return;
+    const caption = inputText.trim();
+    setSending(true);
+    try {
+      let id = ticketId;
+      if (!id) {
+        // No request yet: open one first (an automatic note, not their words), then the photo goes on it.
+        const ticket: any = await SkoFyApi.supportTickets.create(
+          category ?? 'General Support', `Topic: ${category ?? 'General Support'}. Started with a photo.`, jobId, true, topicOf(category),
+        );
+        id = String(ticket.id);
+        setTicketId(id);
+      }
+      const saved: any = await SkoFyApi.supportTickets.addAttachment(id, { uri: asset.uri, mimeType: asset.mimeType ?? 'image/jpeg' }, caption);
+      // Only the caption that went with it: anything typed during the upload stays.
+      setInputText(current => (current.trim() === caption ? '' : current));
+      if (saved?.id) {
+        const savedId = String(saved.id);
+        sentKeysRef.current.set(savedId, savedId);
+        setThread(prev => [...prev, {
+          id: savedId, key: savedId, text: saved.message ?? caption, attachment: saved.attachment_url ?? asset.uri, sender: 'user', timestamp: nowTime(),
+        }]);
+      }
+    } catch (err: any) {
+      console.error('Failed to send support photo:', err);
+      alert.show('error', 'Photo Not Sent', err?.message ?? "Couldn't send the photo. Please try again.", undefined, 3000);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const openAttachment = (url: string) => {
+    if (isPdf(url)) WebBrowser.openBrowserAsync(url).catch(() => {});
+    else setViewing(url);
+  };
+
   const handleSelectCategory = (cat: string) => {
     setCategory(cat);
     addIntro(cat, 'user');
@@ -418,12 +488,27 @@ export default function SupportChatScreen() {
           styles.messageBubble,
           isUser ? styles.userBubble : styles.agentBubble
         ]}>
-          <ThemedText style={[
-            styles.messageText,
-            isUser ? styles.userMessageText : styles.agentMessageText
-          ]}>
-            {item.text}
-          </ThemedText>
+          {item.attachment ? (
+            isPdf(item.attachment) ? (
+              <TouchableOpacity style={styles.fileRow} onPress={() => openAttachment(item.attachment!)} activeOpacity={0.8}>
+                <FileText size={18} color={isUser ? '#fff' : themeColors.textPrimary} />
+                <ThemedText style={[styles.messageText, isUser ? styles.userMessageText : styles.agentMessageText]}>PDF document</ThemedText>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity onPress={() => openAttachment(item.attachment!)} activeOpacity={0.9} accessibilityLabel="Open photo">
+                <Image source={{ uri: item.attachment }} style={styles.attachmentImage} contentFit="cover" transition={150} />
+              </TouchableOpacity>
+            )
+          ) : null}
+          {item.text ? (
+            <ThemedText style={[
+              styles.messageText,
+              isUser ? styles.userMessageText : styles.agentMessageText,
+              !!item.attachment && styles.captionText,
+            ]}>
+              {item.text}
+            </ThemedText>
+          ) : null}
           <ThemedText style={[
             styles.timestampText,
             isUser ? styles.userTimestamp : styles.agentTimestamp
@@ -538,8 +623,13 @@ export default function SupportChatScreen() {
         </View>
       ) : (
       <View style={padBottom(styles.inputContainer, bottomInset)}>
-        <TouchableOpacity style={styles.attachButton}>
-          <Paperclip size={20} color="#6B7280" />
+        <TouchableOpacity
+          style={styles.attachButton}
+          onPress={handleAttach}
+          disabled={sending || creatingTicket}
+          accessibilityLabel="Send a photo"
+        >
+          {sending ? <ActivityIndicator size="small" color="#6B7280" /> : <Paperclip size={20} color="#6B7280" />}
         </TouchableOpacity>
         <TextInput
           style={styles.input}
@@ -573,6 +663,12 @@ export default function SupportChatScreen() {
         onToggleMute={supportCall.toggleMute}
         onToggleSpeaker={supportCall.toggleSpeaker}
       />
+      {/* A photo full screen: tap anywhere to close. */}
+      <Modal visible={!!viewing} transparent animationType="fade" onRequestClose={() => setViewing(null)}>
+        <Pressable style={styles.viewer} onPress={() => setViewing(null)} accessibilityLabel="Close photo">
+          {viewing ? <Image source={{ uri: viewing }} style={styles.viewerImage} contentFit="contain" /> : null}
+        </Pressable>
+      </Modal>
       {alert.element}
     </KeyboardAvoidingView>
   );
@@ -640,6 +736,11 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   selfHelpYesBtn: { flex: 1, borderRadius: 22, paddingVertical: 12, alignItems: 'center', backgroundColor: '#FFCE48' },
   selfHelpYesBtnText: { fontSize: 13, fontFamily: Fonts.poppinsBold, color: '#111827' },
   doneBtn: { borderRadius: 22, paddingVertical: 14, alignItems: 'center', backgroundColor: '#FFCE48' },
+  attachmentImage: { width: 220, height: 220, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.06)' },
+  captionText: { marginTop: 8 },
+  fileRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2 },
+  viewer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center' },
+  viewerImage: { width: '100%', height: '80%' },
   attachButton: { width: 40, height: 44, justifyContent: 'center', alignItems: 'center', marginRight: 8 },
   input: { flex: 1, backgroundColor: t.inputFilled, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, paddingTop: 10, maxHeight: 100, fontFamily: Fonts.poppins, fontSize: 14, color: t.textPrimary },
   sendButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFCE48', justifyContent: 'center', alignItems: 'center', marginLeft: 12 },

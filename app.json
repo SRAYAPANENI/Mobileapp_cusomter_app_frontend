@@ -85,6 +85,13 @@
         }
       ],
       "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Dodorez needs camera access so you can take your profile photo and send photos to support.",
+          "photosPermission": "Dodorez needs photo library access so you can add photos to your jobs and send them to support."
+        }
+      ],
       "@react-native-community/datetimepicker",
       "expo-font",
       "expo-web-browser",

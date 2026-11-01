@@ -1158,6 +1158,14 @@ export const SkoFyApi = {
         method: 'POST',
         body: JSON.stringify({ message }),
       }),
+    // A photo (or PDF) with an optional caption — the paperclip in the chat.
+    addAttachment: async (ticketId: string, file: { uri: string; mimeType: string; name?: string }, message = '') => {
+      const form = new FormData();
+      form.append('message', message);
+      const ext = file.mimeType === 'application/pdf' ? 'pdf' : file.mimeType.split('/')[1] || 'jpg';
+      form.append('file', { uri: file.uri, name: file.name ?? `attachment.${ext}`, type: file.mimeType } as any);
+      return request(`/support-tickets/${ticketId}/attachments`, { method: 'POST', body: form });
+    },
     // Records the canned self-help answer shown before any human is
     // involved, so it's part of the ticket's real conversation history —
     // an admin (or a self-resolved ticket nobody ever opens) still has a
