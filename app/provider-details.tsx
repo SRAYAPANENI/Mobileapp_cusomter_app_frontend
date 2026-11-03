@@ -152,7 +152,7 @@ export default function ProviderDetailsScreen() {
         ]);
         setProfile(profileData);
         setJobStatus((jobData as any)?.status ?? null);
-        setJobUnit((jobData as any)?.pricing_unit ?? null);
+        setJobUnit((jobData as any)?.shape?.pricing_unit ?? null);
         setWorkProof((Array.isArray(docsData) ? docsData : []).map((d: any) => ({
           id: d.id,
           type: d.media_type === 'VIDEO' ? 'video' : 'image',
