@@ -108,6 +108,9 @@ export default function ProviderDetailsScreen() {
   // was never checked, so Hire stayed tappable and threw a raw backend error
   // instead of a clear message. Same fix as applicants.tsx.
   const [jobStatus, setJobStatus] = useState<string | null>(null);
+  // How the job is priced: quoted work is priced by the invoice after the
+  // inspection, so the hourly rate isn't what it costs.
+  const [jobUnit, setJobUnit] = useState<string | null>(null);
   const NOT_HIREABLE_STATUSES = ['COMPLETED', 'CANCELLED', 'DISPUTED', 'EXPIRED', 'ACCEPTED', 'INSPECTING', 'INVOICE_PENDING', 'IN_PROGRESS'];
 
   // Bumped by "Try again" on the error screen to re-run the load below.
@@ -149,6 +152,7 @@ export default function ProviderDetailsScreen() {
         ]);
         setProfile(profileData);
         setJobStatus((jobData as any)?.status ?? null);
+        setJobUnit((jobData as any)?.pricing_unit ?? null);
         setWorkProof((Array.isArray(docsData) ? docsData : []).map((d: any) => ({
           id: d.id,
           type: d.media_type === 'VIDEO' ? 'video' : 'image',
@@ -466,15 +470,27 @@ export default function ProviderDetailsScreen() {
                   </View>
                   <Wallet size={22} color="#9CA3AF" />
                 </View>
-                <View style={[styles.priceCard, { flex: 1 }]}>
-                  <View>
-                    <ThemedText style={styles.priceValue}>
-                      {PROVIDER_DATA.hourlyRate != null ? `$${PROVIDER_DATA.hourlyRate}/hr` : '—'}
-                    </ThemedText>
-                    <ThemedText style={styles.priceLabel}>Hourly Rate</ThemedText>
+                {/* Quoted work: the price comes on the invoice after the
+                    inspection (the visiting fee counts toward it). Another
+                    set-price job: its own price, not this rate. The hourly
+                    rate shows for hourly work, or with no job in view. */}
+                {jobUnit === 'QUOTE' ? (
+                  <View style={[styles.priceCard, { flex: 1 }]}>
+                    <View>
+                      <ThemedText style={[styles.priceValue, { fontSize: 15, lineHeight: 21 }]}>After inspection</ThemedText>
+                      <ThemedText style={styles.priceLabel}>Job price</ThemedText>
+                    </View>
+                    <Clock size={22} color="#9CA3AF" />
                   </View>
-                  <Clock size={22} color="#9CA3AF" />
-                </View>
+                ) : (!jobUnit || jobUnit === 'HOUR') && PROVIDER_DATA.hourlyRate != null ? (
+                  <View style={[styles.priceCard, { flex: 1 }]}>
+                    <View>
+                      <ThemedText style={styles.priceValue}>${PROVIDER_DATA.hourlyRate}/hr</ThemedText>
+                      <ThemedText style={styles.priceLabel}>Hourly Rate</ThemedText>
+                    </View>
+                    <Clock size={22} color="#9CA3AF" />
+                  </View>
+                ) : null}
               </View>
             </Animated.View>
           )}
