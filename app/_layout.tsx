@@ -35,6 +35,7 @@ import { NetworkStatusBanner } from '@/components/network-status-banner';
 import { ActiveJobStatusBanner } from '@/components/active-job-status-banner';
 import AppLockGate from '@/components/app-lock-gate';
 import SessionExpiredModal from '@/components/session-expired-modal';
+import { AlertHost } from '@/components/alert-host';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -136,6 +137,8 @@ export default function RootLayout() {
                   <NetworkStatusBanner />
                   <ActiveJobStatusBanner />
                 </AppLockGate>
+                {/* The app's dialog for showAlert() calls (components/alert-host.tsx). */}
+                <AlertHost />
                 <SessionExpiredModal
                   visible={signedOutVisible}
                   onDismiss={() => {

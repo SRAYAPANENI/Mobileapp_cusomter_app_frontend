@@ -1,4 +1,5 @@
 import notifee from '@notifee/react-native';
+import { AppAlert } from '@/components/app-alert';
 import AnimatedBrandMark from '@/components/animated-brand-mark';
 import { Skeleton } from '@/components/skeleton';
 import { VoicePostModal } from '@/components/voice-post-modal';
@@ -30,7 +31,6 @@ import { useRefreshOnFocus } from '@/hooks/use-refresh-on-focus';
 import { useCustomerProfile, useSavedAddresses } from '@/services/queries/customer';
 import { qk } from '@/services/queries/keys';
 import {
-  AlertTriangle,
   Bell,
   Briefcase,
   Bug,
@@ -43,7 +43,6 @@ import {
   Home,
   Leaf,
   LocateFixed,
-  LogOut,
   MapPin,
   Mic,
   Monitor,
@@ -1901,53 +1900,33 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* ── Exit Modal ── */}
-      <Modal visible={isExitModalVisible} transparent animationType="fade">
-        <View style={styles.exitModalOverlay}>
-          <View style={styles.exitModalContent}>
-            <View style={styles.exitIconContainer}><AlertTriangle size={36} color="#F59E0B" /></View>
-            <ThemedText style={styles.exitTitle}>Exit Dodorez?</ThemedText>
-            <ThemedText style={styles.exitMessage}>Are you sure you want to close the app?</ThemedText>
-            <View style={styles.exitActionRow}>
-              <TouchableOpacity style={[styles.exitButton, styles.exitCancelButton]} onPress={() => setIsExitModalVisible(false)}>
-                <ThemedText style={styles.exitCancelText}>No</ThemedText>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.exitButton, styles.exitConfirmButton]}
-                onPress={() => {
-                  // Android doesn't always fully destroy the JS process on
-                  // exitApp() — it can keep it alive in the background for
-                  // a fast relaunch. Without resetting this first, reopening
-                  // resumes the same component state with the modal still
-                  // "visible", so it pops right back up on next launch.
-                  setIsExitModalVisible(false);
-                  BackHandler.exitApp();
-                }}
-              >
-                <ThemedText style={styles.exitConfirmText}>Yes</ThemedText>
-                <LogOut size={18} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/* Leaving the app: the shared dialog. Closing it first matters —
+          Android can keep the JS alive after exitApp(), and reopening would
+          resume with the dialog still showing. */}
+      <AppAlert
+        visible={isExitModalVisible}
+        type="info"
+        title="Exit Dodorez?"
+        message="Are you sure you want to close the app?"
+        onDismiss={() => setIsExitModalVisible(false)}
+        buttons={[
+          { text: 'Stay', variant: 'secondary' },
+          { text: 'Exit', onPress: () => BackHandler.exitApp() },
+        ]}
+      />
 
-      {/* ── Location Required Modal ── */}
-      <Modal visible={showLocationModal} transparent animationType="fade" onRequestClose={() => setShowLocationModal(false)}>
-        <View style={styles.locPermModalOverlay}>
-          <Reanimated.View entering={FadeInUp} style={styles.locPermModalCard}>
-            <View style={styles.locPermIconWrap}><MapPin size={32} color="#EF4444" /></View>
-            <ThemedText style={styles.locPermTitle}>Location Access Needed</ThemedText>
-            <ThemedText style={styles.locPermSubtitle}>We need your location to show nearby providers and post jobs accurately. Enable location access for Dodorez in your phone's settings, then come back and try again.</ThemedText>
-            <TouchableOpacity style={styles.locPermPrimaryBtn} onPress={() => { setShowLocationModal(false); Linking.openSettings(); }}>
-              <ThemedText style={styles.locPermPrimaryBtnText}>Open Settings</ThemedText>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.locPermSecondaryBtn} onPress={() => setShowLocationModal(false)}>
-              <ThemedText style={styles.locPermSecondaryBtnText}>Cancel</ThemedText>
-            </TouchableOpacity>
-          </Reanimated.View>
-        </View>
-      </Modal>
+      {/* Location is off: the shared dialog, straight to Settings. */}
+      <AppAlert
+        visible={showLocationModal}
+        type="info"
+        title="Location Access Needed"
+        message="We need your location to show nearby providers and post jobs accurately. Enable location access for Dodorez in your phone's settings, then come back and try again."
+        onDismiss={() => setShowLocationModal(false)}
+        buttons={[
+          { text: 'Cancel', variant: 'secondary' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ]}
+      />
 
       {/* ── Voice Post Modal ── */}
       {/* Rate any finished job (incl. disputed) the customer still owes a rating for */}

@@ -1,16 +1,18 @@
 import { Fonts } from '@/constants/theme';
 import {
   AlertTriangle,
-  CheckCircle2,
+  Check,
   Copy,
   Info,
-  XCircle,
+  X,
 } from 'lucide-react-native';
 import React, { useEffect } from 'react';
 import {
+  Dimensions,
   Modal,
+  Pressable,
+  ScrollView,
   StyleSheet,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { ThemedText } from './themed-text';
@@ -20,7 +22,10 @@ export type AlertType = 'success' | 'error' | 'warning' | 'info' | 'copied';
 export interface AlertButton {
   text: string;
   onPress?: () => void;
-  variant?: 'primary' | 'secondary';
+  /** primary: the main action, brand yellow. secondary: outlined, for
+   * "Keep", "Not now". destructive: red, for actions that remove, cancel or
+   * end something. */
+  variant?: 'primary' | 'secondary' | 'destructive';
 }
 
 interface AppAlertProps {
@@ -33,55 +38,34 @@ interface AppAlertProps {
   onDismiss?: () => void;
 }
 
-const CONFIG: Record<AlertType, {
-  icon: React.FC<{ size: number; color: string }>;
-  iconColor: string;
-  iconBg: string;
-  borderColor: string;
-  primaryBg: string;
-  primaryText: string;
-}> = {
-  success: {
-    icon: CheckCircle2,
-    iconColor: '#10B981',
-    iconBg: '#ECFDF5',
-    borderColor: '#10B981',
-    primaryBg: '#10B981',
-    primaryText: '#fff',
-  },
-  error: {
-    icon: XCircle,
-    iconColor: '#EF4444',
-    iconBg: '#FEF2F2',
-    borderColor: '#EF4444',
-    primaryBg: '#EF4444',
-    primaryText: '#fff',
-  },
-  warning: {
-    icon: AlertTriangle,
-    iconColor: '#F59E0B',
-    iconBg: '#FFFBEB',
-    borderColor: '#F59E0B',
-    primaryBg: '#FFCE48',
-    primaryText: '#111827',
-  },
-  info: {
-    icon: Info,
-    iconColor: '#3B82F6',
-    iconBg: '#EFF6FF',
-    borderColor: '#3B82F6',
-    primaryBg: '#3B82F6',
-    primaryText: '#fff',
-  },
-  copied: {
-    icon: Copy,
-    iconColor: '#10B981',
-    iconBg: '#ECFDF5',
-    borderColor: '#10B981',
-    primaryBg: '#FFCE48',
-    primaryText: '#111827',
-  },
+// The dialog is the same neutral card whatever it says. Its meaning is
+// carried by one small tinted icon, never by the card or the buttons, so a
+// success, an error and a question read as one family. The main button is
+// always the brand's; red is kept for actions that remove or end something.
+const TONE: Record<AlertType, { icon: React.FC<{ size: number; color: string; strokeWidth?: number }>; fg: string; bg: string }> = {
+  success: { icon: Check, fg: '#047857', bg: '#ECFDF5' },
+  copied: { icon: Copy, fg: '#047857', bg: '#ECFDF5' },
+  error: { icon: X, fg: '#B91C1C', bg: '#FEF2F2' },
+  warning: { icon: AlertTriangle, fg: '#B45309', bg: '#FFFBEB' },
+  info: { icon: Info, fg: '#1D4ED8', bg: '#EFF6FF' },
 };
+
+const C = {
+  scrim: 'rgba(15, 23, 42, 0.48)',
+  surface: '#FFFFFF',
+  title: '#0F172A',
+  body: '#475569',
+  border: '#E2E8F0',
+  brand: '#FFCE48',
+  brandPressed: '#F5BE2E',
+  onBrand: '#111827',
+  danger: '#DC2626',
+  dangerPressed: '#B91C1C',
+  neutralPressed: '#F1F5F9',
+};
+
+// A long message scrolls inside the card, so the buttons stay on screen.
+const MESSAGE_MAX_HEIGHT = Math.round(Dimensions.get('window').height * 0.45);
 
 export function AppAlert({
   visible,
@@ -92,10 +76,14 @@ export function AppAlert({
   autoDismissMs,
   onDismiss,
 }: AppAlertProps) {
-  const cfg = CONFIG[type];
-  const IconComp = cfg.icon;
-
-  const defaultButtons: AlertButton[] = buttons ?? [{ text: 'OK', onPress: onDismiss }];
+  const tone = TONE[type];
+  const Icon = tone.icon;
+  // Every press already closes the alert (onDismiss below), so OK needs no
+  // handler of its own — giving it onDismiss too closed it twice.
+  const actions: AlertButton[] = buttons ?? [{ text: 'OK' }];
+  // Two actions sit side by side (the main one on the right); more stack,
+  // so no label is ever squeezed.
+  const stacked = actions.length > 2;
 
   useEffect(() => {
     if (visible && autoDismissMs) {
@@ -109,42 +97,48 @@ export function AppAlert({
     // nothing (overshooting, so it bounced up and down) while the backdrop
     // faded in a second time on top of the Modal's own fade.
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onDismiss}>
-      <View style={styles.overlay}>
-        <View style={[styles.card, { borderTopColor: cfg.borderColor }]}>
-          <View style={[styles.iconCircle, { backgroundColor: cfg.iconBg }]}>
-            <IconComp size={32} color={cfg.iconColor} />
+      <View style={styles.scrim}>
+        <View style={styles.card} accessibilityViewIsModal accessibilityRole="alert">
+          <View style={[styles.badge, { backgroundColor: tone.bg }]}>
+            <Icon size={20} color={tone.fg} strokeWidth={2.4} />
           </View>
 
-          <ThemedText style={styles.title}>{title}</ThemedText>
-          <ThemedText style={styles.message}>{message}</ThemedText>
+          <ThemedText style={styles.title} accessibilityRole="header">{title}</ThemedText>
+          {!!message && (
+            <ScrollView style={{ maxHeight: MESSAGE_MAX_HEIGHT }} bounces={false} showsVerticalScrollIndicator={false}>
+              <ThemedText style={styles.message}>{message}</ThemedText>
+            </ScrollView>
+          )}
 
-          <View style={[styles.buttonRow, defaultButtons.length === 1 && { flexDirection: 'column' }]}>
-            {defaultButtons.map((btn, i) => {
-              const isPrimary = btn.variant !== 'secondary';
+          <View style={[styles.actions, stacked && styles.actionsStacked]}>
+            {actions.map((btn, i) => {
+              const variant = btn.variant ?? 'primary';
               return (
-                <TouchableOpacity
+                <Pressable
                   key={i}
-                  style={[
-                    styles.button,
-                    isPrimary
-                      ? [styles.primaryButton, { backgroundColor: cfg.primaryBg }]
-                      : styles.secondaryButton,
-                    defaultButtons.length > 1 && { flex: 1 },
-                  ]}
+                  accessibilityRole="button"
                   // Close first: a button that opens the next alert used to have
                   // it hidden again straight away, so it blinked or vanished.
                   onPress={() => { onDismiss?.(); btn.onPress?.(); }}
-                  activeOpacity={0.8}
+                  style={({ pressed }) => [
+                    styles.button,
+                    !stacked && { flex: 1 },
+                    variant === 'primary' && { backgroundColor: pressed ? C.brandPressed : C.brand },
+                    variant === 'destructive' && { backgroundColor: pressed ? C.dangerPressed : C.danger },
+                    variant === 'secondary' && [styles.secondary, pressed && { backgroundColor: C.neutralPressed }],
+                  ]}
                 >
                   <ThemedText
                     style={[
                       styles.buttonText,
-                      isPrimary ? { color: cfg.primaryText } : styles.secondaryButtonText,
+                      variant === 'primary' && { color: C.onBrand },
+                      variant === 'destructive' && { color: '#FFFFFF' },
+                      variant === 'secondary' && { color: C.title },
                     ]}
                   >
                     {btn.text}
                   </ThemedText>
-                </TouchableOpacity>
+                </Pressable>
               );
             })}
           </View>
@@ -202,75 +196,70 @@ export function useAppAlert() {
 }
 
 const styles = StyleSheet.create({
-  overlay: {
+  scrim: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: C.scrim,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    padding: 20,
   },
   card: {
-    backgroundColor: '#fff',
-    borderRadius: 32,
-    padding: 32,
     width: '100%',
-    alignItems: 'center',
-    borderTopWidth: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.15,
-    shadowRadius: 30,
-    elevation: 12,
+    maxWidth: 400,
+    backgroundColor: C.surface,
+    borderRadius: 20,
+    padding: 24,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.12,
+    shadowRadius: 32,
+    elevation: 8,
   },
-  iconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+  badge: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   title: {
-    fontSize: 20, lineHeight: 25,
-    fontFamily: Fonts.poppinsBold,
-    color: '#111827',
-    textAlign: 'center',
-    marginBottom: 8,
+    fontSize: 18,
+    lineHeight: 24,
+    fontFamily: Fonts.poppinsSemiBold,
+    color: C.title,
   },
   message: {
-    fontSize: 14,
+    marginTop: 6,
+    fontSize: 15,
+    lineHeight: 22,
     fontFamily: Fonts.poppins,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 21,
-    marginBottom: 28,
+    color: C.body,
   },
-  buttonRow: {
+  actions: {
     flexDirection: 'row',
-    gap: 12,
-    width: '100%',
+    gap: 10,
+    marginTop: 24,
+  },
+  actionsStacked: {
+    flexDirection: 'column-reverse',
   },
   button: {
-    height: 52,
-    borderRadius: 16,
+    minHeight: 48,
+    paddingHorizontal: 16,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  primaryButton: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  secondaryButton: {
-    backgroundColor: '#F3F4F6',
+  secondary: {
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
   },
   buttonText: {
-    fontSize: 15, lineHeight: 19,
-    fontFamily: Fonts.poppinsBold,
-  },
-  secondaryButtonText: {
-    color: '#374151',
+    textAlign: 'center',
+    fontSize: 15,
+    lineHeight: 20,
+    fontFamily: Fonts.poppinsSemiBold,
   },
 });

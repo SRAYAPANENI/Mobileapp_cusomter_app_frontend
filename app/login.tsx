@@ -1,5 +1,6 @@
 import AnimatedBackground from '@/components/animated-background';
-import { useAppAlert } from '@/components/app-alert';
+import { showDialog } from '@/components/alert-host';
+import { AppAlert, useAppAlert } from '@/components/app-alert';
 import { CodeTimerRow } from '@/components/code-timer-row';
 import { useCodeTimer } from '@/hooks/use-code-timer';
 import AnimatedBrandMark from '@/components/animated-brand-mark';
@@ -12,13 +13,13 @@ import { SkoFyApi, TokenStore } from '@/services/api';
 import { registerFcmToken } from '@/services/callManager';
 import * as Location from 'expo-location';
 import { router, useFocusEffect } from 'expo-router';
-import { AlertTriangle, Eye, EyeOff, LogOut } from 'lucide-react-native';
+import { Eye, EyeOff } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BackHandler, Modal, Platform, ScrollView, StyleSheet, ToastAndroid, TouchableOpacity, View, Alert } from 'react-native';
+import { BackHandler, Platform, ScrollView, StyleSheet, ToastAndroid, TouchableOpacity, View } from 'react-native';
 import { Text, TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { UsPhonePrefix, US_CALLING_CODE, US_PHONE_INPUT_MAX, formatUsPhone, isUsPhone, usPhoneDigits } from '@/components/us-phone-prefix';
-import Animated, { FadeIn, FadeInUp, FadeOut, Layout } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, Layout } from 'react-native-reanimated';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 export default function LoginScreen() {
@@ -127,7 +128,7 @@ export default function LoginScreen() {
         registerFcmToken();
         router.replace('/home');
         // Logging in cancelled a deletion they'd asked for — say so.
-        if (signedIn.account_restored) Alert.alert('Welcome back', 'Your account deletion is cancelled — your account stays open.');
+        if (signedIn.account_restored) showDialog('Welcome back', 'Your account deletion is cancelled — your account stays open.');
       } catch (err: any) {
         if (offerRegister(err)) return;
         showFeedback('error', 'Login Failed', err?.message || 'Invalid phone number or password.');
@@ -187,7 +188,7 @@ export default function LoginScreen() {
       }
       registerFcmToken();
       router.replace('/home');
-      if (user.account_restored) Alert.alert('Welcome back', 'Your account deletion is cancelled — your account stays open.');
+      if (user.account_restored) showDialog('Welcome back', 'Your account deletion is cancelled — your account stays open.');
     } catch (err: any) {
       showFeedback('error', 'Login Failed', err?.message || 'Invalid OTP. Please try again.');
     } finally {
@@ -412,43 +413,20 @@ export default function LoginScreen() {
 
       {appAlert.element}
 
-      {/* Exit Confirmation Modal */}
-      <Modal visible={isExitModalVisible} transparent animationType="fade">
-        <View style={styles.exitModalOverlay}>
-          <Animated.View entering={FadeInUp.duration(400)} style={styles.exitModalContent}>
-            <View style={styles.exitIconContainer}>
-              <AlertTriangle size={36} color="#F59E0B" />
-            </View>
-            <ThemedText style={styles.exitTitle}>Exit Dodorez?</ThemedText>
-            <ThemedText style={styles.exitMessage}>Are you sure you want to close the app?</ThemedText>
-
-            <View style={styles.exitActionRow}>
-              <TouchableOpacity
-                style={[styles.exitButton, styles.exitCancelButton]}
-                onPress={() => setIsExitModalVisible(false)}
-              >
-                <ThemedText style={styles.exitCancelText}>No</ThemedText>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.exitButton, styles.exitConfirmButton]}
-                onPress={() => {
-                  // Android doesn't always fully destroy the JS process on
-                  // exitApp() — it can keep it alive in the background for
-                  // a fast relaunch. Without resetting this first, reopening
-                  // resumes the same component state with the modal still
-                  // "visible", so it pops right back up on next launch.
-                  setIsExitModalVisible(false);
-                  BackHandler.exitApp();
-                }}
-              >
-                <ThemedText style={styles.exitConfirmText}>Yes</ThemedText>
-                <LogOut size={18} color={themeColors.background} />
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-        </View>
-      </Modal>
+      {/* Leaving the app: the shared dialog. Closing it first matters —
+          Android can keep the JS alive after exitApp(), and reopening would
+          resume with the dialog still showing. */}
+      <AppAlert
+        visible={isExitModalVisible}
+        type="info"
+        title="Exit Dodorez?"
+        message="Are you sure you want to close the app?"
+        onDismiss={() => setIsExitModalVisible(false)}
+        buttons={[
+          { text: 'Stay', variant: 'secondary' },
+          { text: 'Exit', variant: 'primary', onPress: () => BackHandler.exitApp() },
+        ]}
+      />
     </ThemedView>
   );
 }

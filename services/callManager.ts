@@ -1,8 +1,9 @@
 import notifee, { AndroidForegroundServiceType, AndroidImportance, AndroidStyle, AndroidVisibility, EventType } from '@notifee/react-native';
+import { showDialog } from '@/components/alert-host';
 import messaging from '@react-native-firebase/messaging';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
-import { Alert, AppRegistry, AppState, Linking, NativeEventEmitter, NativeModules, Platform } from 'react-native';
+import { AppRegistry, AppState, Linking, NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import RNCallKeep from 'react-native-callkeep';
 import VoipPushNotification from 'react-native-voip-push-notification';
 // LiveKit's WebRTC (our own media server): same CallKit audio-session hooks.
@@ -1616,7 +1617,7 @@ async function checkFullScreenCallPermission(): Promise<boolean> {
     const last = Number(await SecureStore.getItemAsync(FULL_SCREEN_PROMPTED_KEY)) || 0;
     if (Date.now() - last < FULL_SCREEN_REPROMPT_MS) return false;
     await SecureStore.setItemAsync(FULL_SCREEN_PROMPTED_KEY, String(Date.now()));
-    Alert.alert(
+    showDialog(
       'Show calls on your lock screen',
       "Calls to Dodorez only show as a small notification while your phone is locked. Turn on \u201cFull screen notifications\u201d (\u201cAllow full screen notifications\u201d on Samsung) so they ring like a phone call.",
       [
@@ -1645,7 +1646,7 @@ async function checkMakerCallSettings() {
   try {
     if (await SecureStore.getItemAsync(MAKER_PROMPTED_KEY)) return;
     await SecureStore.setItemAsync(MAKER_PROMPTED_KEY, String(Date.now()));
-    Alert.alert(
+    showDialog(
       'Let calls ring when your phone is locked',
       'This phone limits apps by default. In Dodorez’s settings, turn on “Show on lock screen”, “Pop-up windows” (or “Display over other apps”) and “Auto-start”, and set battery to “No restrictions”.',
       [

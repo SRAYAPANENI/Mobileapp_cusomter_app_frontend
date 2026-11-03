@@ -1,4 +1,5 @@
 import { NAME_PART_MAX, fullName, hasFullName, namePayload } from '@/services/name';
+import { AppAlert } from '@/components/app-alert';
 import { isValidPassword } from '@/services/password';
 import { EmptyJobsState } from '@/components/empty-jobs-state';
 import { NoInternetState } from '@/components/no-internet-state';
@@ -23,7 +24,6 @@ import * as Location from 'expo-location';
 import { router, useFocusEffect } from 'expo-router';
 import {
   AlertCircle,
-  AlertTriangle,
   Bell,
   Camera,
   CheckCircle2,
@@ -1623,61 +1623,24 @@ export default function ProfileScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Remove ID Document Confirmation */}
-      <Modal
+      {/* Remove an ID document photo: confirmed in the shared dialog. */}
+      <AppAlert
         visible={confirmRemoveDocIdx !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setConfirmRemoveDocIdx(null)}
-      >
-        <View style={[styles.modalOverlay, { justifyContent: 'center', padding: 24 }]}>
-          <Animated.View
-            entering={FadeInUp.duration(400)}
-            style={{
-              backgroundColor: '#fff',
-              borderRadius: 32,
-              padding: 32,
-              alignItems: 'center',
-              shadowColor: '#000',
-              shadowOpacity: 0.1,
-              shadowRadius: 20,
-              elevation: 5,
-            }}
-          >
-            <View style={{
-              width: 72, height: 72, borderRadius: 36,
-              backgroundColor: '#FEF2F2', justifyContent: 'center', alignItems: 'center', marginBottom: 20,
-            }}>
-              <Trash2 size={30} color="#EF4444" />
-            </View>
-            <ThemedText style={{ fontSize: 22, lineHeight: 28, fontFamily: Fonts.poppinsBold, color: '#111827', marginBottom: 8, textAlign: 'center' }}>
-              Remove Document?
-            </ThemedText>
-            <ThemedText style={{ fontSize: 15, fontFamily: Fonts.poppins, color: '#6B7280', textAlign: 'center', marginBottom: 28, lineHeight: 22 }}>
-              {confirmRemoveDocIdx !== null
-                ? `This will delete your ${['Front', 'Back', 'Extra'][confirmRemoveDocIdx]} ID document photo. You can re-upload it anytime.`
-                : ''}
-            </ThemedText>
-            <View style={{ flexDirection: 'row', gap: 16, width: '100%' }}>
-              <TouchableOpacity
-                style={{ flex: 1, height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F3F4F6' }}
-                onPress={() => setConfirmRemoveDocIdx(null)}
-              >
-                <ThemedText style={{ fontSize: 16, lineHeight: 22, fontFamily: Fonts.poppinsBold, color: '#111827' }}>Cancel</ThemedText>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={{ flex: 1, height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', backgroundColor: '#EF4444' }}
-                onPress={() => {
-                  if (confirmRemoveDocIdx !== null) handleRemoveDocSlot(confirmRemoveDocIdx);
-                  setConfirmRemoveDocIdx(null);
-                }}
-              >
-                <ThemedText style={{ fontSize: 16, lineHeight: 22, fontFamily: Fonts.poppinsBold, color: '#fff' }}>Remove</ThemedText>
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-        </View>
-      </Modal>
+        type="warning"
+        title="Remove document?"
+        message={confirmRemoveDocIdx !== null
+          ? `This will delete your ${['Front', 'Back', 'Extra'][confirmRemoveDocIdx]} ID document photo. You can re-upload it anytime.`
+          : ''}
+        onDismiss={() => setConfirmRemoveDocIdx(null)}
+        buttons={[
+          { text: 'Cancel', variant: 'secondary' },
+          {
+            text: 'Remove',
+            variant: 'destructive',
+            onPress: () => { if (confirmRemoveDocIdx !== null) handleRemoveDocSlot(confirmRemoveDocIdx); },
+          },
+        ]}
+      />
 
       {/* ID Document Full-Screen Viewer — the Front/Back/Extra thumbnails
           are a tiny 3-up row, too small to actually read an ID off of. */}
@@ -1770,30 +1733,14 @@ export default function ProfileScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Custom Alert Modal */}
-      <Modal visible={customAlert.visible} transparent animationType="fade">
-        <View style={[styles.modalOverlay, { justifyContent: 'center', padding: 20 }]}>
-          <View style={[styles.customAlertContainer, customAlert.type === 'success' ? styles.successAlert : styles.errorAlert]}>
-            <View style={[styles.alertIconContainer, { backgroundColor: customAlert.type === 'success' ? '#ECFDF5' : '#FEF2F2' }]}>
-              {customAlert.type === 'success' ? (
-                <CheckCircle2 size={32} color="#10B981" />
-              ) : (
-                <AlertTriangle size={32} color="#EF4444" />
-              )}
-            </View>
-
-            <ThemedText style={styles.alertTitle}>{customAlert.title}</ThemedText>
-            <ThemedText style={styles.alertMessage}>{customAlert.message}</ThemedText>
-
-            <TouchableOpacity
-              style={[styles.alertButton, { backgroundColor: customAlert.type === 'success' ? '#10B981' : '#EF4444' }]}
-              onPress={hideAlert}
-            >
-              <ThemedText style={styles.alertButtonText}>OK</ThemedText>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      {/* Profile's own messages, in the shared dialog. */}
+      <AppAlert
+        visible={customAlert.visible}
+        type={customAlert.type}
+        title={customAlert.title}
+        message={customAlert.message}
+        onDismiss={hideAlert}
+      />
 
       {/* ── Fixed Bottom Navigation Dock ── */}
       <SkoFyBottomBar activeTab="profile" />

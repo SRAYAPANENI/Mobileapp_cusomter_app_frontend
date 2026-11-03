@@ -1,4 +1,4 @@
-﻿import { useAppAlert } from '@/components/app-alert';
+﻿import { AppAlert, useAppAlert } from '@/components/app-alert';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
@@ -25,7 +25,6 @@ import {
   Wallet,
   X,
   Maximize2,
-  CheckCircle2
 } from 'lucide-react-native';
 import React, { useEffect, useState, useRef } from 'react';
 import {
@@ -658,47 +657,23 @@ export default function ProviderDetailsScreen() {
         </View>
       )}
 
-      {/* Success Modal */}
-      <Modal
+      <AppAlert
         visible={showSuccessModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowSuccessModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <Animated.View
-            entering={FadeInDown}
-            style={styles.successCard}
-          >
-            <View style={styles.successIconContainer}>
-              <CheckCircle2 size={50} color="#10B981" />
-            </View>
-            <ThemedText style={styles.successTitle}>Hired Successfully!</ThemedText>
-            <ThemedText style={styles.successSubtitle}>
-              {nameHidden
-                ? `You have hired this ${profession.toLowerCase()} for your requirement. You'll see their name in My Jobs.`
-                : `You have hired ${PROVIDER_DATA.name} for your requirement.`}
-            </ThemedText>
-            {!!feeStatusMessage && (
-              <ThemedText style={[styles.successSubtitle, { marginTop: 4, fontSize: 13, color: '#6B7280' }]}>
-                {feeStatusMessage}
-              </ThemedText>
-            )}
-            <TouchableOpacity
-              style={styles.successButton}
-              onPress={() => {
-                setShowSuccessModal(false);
-                // push, not replace — replacing left track-provider with
-                // nothing behind it in the stack, so the hardware back
-                // button exited the app instead of returning here.
-                router.push({ pathname: '/track-provider', params: { jobId: jobId ?? '' } });
-              }}
-            >
-              <ThemedText style={styles.successButtonText}>Got it</ThemedText>
-            </TouchableOpacity>
-          </Animated.View>
-        </View>
-      </Modal>
+        type="success"
+        title="Hired Successfully!"
+        message={(nameHidden
+          ? `You have hired this ${profession.toLowerCase()} for your requirement. You'll see their name in My Jobs.`
+          : `You have hired ${PROVIDER_DATA.name} for your requirement.`)
+          + (feeStatusMessage ? `\n\n${feeStatusMessage}` : '')}
+        onDismiss={() => setShowSuccessModal(false)}
+        buttons={[{
+          text: 'Got it',
+          // push, not replace — replacing left track-provider with nothing
+          // behind it in the stack, so the hardware back button exited the
+          // app instead of returning here.
+          onPress: () => router.push({ pathname: '/track-provider', params: { jobId: jobId ?? '' } }),
+        }]}
+      />
       {appAlert.element}
     </ThemedView>
   );

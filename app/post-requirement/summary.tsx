@@ -210,8 +210,8 @@ export default function JobSummaryScreen() {
           ? "Skilled providers have been notified. You'll see who applies in My Jobs."
           : "Nearby providers have been notified. You'll see who applies in My Jobs.",
         [
-          { text: 'View My Jobs', onPress: () => router.replace('/my-jobs') },
           { text: 'Back to Home', variant: 'secondary', onPress: () => router.dismissTo('/(tabs)/home' as any) },
+          { text: 'View My Jobs', onPress: () => router.replace('/my-jobs') },
         ],
       );
     } catch (err: any) {

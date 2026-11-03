@@ -1,4 +1,5 @@
 import { useAppAlert } from '@/components/app-alert';
+import { showDialog } from '@/components/alert-host';
 import { CallOverlay } from '@/components/call-overlay';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
@@ -19,7 +20,7 @@ import {
   Send
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActionSheetIOS, ActivityIndicator, Alert, FlatList, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActionSheetIOS, ActivityIndicator, FlatList, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 // The keyboard-controller version: works with KeyboardProvider (app/_layout.tsx)
 // on Android — React Native's own one shifted the layout as the keyboard
@@ -354,7 +355,7 @@ export default function SupportChatScreen() {
       );
       return;
     }
-    Alert.alert('Send a photo', undefined, [
+    showDialog('Send a photo', undefined, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Gallery', onPress: () => { sendPhoto(false); } },
       { text: 'Camera', onPress: () => { sendPhoto(true); } },

@@ -1,4 +1,4 @@
-﻿import { useAppAlert } from '@/components/app-alert';
+﻿import { AppAlert, useAppAlert } from '@/components/app-alert';
 import { CancelJobModal } from '@/components/cancel-job-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -28,7 +28,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   View,
-  Modal
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -567,39 +566,14 @@ export default function ApplicantsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Success Modal */}
-      <Modal
+      <AppAlert
         visible={showSuccessModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowSuccessModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <Animated.View
-            entering={FadeInDown}
-            style={styles.successCard}
-          >
-            <View style={styles.successIconContainer}>
-              <CheckCircle2 size={50} color="#10B981" />
-            </View>
-            <ThemedText style={styles.successTitle}>Hired Successfully!</ThemedText>
-            <ThemedText style={styles.successSubtitle}>
-              You have hired {lastHiredName} for your requirement.
-            </ThemedText>
-            {!!feeStatusMessage && (
-              <ThemedText style={[styles.successSubtitle, { marginTop: 4, fontSize: 13, color: '#6B7280' }]}>
-                {feeStatusMessage}
-              </ThemedText>
-            )}
-            <TouchableOpacity
-              style={styles.successButton}
-              onPress={() => setShowSuccessModal(false)}
-            >
-              <ThemedText style={styles.successButtonText}>Got it</ThemedText>
-            </TouchableOpacity>
-          </Animated.View>
-        </View>
-      </Modal>
+        type="success"
+        title="Hired Successfully!"
+        message={`You have hired ${lastHiredName} for your requirement.${feeStatusMessage ? `\n\n${feeStatusMessage}` : ''}`}
+        onDismiss={() => setShowSuccessModal(false)}
+        buttons={[{ text: 'Got it' }]}
+      />
       {jobId && (
         <CancelJobModal
           visible={showCancelModal}
