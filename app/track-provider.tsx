@@ -335,9 +335,13 @@ export default function TrackProviderScreen() {
   // On-site inspection + invoice — bidding is retired, so the real job cost
   // is only ever set here, after the provider inspects in person.
   const [inspectionFeeStatus, setInspectionFeeStatus] = useState<'PENDING_CAPTURE' | 'HELD' | 'FAILED' | null>(null);
+  // A trip priced up front (Pickup & Delivery): its fare booked and paid.
+  const [bookingPaid, setBookingPaid] = useState(false);
   const [inspectionOtp, setInspectionOtp] = useState<{ otp: string | null; expires_in_seconds: number | null }>({ otp: null, expires_in_seconds: null });
   // Pickup & Drop: the code the customer gives the provider at the drop-off.
   const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
+  // Set once the drop-off code is used — it's delivered, waiting to be completed.
+  const [delivered, setDelivered] = useState(false);
   // Pickup & Drop — the customer isn't physically at the pickup point (it's
   // a store), so the OTP card above can't apply to this job kind; a photo of
   // what was picked up substitutes for it instead.
@@ -347,6 +351,8 @@ export default function TrackProviderScreen() {
   // inspection code.
   const [steps, setSteps] = useState<string[]>([]);
   const paysUpfront = steps.includes('PAY_UPFRONT');
+  // A pickup can go ahead: a trip's fare booked, or a quoted pickup's visiting fee held.
+  const pickupPaid = paysUpfront ? bookingPaid : inspectionFeeStatus === 'HELD';
   const [pickupPhotoUrl, setPickupPhotoUrl] = useState<string | null>(null);
   const [pickupConfirmedAt, setPickupConfirmedAt] = useState<string | null>(null);
   // Buy it for me: the shopping money held at hire, and what was spent.
@@ -622,20 +628,26 @@ export default function TrackProviderScreen() {
   useEffect(() => {
     if (!jobId) return;
     const deliveryOnItsWay = jobStatus === 'IN_PROGRESS' && jobKind === 'PICKUP_DROPOFF';
-    if (paysUpfront) return; // CarePanel polls its own
+    // CarePanel polls a booking of its own — except a trip's pickup state
+    // (the photo, the shopping money), which the cards below follow.
+    if (paysUpfront && jobKind !== 'PICKUP_DROPOFF') return;
     if (!['ACCEPTED', 'INSPECTING', 'INVOICE_PENDING'].includes(jobStatus) && !deliveryOnItsWay) return;
     let cancelled = false;
 
     const poll = async () => {
       try {
         if (jobStatus === 'ACCEPTED') {
-          const feeStatus = await SkoFyApi.payments.getStatus(jobId, 'INSPECTION_FEE').catch(() => null);
-          if (!cancelled && feeStatus) setInspectionFeeStatus(feeStatus.status as any);
+          // A trip has no visiting fee: its fare is booked (bookingPaid).
+          if (!paysUpfront) {
+            const feeStatus = await SkoFyApi.payments.getStatus(jobId, 'INSPECTION_FEE').catch(() => null);
+            if (!cancelled && feeStatus) setInspectionFeeStatus(feeStatus.status as any);
+          }
           if (jobKind === 'PICKUP_DROPOFF') {
             // No OTP for this job kind (the customer isn't at the pickup
             // point) — poll the job itself for the pickup-confirmation photo.
             const job = await SkoFyApi.jobs.get(jobId).catch(() => null);
             if (!cancelled && job) applyPickupFields(job);
+            if (!cancelled && job) setBookingPaid(['HELD', 'PAID'].includes((job as any).payment_status));
             if (!cancelled && (job as any)?.pickup_purchase === 'BUY_FOR_ME') {
               const goods = await SkoFyApi.payments.getStatus(jobId, 'GOODS_ADVANCE').catch(() => null);
               if (!cancelled) setGoodsHoldStatus(goods?.status ?? null);
@@ -662,9 +674,15 @@ export default function TrackProviderScreen() {
             });
           }
         }
+        // Every delivery's drop-off code is shown here — with a recipient's
+        // name and the button to send it to them (CarePanel leaves it to this).
         if (deliveryOnItsWay) {
-          const result = await SkoFyApi.jobs.getDeliveryCode(jobId).catch(() => null);
-          if (!cancelled && result) setDeliveryCode(result.code);
+          const job: any = await SkoFyApi.jobs.get(jobId).catch(() => null);
+          if (!cancelled && job) setDelivered(!!job.delivered_at);
+          if (!job?.delivered_at) {
+            const result = await SkoFyApi.jobs.getDeliveryCode(jobId).catch(() => null);
+            if (!cancelled && result) setDeliveryCode(result.code);
+          }
         }
       } catch {
         // transient — keep showing last known values
@@ -1211,7 +1229,7 @@ export default function TrackProviderScreen() {
 
           {/* Pickup & Drop — proof of pickup substitutes for the OTP flow
               above (the customer isn't physically at the pickup point). */}
-          {jobStatus === 'ACCEPTED' && jobKind === 'PICKUP_DROPOFF' && inspectionFeeStatus === 'HELD' && pickupConfirmedAt && (
+          {jobStatus === 'ACCEPTED' && jobKind === 'PICKUP_DROPOFF' && pickupPaid && pickupConfirmedAt && (
             <View style={styles.inspectionCard}>
               <ThemedText style={styles.inspectionCardTitle}>Picked up ✓</ThemedText>
               {pickupPhotoUrl && (
@@ -1223,17 +1241,20 @@ export default function TrackProviderScreen() {
                 </ThemedText>
               )}
               <ThemedText style={styles.inspectionCardBody}>
-                {purchaseLimit != null
-                  ? "Your provider has your items. Review and pay their delivery price, and they'll bring them to you."
-                  : "Your provider has your order. Review and pay the final price, and they'll bring it to you."}
+                {paysUpfront
+                  ? (purchaseLimit != null ? 'Your provider has your items and is bringing them to you.'
+                    : 'Your provider has your order and is bringing it to you.')
+                  : purchaseLimit != null
+                    ? "Your provider has your items. Review and pay their delivery price, and they'll bring them to you."
+                    : "Your provider has your order. Review and pay the final price, and they'll bring it to you."}
               </ThemedText>
             </View>
           )}
-          {jobStatus === 'ACCEPTED' && jobKind === 'PICKUP_DROPOFF' && inspectionFeeStatus === 'HELD' && !pickupConfirmedAt
+          {jobStatus === 'ACCEPTED' && jobKind === 'PICKUP_DROPOFF' && pickupPaid && !pickupConfirmedAt
             && purchaseLimit != null && goodsHoldStatus !== 'HELD' && (
             <GoodsHoldCard limit={purchaseLimit} paying={payingGoods} onPay={handlePayGoodsHold} styles={styles} />
           )}
-          {jobStatus === 'ACCEPTED' && jobKind === 'PICKUP_DROPOFF' && inspectionFeeStatus === 'HELD' && !pickupConfirmedAt
+          {jobStatus === 'ACCEPTED' && jobKind === 'PICKUP_DROPOFF' && pickupPaid && !pickupConfirmedAt
             && (purchaseLimit == null || goodsHoldStatus === 'HELD') && (
             <View style={styles.inspectionCard}>
               <ThemedText style={styles.inspectionCardBody}>
@@ -1249,7 +1270,16 @@ export default function TrackProviderScreen() {
             <PickupCodeEditor jobId={jobId} code={pickupCode} styles={styles} />
           )}
 
-          {jobStatus === 'IN_PROGRESS' && jobKind === 'PICKUP_DROPOFF' && (
+          {/* Delivered, not yet completed (a booked trip's CarePanel says it). */}
+          {jobStatus === 'IN_PROGRESS' && jobKind === 'PICKUP_DROPOFF' && delivered && !paysUpfront && (
+            <View style={styles.inspectionCard}>
+              <ThemedText style={styles.inspectionCardTitle}>Delivered ✓</ThemedText>
+              <ThemedText style={styles.inspectionCardBody}>
+                All good? Mark the job as completed, then rate your provider.
+              </ThemedText>
+            </View>
+          )}
+          {jobStatus === 'IN_PROGRESS' && jobKind === 'PICKUP_DROPOFF' && !delivered && (
             deliveryCode ? (
               <CodeCard
                 title={recipientName ? `Drop-off code for ${recipientName}` : 'Your drop-off code'}

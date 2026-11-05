@@ -37,7 +37,10 @@ export function CarePanel({ jobId, onMessage }: Props) {
     const steps: string[] = j.steps ?? [];
     if (j.status === 'ACCEPTED' && j.payment_status === 'HELD' && (steps.includes('CHECK_IN_CODE') || steps.includes('ARRIVAL_CODE'))) {
       setCode((await SkoFyApi.jobs.checkInCode(jobId).catch(() => null))?.code ?? null);
-    } else if (j.status === 'IN_PROGRESS' && steps.includes('HANDBACK_CODE') && !j.delivered_at) {
+    } else if (j.status === 'IN_PROGRESS' && steps.includes('HANDBACK_CODE') && !j.delivered_at
+      // A delivery's drop-off code is the tracking screen's (it can be sent
+      // on to whoever receives it); shown here too, it showed twice.
+      && !steps.includes('PICKUP_PROOF')) {
       setCode((await SkoFyApi.jobs.getDeliveryCode(jobId).catch(() => null))?.code ?? null);
     } else {
       setCode(null);
@@ -56,8 +59,15 @@ export function CarePanel({ jobId, onMessage }: Props) {
   if (!job) return null;
   const steps: string[] = job.steps ?? [];
   const price = job.upfront_price;
+  // A trip's waiting at the pickup and drop-off (skofy-backend app/domain/trip_wait.py):
+  // its cap is paid with the fare, the unused part comes back.
+  const wait = job.trip_wait ?? null;
+  const clock = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'the free minutes end');
+  const toPay = price ? price.total + (wait?.hold ?? 0) : 0;
   const paid = job.payment_status === 'HELD' || job.payment_status === 'PAID';
   const atTheirPlace = steps.includes('CHECK_IN_CODE');
+  // Pickup & Delivery: nobody meets at the start — the code is the drop-off's.
+  const delivery = steps.includes('PICKUP_PROOF');
 
   const book = async () => {
     setPaying(true);
@@ -95,13 +105,18 @@ export function CarePanel({ jobId, onMessage }: Props) {
           <ThemedText style={s.title}>Book it</ThemedText>
           <ThemedText style={s.big}>{price.text}</ThemedText>
           <ThemedText style={s.muted}>You pay now; it's held safely and only paid to your provider when the job is done.</ThemedText>
+          {wait && (
+            <ThemedText style={s.muted}>
+              {`${wait.text}. That $${wait.hold.toFixed(2)} is included and held too — whatever isn't used for waiting comes back to you automatically.`}
+            </ThemedText>
+          )}
           {job.pay_by && (
             <ThemedText style={s.warn}>
               Pay by {new Date(job.pay_by).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} to keep this booking — after that your provider is freed for others.
             </ThemedText>
           )}
           <TouchableOpacity style={s.primary} onPress={book} disabled={paying}>
-            {paying ? <ActivityIndicator color="#111827" /> : <ThemedText style={s.primaryText}>Book and pay ${price.total.toFixed(2)}</ThemedText>}
+            {paying ? <ActivityIndicator color="#111827" /> : <ThemedText style={s.primaryText}>Book and pay ${toPay.toFixed(2)}</ThemedText>}
           </TouchableOpacity>
         </View>
       )}
@@ -110,6 +125,15 @@ export function CarePanel({ jobId, onMessage }: Props) {
         <View style={s.card}>
           <ThemedText style={s.title}>Booked ✓</ThemedText>
           {price && <ThemedText style={s.body}>{price.text}</ThemedText>}
+          {wait && (
+            <ThemedText style={s.muted}>
+              {!job.arrived_at
+                ? `${wait.text} — $${wait.hold.toFixed(2)} held; unused comes back.`
+                : wait.minutes > 0
+                  ? `Your provider has waited at the pickup: ${wait.minutes} min, $${wait.charge.toFixed(2)} so far (up to $${wait.hold.toFixed(2)}).`
+                  : `Your provider is at the pickup. Waiting is free until ${clock(wait.free_until)}, then $${wait.per_minute.toFixed(2)} a minute.`}
+            </ThemedText>
+          )}
           {job.scheduled_at && (
             <ThemedText style={s.body}>
               {atTheirPlace ? 'Drop-off' : 'Starts'}: {when(job.scheduled_at)}
@@ -130,7 +154,9 @@ export function CarePanel({ jobId, onMessage }: Props) {
             </View>
           ) : (
             <ThemedText style={s.muted}>
-              {atTheirPlace ? "When you arrive, your provider asks for a code — it'll show here." : "When your provider arrives, they'll ask for a code — it'll show here."}
+              {delivery ? "Your provider is heading to the pickup. When they bring it to you, they'll ask for a code — it'll show here."
+                : atTheirPlace ? "When you arrive, your provider asks for a code — it'll show here."
+                : "When your provider arrives, they'll ask for a code — it'll show here."}
             </ThemedText>
           )}
           {hostLate && (
@@ -142,9 +168,24 @@ export function CarePanel({ jobId, onMessage }: Props) {
         </View>
       )}
 
-      {job.status === 'IN_PROGRESS' && steps.includes('HANDBACK_CODE') && (
+      {/* Under way: waiting so far, the drop-off's clock, and what comes back. */}
+      {job.status === 'IN_PROGRESS' && wait && (
         <View style={s.card}>
-          <ThemedText style={s.title}>{job.delivered_at ? 'Handed back ✓' : atTheirPlace ? 'Picking up' : 'Hand-back'}</ThemedText>
+          <ThemedText style={s.title}>Waiting</ThemedText>
+          <ThemedText style={s.muted}>
+            {wait.stage === 'DROPOFF' && wait.minutes === wait.used_before
+              ? `Your provider is at the drop-off. Waiting there is free until ${clock(wait.free_until)}, then $${wait.per_minute.toFixed(2)} a minute.`
+              : wait.charge > 0
+                ? `${wait.minutes} min, $${wait.charge.toFixed(2)} so far. The rest of the $${wait.hold.toFixed(2)} hold comes back to you ${wait.final ? 'when the job is completed' : "once it's delivered"}.`
+                : `No charge so far — the $${wait.hold.toFixed(2)} held for waiting comes back to you ${wait.final ? 'when the job is completed' : "once it's delivered"}.`}
+          </ThemedText>
+        </View>
+      )}
+
+      {/* A delivery's drop-off code is on the tracking screen; here only once it's handed over. */}
+      {job.status === 'IN_PROGRESS' && steps.includes('HANDBACK_CODE') && (!delivery || !!job.delivered_at) && (
+        <View style={s.card}>
+          <ThemedText style={s.title}>{job.delivered_at ? (delivery ? 'Delivered ✓' : 'Handed back ✓') : atTheirPlace ? 'Picking up' : 'Hand-back'}</ThemedText>
           {job.delivered_at ? (
             <ThemedText style={s.muted}>All good? Mark the job as completed below, then rate your provider.</ThemedText>
           ) : code ? (

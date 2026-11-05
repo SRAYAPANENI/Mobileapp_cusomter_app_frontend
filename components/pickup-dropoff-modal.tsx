@@ -46,6 +46,15 @@ type SavedAddress = { id: string; label: string; full_address: string; lat: numb
 const SKILL_PROFESSION = 'Personal Errands';
 const SKILL_NAME = 'Pickup & Delivery Errands';
 
+type ItemSize = 'SMALL' | 'MEDIUM' | 'LARGE' | 'BULKY';
+// The same four sizes the provider prices (Rates & hosting).
+const ITEM_SIZES: { key: ItemSize; label: string; hint: string }[] = [
+  { key: 'SMALL', label: 'Bag', hint: 'Fits in a bag' },
+  { key: 'MEDIUM', label: 'Box', hint: 'A box or two' },
+  { key: 'LARGE', label: 'Car trunk', hint: 'Fills a car trunk' },
+  { key: 'BULKY', label: 'Van', hint: 'Needs a van or pickup truck' },
+];
+
 export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropoffLng, onClose, onPosted }: Props) {
   const insets = useSafeAreaInsets();
   const appAlert = useAppAlert();
@@ -57,6 +66,8 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
   const [direction, setDirection] = useState<PickupDirection>('TO_ME');
   const [myName, setMyName] = useState('');
   const [description, setDescription] = useState('');
+  // What it takes to carry it — it prices the trip (skofy-backend app/domain/trip_fare.py).
+  const [itemSize, setItemSize] = useState<ItemSize>('SMALL');
   const [allowedPickupTypes, setAllowedPickupTypes] = useState<string[]>([]);
   const [pickupQuery, setPickupQuery] = useState('');
   const [pickupSuggestions, setPickupSuggestions] = useState<GooglePlaceSuggestion[]>([]);
@@ -107,6 +118,7 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
     setSource('STORE');
     setDirection('TO_ME');
     setDescription('');
+    setItemSize('SMALL');
     resetPickupPlace();
     setMedia([]);
     setTiming({ kind: 'ASAP' }); setPurchase('PREPAID'); setLimitText(''); setDropoffNotes('');
@@ -342,6 +354,7 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
         description: !fromPerson ? notes
           : notes || (sendFromMe ? `Pick up ${item} from me and take it to ${otherName}.` : `Pick up ${item} and bring it to me.`),
         skill_id: skillId,
+        item_size: itemSize,
         ...pickupJobFields({
           timing,
           purchase: fromPerson ? 'PREPAID' : purchase,
@@ -389,6 +402,27 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
 
   const fromPerson = source === 'PERSON';
   const sendFromMe = fromPerson && direction === 'FROM_ME';
+
+  // What it should cost, as soon as both ends are known: priced up front by
+  // the trip, like a delivery app (skofy-backend app/domain/trip_fare.py).
+  const [estimate, setEstimate] = useState<{ text: string; typical: boolean; note: string | null } | null>(null);
+  useEffect(() => {
+    if (pickupLat == null || pickupLng == null || dropoffLat == null || dropoffLng == null) {
+      setEstimate(null);
+      return;
+    }
+    const searched = { lat: pickupLat, lng: pickupLng };
+    const mine = { lat: dropoffLat, lng: dropoffLng };
+    const [from, to] = sendFromMe ? [mine, searched] : [searched, mine];
+    let live = true;
+    // A moment after the last change, not on every keystroke.
+    const timer = setTimeout(() => {
+      SkoFyApi.jobs.pickupEstimate(from, to, itemSize)
+        .then((e) => { if (live) setEstimate({ text: e.text, typical: e.typical, note: e.note }); })
+        .catch(() => { if (live) setEstimate(null); });
+    }, 400);
+    return () => { live = false; clearTimeout(timer); };
+  }, [pickupLat, pickupLng, dropoffLat, dropoffLng, sendFromMe, itemSize]);
 
   return (
     <Modal statusBarTranslucent navigationBarTranslucent visible={visible} animationType="slide" transparent onRequestClose={phase === 'confirm' ? onClose : undefined}>
@@ -629,6 +663,23 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
               />
             </View>
 
+            {/* How big: a van-size item reaches only providers who can carry it. */}
+            <View style={s.fieldWrap}>
+              <Text style={s.fieldLabel}>How big is it?</Text>
+              <View style={s.sizeRow}>
+                {ITEM_SIZES.map(({ key, label, hint }) => {
+                  const on = itemSize === key;
+                  return (
+                    <TouchableOpacity key={key} style={[s.sizeChip, on && s.sourceChipOn]} onPress={() => setItemSize(key)}
+                      disabled={phase !== 'confirm'} accessibilityRole="radio" accessibilityState={{ selected: on }}>
+                      <Text style={[s.sourceText, on && s.sourceTextOn]}>{label}</Text>
+                      <Text style={s.sizeHint}>{hint}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
             <PickupOptions
               timing={timing}
               onTimingChange={setTiming}
@@ -694,6 +745,15 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
           {phase === 'confirm' && hasValidPickup && formError && (
             <Text style={s.fieldError}>{formError}</Text>
           )}
+          {phase === 'confirm' && estimate && (
+            <View style={s.estimate}>
+              <Text style={s.estimateText}>{estimate.text}</Text>
+              {!!estimate.note && <Text style={s.estimateHint}>{estimate.note}</Text>}
+              <Text style={s.estimateHint}>
+                You’ll see each provider’s exact fare before you hire — no visiting fee, no invoice. You pay when you book.
+              </Text>
+            </View>
+          )}
           {phase === 'confirm' && (
             <TouchableOpacity
               style={[s.postButton, !ready && s.postButtonDisabled]}
@@ -742,6 +802,12 @@ const s = StyleSheet.create({
   closeBtn: { padding: 4 },
 
   sourceRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  sizeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  sizeChip: {
+    flexBasis: '47%', flexGrow: 1, paddingVertical: 9, paddingHorizontal: 12, borderRadius: 12,
+    borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#FFFFFF', gap: 2,
+  },
+  sizeHint: { fontSize: 11.5, lineHeight: 15, fontFamily: Fonts.poppins, color: '#6B7280' },
   sourceChip: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     paddingVertical: 11, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB',
@@ -832,6 +898,9 @@ const s = StyleSheet.create({
   retryRow: { alignItems: 'center', paddingVertical: 2 },
   retryText: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: '#EF4444' },
 
+  estimate: { marginBottom: 10, padding: 12, borderRadius: 14, backgroundColor: '#F0F9FF', borderWidth: 1, borderColor: '#BAE6FD', gap: 4 },
+  estimateText: { fontSize: 15, lineHeight: 21, fontFamily: Fonts.poppinsBold, color: '#0C4A6E' },
+  estimateHint: { fontSize: 12, lineHeight: 17, fontFamily: Fonts.poppins, color: '#075985' },
   postButton: { backgroundColor: '#FFCE48', borderRadius: 16, paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
   postButtonDisabled: { opacity: 0.5 },
   postButtonText: { fontSize: 15, lineHeight: 19, fontFamily: Fonts.poppinsBold, color: '#111827' },

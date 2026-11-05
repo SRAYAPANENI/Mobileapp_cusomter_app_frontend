@@ -27,11 +27,11 @@ interface Props {
 
 // The provider's inspection report, for the customer to confirm — the one
 // person who was there (docs/MONEY_RULES_DESIGN.md §4). "Yes, it's done" pays
-// the visiting fee; "Not done yet" sends the provider back to it; reading the
-// end code confirms it in person; "It wasn't done" holds the fee for support.
+// the visiting fee — the one way to confirm (an end code to read out added
+// nothing: it was in this same app); "Not done yet" sends the provider back
+// to it; "It wasn't done" holds the fee for support.
 export function InspectionReportCard({ jobId, jobStatus, report, confirmed, disputed, onChanged, onError }: Props) {
-  const [busy, setBusy] = useState<'yes' | 'no' | 'code' | null>(null);
-  const [endCode, setEndCode] = useState<string | null>(null);
+  const [busy, setBusy] = useState<'yes' | 'no' | null>(null);
   const [reporting, setReporting] = useState(false);
   const [reason, setReason] = useState('');
   const [photos, setPhotos] = useState<PhotoFile[]>([]);
@@ -44,17 +44,6 @@ export function InspectionReportCard({ jobId, jobStatus, report, confirmed, disp
       onChanged();
     } catch (err: any) {
       onError('Could not send', err?.message ?? 'Please try again.');
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const showCode = async () => {
-    setBusy('code');
-    try {
-      setEndCode((await SkoFyApi.jobs.getInspectionEndCode(jobId)).code);
-    } catch (err: any) {
-      onError('No code yet', err?.message ?? 'Please try again.');
     } finally {
       setBusy(null);
     }
@@ -118,16 +107,6 @@ export function InspectionReportCard({ jobId, jobStatus, report, confirmed, disp
           {jobStatus === 'INSPECTING' && (
             <TouchableOpacity style={s.secondary} onPress={() => respond(false)} disabled={!!busy}>
               {busy === 'no' ? <ActivityIndicator color="#374151" /> : <Text style={s.secondaryText}>Not done yet</Text>}
-            </TouchableOpacity>
-          )}
-          {endCode ? (
-            <View style={s.codeBox}>
-              <Text style={s.codeLabel}>Read this to your provider:</Text>
-              <Text style={s.code}>{endCode}</Text>
-            </View>
-          ) : (
-            <TouchableOpacity onPress={showCode} disabled={!!busy}>
-              <Text style={s.link}>{busy === 'code' ? 'Getting your code…' : 'Show my code to read to the provider'}</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity onPress={() => { setReason(''); setPhotos([]); setReporting(true); }}>
@@ -201,11 +180,7 @@ const s = StyleSheet.create({
   primaryText: { fontSize: 14, lineHeight: 19, fontFamily: Fonts.poppinsBold, color: '#111827' },
   secondary: { marginTop: 8, paddingVertical: 11, borderRadius: 12, alignItems: 'center', backgroundColor: '#F3F4F6' },
   secondaryText: { fontSize: 13.5, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: '#374151' },
-  link: { marginTop: 12, fontSize: 13, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: '#2563EB', textAlign: 'center' },
   reportLink: { marginTop: 10, fontSize: 12.5, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: '#B91C1C', textAlign: 'center' },
-  codeBox: { marginTop: 12, alignItems: 'center', padding: 10, borderRadius: 12, backgroundColor: '#F9FAFB' },
-  codeLabel: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppins, color: '#6B7280' },
-  code: { marginTop: 4, fontSize: 28, lineHeight: 34, letterSpacing: 8, fontFamily: Fonts.poppinsBold, color: '#111827' },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', padding: 20 },
   sheet: { backgroundColor: '#fff', borderRadius: 20, padding: 20, gap: 10 },
   sheetTitle: { fontSize: 17, lineHeight: 22, fontFamily: Fonts.poppinsBold, color: '#111827' },

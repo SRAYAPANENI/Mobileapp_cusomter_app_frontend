@@ -120,6 +120,9 @@ function ApplicantCard({
           {!!(item as any).priceText && (
             <ThemedText style={styles.priceBreakdown}>{String((item as any).priceText).split(' = ')[0]}</ThemedText>
           )}
+          {!!(item as any).waitText && (
+            <ThemedText style={styles.priceBreakdown}>{(item as any).waitText}</ThemedText>
+          )}
           <View style={styles.ratingRow}>
             <Star size={12} color="#F59E0B" fill="#F59E0B" />
             <ThemedText style={styles.ratingText}>
@@ -268,6 +271,8 @@ function mapApiApplicant(a: any): Applicant & { applicationId: string; providerI
     // A job priced up front (per night, per hour…): this applicant's total.
     price: a.proposed_fee != null ? Number(a.proposed_fee) : null,
     priceText: a.price_text ?? null,
+    // A trip: their waiting terms at the pickup, held with the fare.
+    waitText: a.wait_text ?? null,
   } as any;
 }
 

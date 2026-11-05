@@ -902,6 +902,8 @@ export const SkoFyApi = {
       dropoff_address?: string;
       pickup_address?: string;
       dropoff_notes?: string;
+      /** Pickup & Delivery: what it takes to carry it — prices the trip's size extra. */
+      item_size?: 'SMALL' | 'MEDIUM' | 'LARGE' | 'BULKY';
       pickup_purchase?: 'PREPAID' | 'BUY_FOR_ME';
       purchase_limit?: number | null;
       pickup_details?: PickupDetails;
@@ -980,6 +982,13 @@ export const SkoFyApi = {
 
     get: async (jobId: string) =>
       request(`/jobs/${jobId}`),
+
+    /** Before posting a Pickup & Delivery job: its miles and what nearby
+     * providers charge (each one's exact fare shows on their application). */
+    pickupEstimate: async (from: { lat: number; lng: number }, to: { lat: number; lng: number }, size = 'SMALL'): Promise<{
+      miles: number; source: 'ROAD' | 'ESTIMATE'; low: number; high: number; providers: number; typical: boolean; text: string;
+      note: string | null;
+    }> => request(`/jobs/pickup-estimate?from_lat=${from.lat}&from_lng=${from.lng}&to_lat=${to.lat}&to_lng=${to.lng}&size=${size}`) as any,
 
     // Only allowed before a provider is hired (status POSTED/DISTRIBUTED) —
     // the backend rejects this once the job has moved past that.
