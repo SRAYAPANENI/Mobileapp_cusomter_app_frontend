@@ -16,6 +16,7 @@
 
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { reportReachable, setHealthCheck } from '@/services/server-status';
 import { File, Paths } from 'expo-file-system';
 import type { PersonPickupRules, PickupDetails, PickupSource, ShoppingItem } from '@/services/pickupOptions';
 import { deviceTimeZone } from '@/services/job-shape';
@@ -60,6 +61,7 @@ const REGISTERING_KEY = 'skofy_registering';
 
 export const TokenStore = {
   async setTokens(access: string, refresh: string) {
+    signedOutOnPurpose = false;          // a new login (endSession)
     await SecureStore.setItemAsync(TOKEN_KEY, access);
     await SecureStore.setItemAsync(REFRESH_KEY, refresh);
   },
@@ -188,8 +190,13 @@ export function setSessionExpiredHandler(fn: () => void): void {
 // signed in with nothing loading. Ended before the app registered its handler
 // (during start-up): told as soon as it does.
 let sessionEndPending = false;
+// Set by logout, cleared by the next login (TokenStore.setTokens).
+let signedOutOnPurpose = false;
 async function endSession(): Promise<void> {
   await TokenStore.clear();
+  // They logged out themselves: a request still in flight then being refused
+  // is expected — never a "Signed out" message on the login screen.
+  if (signedOutOnPurpose) return;
   if (sessionExpiredNotified) return;
   sessionExpiredNotified = true;
   if (_onSessionExpired) _onSessionExpired();
@@ -203,12 +210,40 @@ async function endSession(): Promise<void> {
 const REQUEST_TIMEOUT_MS = 30_000;
 const UPLOAD_TIMEOUT_MS = 120_000;
 
+// The server (or the proxy in front of it) answering that the server is down.
+const GATEWAY_DOWN = new Set([502, 503, 504]);
+
+// While unreachable, services/server-status.ts asks /health every few seconds.
+setHealthCheck(async () => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5_000);
+  try {
+    const res = await fetch(`${BASE_URL}/health`, { signal: controller.signal, headers: { 'ngrok-skip-browser-warning': 'true' } });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
 async function timedFetch(url: string, init: RequestInit, ms = REQUEST_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    // Any answer means the server is there; a proxy's gateway error means it
+    // isn't (services/server-status.ts — the "Can't reach Dodorez" banner).
+    // Our API's own 502/503 (payments, the assistant or SMS unavailable)
+    // come as JSON, from a server that's up, so they don't count.
+    const fromApi = (response.headers.get('content-type') ?? '').includes('application/json');
+    // A tunnel to a local backend (ngrok) answers with its own error when the
+    // backend behind it is down or the tunnel is over its limit.
+    const tunnelDown = !!response.headers.get('ngrok-error-code');
+    reportReachable(!tunnelDown && (fromApi || !GATEWAY_DOWN.has(response.status)));
+    return response;
   } catch {
+    reportReachable(false);
     throw {
       success: false,
       error_code: controller.signal.aborted ? 'TIMEOUT' : 'NETWORK_ERROR',
@@ -226,6 +261,7 @@ async function request<T = any>(
   options: RequestInit & { skipAuth?: boolean; timeoutMs?: number } = {}
 ): Promise<T> {
   const { skipAuth = false, timeoutMs, ...fetchOptions } = options;
+  if (pendingServerLogout && endpoint.startsWith('/auth/')) await pendingServerLogout;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -372,6 +408,37 @@ export interface JobShapePayload {
    * Sent when posting; read back without the vet and emergency contact
    * unless you're the customer or the hired provider. */
   care_sheet?: Record<string, unknown> | null;
+}
+
+// ─── LOGOUT ON THE SERVER ────────────────────────────────────────────────────
+// After this phone has signed out: the server revokes the login and forgets
+// this phone's push tokens. With the tokens captured before they were
+// cleared, so nothing here can sign anyone in again or show "Signed out".
+// An access token past its 15 minutes is renewed first, or the server would
+// refuse the logout and the login would live on there. Best effort: offline,
+// the phone is signed out all the same, and it deleted its own push token.
+// The server's logout revokes every login for the role, so one still on its
+// way could end a login made after it: signing in (any /auth/ call) waits
+// for it first — normally well under a second, at most its two timeouts.
+let pendingServerLogout: Promise<void> | null = null;
+
+async function _logoutOnServer(access: string | null, refresh: string | null, body: object): Promise<void> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' };
+  try {
+    let token = access;
+    if ((!token || _expiresWithin(token, 30)) && refresh) {
+      const renewed = await timedFetch(`${BASE_URL}/auth/refresh`, {
+        method: 'POST', headers, body: JSON.stringify({ refresh_token: refresh }),
+      }, 10_000);
+      if (renewed.ok) token = (await renewed.json())?.data?.access_token ?? token;
+    }
+    if (!token) return;
+    await timedFetch(`${BASE_URL}/auth/logout`, {
+      method: 'POST', headers: { ...headers, Authorization: `Bearer ${token}` }, body: JSON.stringify(body),
+    }, 10_000);
+  } catch {
+    // Offline or refused: signed out on this phone regardless.
+  }
 }
 
 // ─── TOKEN FOR LIVE CONNECTIONS ──────────────────────────────────────────────
@@ -717,15 +784,16 @@ export const SkoFyApi = {
      * logged-out device that keeps its token registered keeps receiving
      * calls/notifications for the account indefinitely. Best-effort: if
      * fetching them fails, logout still proceeds. */
+    /** Signs out at once on this phone — the login is gone before anything
+     * else, so a dead connection can never hold someone in. The server is
+     * told in the background (_logoutOnServer). */
     logout: async (fcmToken?: string, voipToken?: string) => {
-      try {
-        await request('/auth/logout', {
-          method: 'POST',
-          body: JSON.stringify({ fcm_token: fcmToken, voip_token: voipToken }),
-        });
-      } finally {
-        await TokenStore.clear();
-      }
+      const access = await TokenStore.getAccessToken().catch(() => null);
+      const refresh = await TokenStore.getRefreshToken().catch(() => null);
+      signedOutOnPurpose = true;
+      await TokenStore.clear();
+      pendingServerLogout = _logoutOnServer(access, refresh, { fcm_token: fcmToken, voip_token: voipToken })
+        .finally(() => { pendingServerLogout = null; });
     },
   },
 

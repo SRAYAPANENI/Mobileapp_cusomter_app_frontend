@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, View, TouchableOpacity, Platform, StyleSheet } from 'react-native';
+import { Modal, View, TouchableOpacity, Platform, ScrollView, StyleSheet } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -99,6 +99,8 @@ export function CancelJobModal({ visible, jobId, scenario = 'pre-hire', onClose,
           </ThemedText>
           <ThemedText style={styles.modalSubtitle}>Please select a reason for cancelling</ThemedText>
 
+          {/* The middle scrolls on a small phone; the title and the buttons stay put. */}
+          <ScrollView style={styles.body} bounces={false} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           {scenario !== 'pre-hire' && preview && (
             <View style={[styles.warningBanner, preview.provider_gets > 0 && styles.warningBannerStrong]}>
               <AlertTriangle size={16} color={preview.provider_gets > 0 ? '#DC2626' : '#D97706'} />
@@ -146,6 +148,7 @@ export function CancelJobModal({ visible, jobId, scenario = 'pre-hire', onClose,
           )}
 
           {error && <ThemedText style={styles.errorText}>{error}</ThemedText>}
+          </ScrollView>
 
           <View style={styles.modalFooter}>
             <TouchableOpacity style={styles.modalCloseBtn} onPress={onClose}>
@@ -183,6 +186,11 @@ function makeStyles(t: typeof Colors.light) {
       borderTopRightRadius: 32,
       padding: 24,
       paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+      maxHeight: '92%',
+    },
+    body: {
+      flexGrow: 0,
+      flexShrink: 1,
     },
     modalIndicator: {
       width: 40,
@@ -205,6 +213,8 @@ function makeStyles(t: typeof Colors.light) {
       marginBottom: 24,
     },
     warningBanner: {
+      // Never squeezed by the reasons below it when the sheet is full.
+      flexShrink: 0,
       flexDirection: 'row',
       alignItems: 'flex-start',
       gap: 8,
@@ -215,8 +225,10 @@ function makeStyles(t: typeof Colors.light) {
       padding: 12,
       marginBottom: 16,
     },
+    // No flex here: the text sits in a column, where flex: 1 made it share
+    // the column's height instead of taking its own, and on a full sheet that
+    // squashed it to a sliver (only the tops of the letters showed).
     warningText: {
-      flex: 1,
       fontSize: 13,
       fontFamily: Fonts.poppins,
       color: '#92400E',

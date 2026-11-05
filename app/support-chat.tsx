@@ -355,7 +355,7 @@ export default function SupportChatScreen() {
       );
       return;
     }
-    showDialog('Send a photo', undefined, [
+    showDialog('Send a photo', 'Take a new one with your camera, or choose one from your gallery.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Gallery', onPress: () => { sendPhoto(false); } },
       { text: 'Camera', onPress: () => { sendPhoto(true); } },

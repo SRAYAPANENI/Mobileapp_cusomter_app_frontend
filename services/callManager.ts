@@ -1454,13 +1454,27 @@ export async function clearPushForSignOut(): Promise<void> {
 /** Logout: the server drops this phone's tokens and the login, then the
  * phone clears its own push state — either alone is enough to stop calls. */
 export async function signOutDevice(): Promise<void> {
-  const fcmToken = await messaging().getToken().catch(() => undefined);
+  // A few seconds at most for the push token: offline, Firebase can take far
+  // longer, and logging out must never wait on the network.
+  const fcmToken = await Promise.race([
+    messaging().getToken().catch(() => undefined),
+    new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 3_000)),
+  ]);
   const voipToken = getCurrentVoipToken() ?? undefined;
+  // Signed out on this phone at once; the server is told in the background.
   await SkoFyApi.auth.logout(fcmToken, voipToken).catch((err) => {
-    console.error('Server-side logout failed:', err);
+    console.error('Logout failed:', err);
   });
-  await clearPushForSignOut();
+  // Stops any ringing now; Firebase forgets the token when it can. A push
+  // arriving meanwhile finds no login and is dropped (registerBackgroundHandler).
+  pushCleanup = clearPushForSignOut().finally(() => { pushCleanup = null; });
 }
+
+// The last sign-out's push cleanup, while it runs. Signing back in waits for
+// it before registering a token (registerFcmToken): otherwise its late
+// deleteToken() could delete the very token the new login just registered,
+// and calls and notifications would silently stop.
+let pushCleanup: Promise<void> | null = null;
 
 export function registerBackgroundHandler() {
   messaging().setBackgroundMessageHandler(async (remoteMessage) => {
@@ -1809,6 +1823,7 @@ export function initCallManager() {
 }
 
 export async function registerFcmToken() {
+  if (pushCleanup) await pushCleanup;
   try {
     const token = await messaging().getToken();
     await SkoFyApi.fcm.registerToken(token, Platform.OS === 'ios' ? 'IOS' : 'ANDROID');

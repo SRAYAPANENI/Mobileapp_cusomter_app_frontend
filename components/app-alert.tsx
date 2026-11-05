@@ -99,16 +99,21 @@ export function AppAlert({
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onDismiss}>
       <View style={styles.scrim}>
         <View style={styles.card} accessibilityViewIsModal accessibilityRole="alert">
-          <View style={[styles.badge, { backgroundColor: tone.bg }]}>
-            <Icon size={20} color={tone.fg} strokeWidth={2.4} />
+          {/* The icon beside the words, not above them: one glance reads
+              what kind of message it is and what it says. */}
+          <View style={styles.head}>
+            <View style={[styles.badge, { backgroundColor: tone.bg }]}>
+              <Icon size={20} color={tone.fg} strokeWidth={2.4} />
+            </View>
+            <View style={styles.words}>
+              <ThemedText style={styles.title} accessibilityRole="header">{title}</ThemedText>
+              {!!message && (
+                <ScrollView style={{ maxHeight: MESSAGE_MAX_HEIGHT }} bounces={false} showsVerticalScrollIndicator={false}>
+                  <ThemedText style={styles.message}>{message}</ThemedText>
+                </ScrollView>
+              )}
+            </View>
           </View>
-
-          <ThemedText style={styles.title} accessibilityRole="header">{title}</ThemedText>
-          {!!message && (
-            <ScrollView style={{ maxHeight: MESSAGE_MAX_HEIGHT }} bounces={false} showsVerticalScrollIndicator={false}>
-              <ThemedText style={styles.message}>{message}</ThemedText>
-            </ScrollView>
-          )}
 
           <View style={[styles.actions, stacked && styles.actionsStacked]}>
             {actions.map((btn, i) => {
@@ -215,13 +220,24 @@ const styles = StyleSheet.create({
     shadowRadius: 32,
     elevation: 8,
   },
+  head: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 14,
+  },
   badge: {
     width: 40,
     height: 40,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+  },
+  // At least the icon's height, centred: a one-line title sits level with
+  // the icon; a longer one, or a message, runs on below.
+  words: {
+    flex: 1,
+    minHeight: 40,
+    justifyContent: 'center',
   },
   title: {
     fontSize: 18,
