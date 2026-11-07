@@ -41,7 +41,7 @@ const NGROK_URL = 'https://dill-unstirred-amply.ngrok-free.dev/v1';
 // Dodorez API on AWS (Mumbai) — see skofy-backend/deploy/README.md.
 // No laptop or ngrok tunnel needed. Switch back to NGROK_URL to test
 // against a local backend.
-const AWS_URL = 'https://16-4-28-180.sslip.io/v1';
+const AWS_URL = 'https://13-207-52-180.sslip.io/v1';
 export const BASE_URL = AWS_URL;
 if (__DEV__) console.log('[SkoFyApi] BASE_URL:', BASE_URL, '__DEV__:', __DEV__);
 
