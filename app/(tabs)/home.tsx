@@ -29,7 +29,9 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRefreshOnFocus } from '@/hooks/use-refresh-on-focus';
 import { useCustomerProfile, useSavedAddresses } from '@/services/queries/customer';
+import { useAppConfig } from '@/services/queries/app-config';
 import { qk } from '@/services/queries/keys';
+import TermsUpdatedBanner from '@/components/terms-updated-banner';
 import {
   Bell,
   Briefcase,
@@ -282,6 +284,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const barClearance = useBottomBarClearance();
   const isOnline = useIsOnline();
+  const { data: appConfig } = useAppConfig();
   // States
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [address, setAddress] = useState<string>('Detecting Location...');
@@ -1574,10 +1577,15 @@ export default function HomeScreen() {
         {/* ── Persistent voice-first hero (always visible) — this is the
              app's primary action; Explore Skills below is a secondary
              shortcut lane, not the front door. */}
+        <TermsUpdatedBanner />
+
         {renderCultfitHeroCard()}
 
-        {/* ── Pickup & Drop — pushed to the front, right after the hero. ── */}
-        {renderPickupDropBanner()}
+        {/* ── Pickup & Drop — pushed to the front, right after the hero. ──
+             Hidden if the admin portal turned this module off for the
+             customer app (app_configs modules.pickup_delivery); defaults
+             shown while config hasn't loaded yet rather than flashing away. */}
+        {appConfig?.modules.pickup_delivery !== false && renderPickupDropBanner()}
 
         {/* ── Super Fast — predefined urgent needs, its own section. ── */}
         {renderQuickNeedsSection()}

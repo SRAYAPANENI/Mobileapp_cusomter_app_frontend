@@ -1,5 +1,6 @@
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppConfig } from '@/services/queries/app-config';
 import { Image } from 'expo-image';
 import React, { type ReactNode, useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -73,6 +74,14 @@ export default function AnimatedLogoMark({
 }) {
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
+  // One admin-portal-set logo (app_configs.logo_url) for the whole app —
+  // every screen that shows the mark via this component (not just this one
+  // spot) picks it up automatically. Falls back to the bundled asset the
+  // instant it's unset/not yet loaded, so there's never a blank mark.
+  // useAppConfig() is deduped by TanStack Query, so this costs nothing extra
+  // beyond whichever other caller already fetched it.
+  const { data: appConfig } = useAppConfig();
+  const logoUrl = appConfig?.logo_url;
 
   const ringSize = size * 1.3;
   const ringOffset = -(ringSize - size) / 2;
@@ -86,7 +95,7 @@ export default function AnimatedLogoMark({
       <Animated.View entering={FadeInDown.duration(600)}>
         {children ?? (
           <Image
-            source={require('@/assets/images/logo-mark.png')}
+            source={logoUrl ? { uri: logoUrl } : require('@/assets/images/logo-mark.png')}
             style={{ width: size, height: size }}
             contentFit="contain"
           />

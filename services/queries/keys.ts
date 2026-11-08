@@ -10,4 +10,5 @@ export const qk = {
     all: ['jobs'] as const,
     active: ['jobs', 'active'] as const,
   },
+  appConfig: ['app-config', 'customer'] as const,
 };

@@ -34,6 +34,7 @@ import { clearHomeCache } from '@/services/homeCache';
 import { NetworkStatusBanner } from '@/components/network-status-banner';
 import { ActiveJobStatusBanner } from '@/components/active-job-status-banner';
 import AppLockGate from '@/components/app-lock-gate';
+import MaintenanceGate from '@/components/maintenance-gate';
 import SessionExpiredModal from '@/components/session-expired-modal';
 import { AlertHost } from '@/components/alert-host';
 import { ConnectionBanner } from '@/components/connection-banner';
@@ -126,18 +127,20 @@ export default function RootLayout() {
           <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
             <AppProvider>
               <PostRequirementProvider>
-                <AppLockGate>
-                  <Stack screenOptions={{ headerShown: false }}>
-                    <Stack.Screen name="index" />
-                    <Stack.Screen name="login" options={{ animation: 'fade' }} />
-                    <Stack.Screen name="register" options={{ animation: 'slide_from_right' }} />
-                    <Stack.Screen name="forgot-password" options={{ animation: 'slide_from_right' }} />
-                    <Stack.Screen name="(tabs)" options={{ animation: 'slide_from_right' }} />
-                    <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-                  </Stack>
-                  <NetworkStatusBanner />
-                  <ActiveJobStatusBanner />
-                </AppLockGate>
+                <MaintenanceGate>
+                  <AppLockGate>
+                    <Stack screenOptions={{ headerShown: false }}>
+                      <Stack.Screen name="index" />
+                      <Stack.Screen name="login" options={{ animation: 'fade' }} />
+                      <Stack.Screen name="register" options={{ animation: 'slide_from_right' }} />
+                      <Stack.Screen name="forgot-password" options={{ animation: 'slide_from_right' }} />
+                      <Stack.Screen name="(tabs)" options={{ animation: 'slide_from_right' }} />
+                      <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+                    </Stack>
+                    <NetworkStatusBanner />
+                    <ActiveJobStatusBanner />
+                  </AppLockGate>
+                </MaintenanceGate>
                 {/* The app's dialog for showAlert() calls (components/alert-host.tsx). */}
                 <ConnectionBanner />
                 <AlertHost />

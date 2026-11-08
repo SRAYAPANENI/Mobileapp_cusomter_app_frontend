@@ -607,6 +607,15 @@ export interface AccountDeletionStatus {
   grace_days: number;
 }
 
+/** Remote app configuration, set from the admin portal (app_config router) —
+ * logo, maintenance mode, feature-module toggles, and Terms & Conditions. */
+export interface AppConfig {
+  logo_url: string | null;
+  maintenance: { enabled: boolean; message: string | null; until: string | null };
+  modules: Record<string, boolean>;
+  terms: { version: number; content: string; needs_review?: boolean };
+}
+
 export const SkoFyApi = {
   account: {
     deletionStatus: async (): Promise<AccountDeletionStatus> => request('/account/deletion') as any,
@@ -861,6 +870,16 @@ export const SkoFyApi = {
 
     getActiveJobs: async (): Promise<any[]> =>
       request('/jobs'),
+  },
+
+  // ── Remote app configuration (admin portal) ─────────────────────────────
+  // Works logged out (maintenance gating at launch) and logged in (the
+  // "terms updated" banner, via terms.needs_review) — request() already
+  // attaches a bearer token whenever one exists, no skipAuth needed.
+  appConfig: {
+    get: async (): Promise<AppConfig> => request('/app-config?app=customer'),
+    markTermsSeen: async (): Promise<{ seen_version: number }> =>
+      request('/app-config/customer/terms-seen', { method: 'POST' }),
   },
 
   // ── Jobs ──────────────────────────────────────────────────────────────────
