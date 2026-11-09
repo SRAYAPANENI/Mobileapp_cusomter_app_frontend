@@ -611,7 +611,7 @@ export interface AccountDeletionStatus {
  * logo, maintenance mode, feature-module toggles, and Terms & Conditions. */
 export interface AppConfig {
   logo_url: string | null;
-  maintenance: { enabled: boolean; message: string | null; until: string | null };
+  maintenance: { enabled: boolean; message: string | null; until: string | null; scheduled_at: string | null };
   modules: Record<string, boolean>;
   terms: { version: number; content: string; needs_review?: boolean };
 }

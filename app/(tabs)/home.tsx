@@ -32,6 +32,7 @@ import { useCustomerProfile, useSavedAddresses } from '@/services/queries/custom
 import { useAppConfig } from '@/services/queries/app-config';
 import { qk } from '@/services/queries/keys';
 import TermsUpdatedBanner from '@/components/terms-updated-banner';
+import ScheduledMaintenanceBanner from '@/components/scheduled-maintenance-banner';
 import {
   Bell,
   Briefcase,
@@ -1577,6 +1578,7 @@ export default function HomeScreen() {
         {/* ── Persistent voice-first hero (always visible) — this is the
              app's primary action; Explore Skills below is a secondary
              shortcut lane, not the front door. */}
+        <ScheduledMaintenanceBanner />
         <TermsUpdatedBanner />
 
         {renderCultfitHeroCard()}
