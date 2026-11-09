@@ -878,8 +878,9 @@ export const SkoFyApi = {
   // attaches a bearer token whenever one exists, no skipAuth needed.
   appConfig: {
     get: async (): Promise<AppConfig> => request('/app-config?app=customer'),
-    markTermsSeen: async (): Promise<{ seen_version: number }> =>
-      request('/app-config/customer/terms-seen', { method: 'POST' }),
+    /** Explicit consent — the checkbox + Accept button on /terms. */
+    acceptTerms: async (): Promise<{ accepted_version: number }> =>
+      request('/app-config/customer/terms-accept', { method: 'POST' }),
   },
 
   // ── Jobs ──────────────────────────────────────────────────────────────────

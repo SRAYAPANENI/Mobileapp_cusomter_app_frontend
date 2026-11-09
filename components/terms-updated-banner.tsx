@@ -2,36 +2,47 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppConfig } from '@/services/queries/app-config';
-import { SkoFyApi } from '@/services/api';
-import { useQueryClient } from '@tanstack/react-query';
-import { qk } from '@/services/queries/keys';
 import { FileText, X } from 'lucide-react-native';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, TouchableOpacity } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 import { router } from 'expo-router';
 import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
 
-// Dismissible, not blocking — the admin portal bumped app_configs.terms_version
-// since this person last dismissed it (terms.needs_review, which only comes
-// back true once logged in — see app/domain/app_config.py's needs_terms_review).
+// Dismissing the X is a snooze, not acceptance — only the checkbox + Accept
+// button on /terms records consent (AppConfigService.accept_terms). Snoozed
+// per the version it was dismissed for, so a further bump while someone's
+// mid-snooze shows right away instead of waiting out the old snooze.
+const DISMISS_KEY = 'terms_banner_dismissed';
+const RESHOW_AFTER_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+
 export default function TermsUpdatedBanner() {
   const colorScheme = useColorScheme() ?? 'light';
   const t = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(t), [colorScheme]);
   const { data: config } = useAppConfig();
-  const queryClient = useQueryClient();
-  // Locally hidden the instant it's tapped, so the dismiss feels instant —
-  // the server call confirms it in the background; a failure just means the
-  // banner comes back next launch, not stuck forever either way.
-  const [dismissed, setDismissed] = useState(false);
+  const version = config?.terms.version;
+  const [snoozed, setSnoozed] = useState(false);
 
-  if (dismissed || !config?.terms.needs_review) return null;
+  useEffect(() => {
+    let live = true;
+    SecureStore.getItemAsync(DISMISS_KEY)
+      .then((v) => {
+        if (!live || !v) return;
+        const [atStr, verStr] = v.split(':');
+        const sameVersion = Number(verStr) === version;
+        const stillWithinWindow = Date.now() - Number(atStr) < RESHOW_AFTER_MS;
+        setSnoozed(sameVersion && stillWithinWindow);
+      })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [version]);
+
+  if (snoozed || !config?.terms.needs_review) return null;
 
   const dismiss = () => {
-    setDismissed(true);
-    SkoFyApi.appConfig.markTermsSeen()
-      .then(() => queryClient.invalidateQueries({ queryKey: qk.appConfig }))
-      .catch(() => {});
+    setSnoozed(true);
+    SecureStore.setItemAsync(DISMISS_KEY, `${Date.now()}:${version}`).catch(() => {});
   };
 
   return (
