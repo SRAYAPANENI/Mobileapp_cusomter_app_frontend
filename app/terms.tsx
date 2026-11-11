@@ -12,6 +12,13 @@ import { Check, ChevronLeft } from 'lucide-react-native';
 import React, { useState } from 'react';
 import { ActivityIndicator, ScrollView, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
 
+// The date this content last actually changed (terms_updated_at — never
+// bumped by an unrelated logo/maintenance save), not a bare version number
+// a reader has no way to judge the age of.
+function formatTermsDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 // The admin portal's app_configs.terms_content for this app, dynamic — no
 // app release needed to update it. Reached from the dashboard's "terms
 // updated" banner, or any future "Terms & Conditions" settings link.
@@ -57,7 +64,7 @@ export default function TermsScreen() {
       ) : (
         <>
           <ScrollView style={s.scroll} contentContainerStyle={padBottom([s.body, { paddingBottom: 24 }], needsReview ? 0 : bottomInset)}>
-            <ThemedText style={s.version}>Version {config.terms.version}</ThemedText>
+            <ThemedText style={s.version}>Updated {formatTermsDate(config.terms.updated_at)}</ThemedText>
             <ThemedText style={s.content}>{config.terms.content}</ThemedText>
           </ScrollView>
           {needsReview && (
