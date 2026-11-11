@@ -29,6 +29,7 @@ export const unstable_settings = {
 import { AppProvider } from '@/context/AppContext';
 import { PostRequirementProvider } from '@/context/PostRequirementContext';
 import { clearPushForSignOut, initCallManager, registerFcmToken } from '@/services/callManager';
+import { startAppConfigSocket } from '@/services/app-config-socket';
 import { STRIPE_PUBLISHABLE_KEY, TokenStore, setSessionExpiredHandler } from '@/services/api';
 import { clearHomeCache } from '@/services/homeCache';
 import { NetworkStatusBanner } from '@/components/network-status-banner';
@@ -75,6 +76,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     initCallManager();
+    startAppConfigSocket();
     TokenStore.getAccessToken().then(token => {
       if (token) registerFcmToken();
     });

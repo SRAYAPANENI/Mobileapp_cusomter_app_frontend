@@ -881,6 +881,11 @@ export const SkoFyApi = {
     /** Explicit consent — the checkbox + Accept button on /terms. */
     acceptTerms: async (): Promise<{ accepted_version: number }> =>
       request('/app-config/customer/terms-accept', { method: 'POST' }),
+    /** The live line an admin save broadcasts "app_config_changed" on
+     * (app/api/v1/ws.py) — same {type:'auth', token} first message as
+     * chat.getSocketUrl; the app is derived from the token's role, not a URL
+     * param. Signed-in only, same as every other job/support socket here. */
+    getSocketUrl: (): string => `${BASE_URL.replace(/^http/, 'ws')}/ws/app-config`,
   },
 
   // ── Jobs ──────────────────────────────────────────────────────────────────
