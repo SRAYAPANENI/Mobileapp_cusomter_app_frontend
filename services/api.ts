@@ -450,6 +450,12 @@ async function _logoutOnServer(access: string | null, refresh: string | null, bo
 export async function getFreshAccessToken(): Promise<string | null> {
   const token = await TokenStore.getAccessToken();
   if (token && !_expiresWithin(token, 60)) return token;
+  // Never signed in on this phone at all (a fresh install, or signed out):
+  // no refresh token to try, and nothing to call "Signed out" on — a socket
+  // started unconditionally at root mount (app-config, calls) used to reach
+  // this with literally no session and still trigger the session-expired
+  // alert, which read as a lie to someone who'd never logged in.
+  if (!(await TokenStore.getRefreshToken())) return null;
   try {
     const fresh = await _refreshAccessToken();
     if (fresh) return fresh;
