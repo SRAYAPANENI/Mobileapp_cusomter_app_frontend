@@ -6,7 +6,7 @@ import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useEffect, useRef } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 import { Text } from '@/components/scaled-text';
-import { TokenStore, clearStaleSessionAfterReinstall } from '@/services/api';
+import { TokenStore, staleSessionCleared } from '@/services/api';
 import { handleInitialCallAction, handleInitialNotification } from '@/services/callManager';
 import { prefetchHomeEssentials } from '@/services/homeCache';
 
@@ -29,7 +29,7 @@ export default function SplashScreen() {
   useFocusEffect(useCallback(() => {
     focusedRef.current = true;
     if (leftRef.current || handledRef.current) {
-      clearStaleSessionAfterReinstall().then(() => TokenStore.getAccessToken()).then(token => {
+      staleSessionCleared.then(() => TokenStore.getAccessToken()).then(token => {
         router.replace(token ? '/home' : '/login');
       });
     }
@@ -67,7 +67,7 @@ export default function SplashScreen() {
     // has a chance to run would read back a dead session as "logged in" for
     // this one launch, briefly show the home screen from cache, then bounce
     // into a confusing "Signed Out" the moment a live call gets rejected.
-    const tokenPromise = clearStaleSessionAfterReinstall().then(() => TokenStore.getAccessToken());
+    const tokenPromise = staleSessionCleared.then(() => TokenStore.getAccessToken());
     tokenPromise.then(token => {
       if (token) prefetchHomeEssentials();
     });

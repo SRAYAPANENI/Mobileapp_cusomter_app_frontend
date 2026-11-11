@@ -30,7 +30,7 @@ import { AppProvider } from '@/context/AppContext';
 import { PostRequirementProvider } from '@/context/PostRequirementContext';
 import { clearPushForSignOut, initCallManager, registerFcmToken } from '@/services/callManager';
 import { startAppConfigSocket } from '@/services/app-config-socket';
-import { STRIPE_PUBLISHABLE_KEY, TokenStore, clearStaleSessionAfterReinstall, setSessionExpiredHandler } from '@/services/api';
+import { STRIPE_PUBLISHABLE_KEY, TokenStore, staleSessionCleared, setSessionExpiredHandler } from '@/services/api';
 import { clearHomeCache } from '@/services/homeCache';
 import { NetworkStatusBanner } from '@/components/network-status-banner';
 import { ActiveJobStatusBanner } from '@/components/active-job-status-banner';
@@ -75,16 +75,11 @@ export default function RootLayout() {
   };
 
   useEffect(() => {
-    // Must finish before anything below reads a stored token: iOS Keychain
-    // (and Android auto-backup) survive an uninstall, so a reinstalled app
-    // can start with a dead, pre-uninstall session still sitting in
-    // SecureStore. index.tsx's splash screen also calls this (so a fresh
-    // install is clean before it ever decides /login vs /home), but that
-    // runs in parallel with this effect, not before it — unawaited here,
-    // the app-config socket and registerFcmToken below were racing it,
-    // sometimes reading the stale token first and surfacing a "Signed Out"
-    // alert nobody triggered, right as the person opened Register.
-    clearStaleSessionAfterReinstall().then(() => {
+    // staleSessionCleared started the instant services/api.ts loaded (well
+    // before this effect) — awaiting the shared promise here just orders
+    // this effect's own token reads after it, same as every other starter
+    // in the app (hooks/use-active-job-status.ts, app/index.tsx).
+    staleSessionCleared.then(() => {
       initCallManager();
       startAppConfigSocket();
       TokenStore.getAccessToken().then(token => {

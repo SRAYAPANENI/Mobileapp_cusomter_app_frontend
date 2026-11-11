@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { SkoFyApi, TokenStore } from '@/services/api';
+import { SkoFyApi, TokenStore, staleSessionCleared } from '@/services/api';
 
 export type ActiveJobBanner = {
   jobId: string;
@@ -71,6 +71,13 @@ export function useActiveJobStatus(): ActiveJobBanner[] {
     let cancelled = false;
 
     const poll = async () => {
+      // MaintenanceGate wraps the whole app, so this hook mounts (and this
+      // poll fires) the instant ANY screen does — including before login, on
+      // a freshly (re)installed app. Waiting on the same shared cleanup
+      // every other starter awaits (services/api.ts) keeps this from reading
+      // a dead, pre-uninstall token straight out of Keychain and getting it
+      // refused as an unprompted "Signed Out".
+      await staleSessionCleared;
       const token = await TokenStore.getAccessToken();
       if (!token) {
         if (!cancelled) setBanners([]);
