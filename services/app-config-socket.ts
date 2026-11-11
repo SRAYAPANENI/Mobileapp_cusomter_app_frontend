@@ -21,6 +21,15 @@ const MAX_RETRY_MS = 30_000;
 // The server closes a line that's silent for 75 s (ws.py's _hold_open).
 const PING_MS = 25_000;
 
+/** Anything else that needs to react to the same nudge but doesn't read
+ * through useAppConfig/react-query. Subscribe with onAppConfigChanged. */
+const listeners = new Set<() => void>();
+
+export function onAppConfigChanged(callback: () => void): () => void {
+  listeners.add(callback);
+  return () => listeners.delete(callback);
+}
+
 let socket: WebSocket | null = null;
 let started = false;
 let retry = 1000;
@@ -59,6 +68,7 @@ async function connect() {
       const data = JSON.parse(String(event.data));
       if (data?.type === 'app_config_changed') {
         queryClient.invalidateQueries({ queryKey: qk.appConfig });
+        for (const listener of listeners) listener();
       }
     } catch {
       // Malformed frame — never worth crashing a background listener over.
