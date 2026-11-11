@@ -1024,7 +1024,7 @@ export default function RegisterScreen() {
                 ) : (
                   <Circle size={22} color={themeColors.icon} />
                 )}
-                <ThemedText style={styles.checkboxLabel}>I agree to <Text style={{ color: themeColors.brand }}>Terms & Conditions</Text></ThemedText>
+                <ThemedText style={styles.checkboxLabel}>I agree to <Text style={{ color: themeColors.brand, textDecorationLine: 'underline' }} onPress={() => router.push('/terms' as any)}>Terms & Conditions</Text></ThemedText>
               </TouchableOpacity>
 
               <TouchableOpacity

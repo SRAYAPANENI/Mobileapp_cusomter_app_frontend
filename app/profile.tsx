@@ -103,7 +103,6 @@ export default function ProfileScreen() {
   const [appLockEnabled, setAppLockEnabled] = useState(false);
   const [appLockAvailable, setAppLockAvailable] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isTermsOpen, setIsTermsOpen] = useState(false);
   const [isPasswordOpen, setIsPasswordOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -1234,7 +1233,7 @@ export default function ProfileScreen() {
                 style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}
                 onPress={() => {
                   setIsSettingsOpen(false);
-                  setTimeout(() => setIsTermsOpen(true), 500);
+                  router.push('/terms' as any);
                 }}
               >
                 <View style={styles.settingInfo}>
@@ -1328,34 +1327,6 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
-
-      {/* Terms Modal */}
-      <Modal visible={isTermsOpen} animationType="slide" onRequestClose={() => setIsTermsOpen(false)}>
-        <ThemedView style={{ flex: 1 }}>
-          {/* Edge-to-edge: the modal draws under both bars, so the real heights. */}
-          <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-            <TouchableOpacity onPress={() => setIsTermsOpen(false)}>
-              <ChevronLeft size={24} color="#000" />
-            </TouchableOpacity>
-            <ThemedText style={styles.headerTitle}>Terms & Conditions</ThemedText>
-            <View style={{ width: 24 }} />
-          </View>
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingBottom: 20 + insets.bottom }}>
-            <ThemedText style={{ fontSize: 18, lineHeight: 24, fontFamily: Fonts.poppinsBold, marginBottom: 12 }}>1. Agreement</ThemedText>
-            <ThemedText style={{ color: '#4B5563', lineHeight: 24, marginBottom: 20 }}>
-              By using Dodorez, you agree to connect with various service providers. We act as a platform for discovery...
-            </ThemedText>
-            <ThemedText style={{ fontSize: 18, lineHeight: 24, fontFamily: Fonts.poppinsBold, marginBottom: 12 }}>2. Privacy</ThemedText>
-            <ThemedText style={{ color: '#4B5563', lineHeight: 24, marginBottom: 20 }}>
-              Your data is protected under our strict security policies. We never share your personal information with third parties without consent...
-            </ThemedText>
-            <ThemedText style={{ fontSize: 18, lineHeight: 24, fontFamily: Fonts.poppinsBold, marginBottom: 12 }}>3. Payments</ThemedText>
-            <ThemedText style={{ color: '#4B5563', lineHeight: 24, marginBottom: 20 }}>
-              Visiting fees are paid directly to providers unless booked via the app wallet...
-            </ThemedText>
-          </ScrollView>
-        </ThemedView>
       </Modal>
 
       {/* Change Password Modal */}
