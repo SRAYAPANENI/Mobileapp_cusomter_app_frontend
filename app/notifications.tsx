@@ -80,6 +80,8 @@ function getIcon(type: string) {
       return { icon: FileText, color: '#F59E0B', bg: '#FFFBEB' };
     case 'job_expired':
       return { icon: Clock, color: '#EF4444', bg: '#FEF2F2' };
+    case 'terms_updated':
+      return { icon: FileText, color: '#111827', bg: '#F3F4F6' };
     default:
       return { icon: Bell, color: '#6B7280', bg: '#F3F4F6' };
   }
@@ -184,6 +186,10 @@ export default function NotificationsScreen() {
     if (item.notif_type === 'support_ticket') {
       if (item.ticket_id) openScreen('/support-chat', item.ticket_id, { ticketId: item.ticket_id });
       else router.push('/help-support' as any);
+      return;
+    }
+    if (item.notif_type === 'terms_updated') {
+      router.push('/terms' as any);
       return;
     }
     if (!item.job_id && item.image_url) {

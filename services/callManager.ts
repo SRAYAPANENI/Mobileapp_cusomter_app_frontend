@@ -583,7 +583,7 @@ async function showChatMessageNotification(jobId: string, title: string, body: s
   });
 }
 
-type JobUpdateRoute = '/applicants' | '/my-jobs' | '/track-provider' | '/chat' | '/edit-job' | '/account-standing' | '/job-history' | '/regular-bookings';
+type JobUpdateRoute = '/applicants' | '/my-jobs' | '/track-provider' | '/chat' | '/edit-job' | '/account-standing' | '/job-history' | '/regular-bookings' | '/terms';
 
 /** Pushes that update a job the customer is following, and where a tap
  * opens — one list for the background and foreground listeners. */
@@ -618,6 +618,10 @@ const JOB_UPDATE_ROUTES: Record<string, JobUpdateRoute> = {
   care_update: '/track-provider',
   // Hired but not paid: book before the provider is freed (MONEY_RULES §14).
   booking_pay: '/track-provider',
+  // Admin published new Terms & Conditions (AppConfigService.admin_update) —
+  // straight to the Terms screen, which always reads the current server
+  // config live, never a stale cached version.
+  terms_updated: '/terms',
 };
 
 /** Where a job update opens — the same for a tapped push and a row in the

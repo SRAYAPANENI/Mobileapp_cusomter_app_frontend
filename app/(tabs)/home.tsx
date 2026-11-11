@@ -1780,6 +1780,10 @@ export default function HomeScreen() {
                 <ThemedText style={styles.locationText} numberOfLines={1}>Describe a problem, get matched with a provider</ThemedText>
               </View>
             </TouchableOpacity>
+            {/* Hidden if the admin portal turned this module off (same
+                condition as the Home banner above) — this chooser used to
+                show it unconditionally, the one path that wasn't gated. */}
+            {appConfig?.modules.pickup_delivery !== false && (
             <TouchableOpacity style={styles.locationOption} onPress={handleBookChoicePickupDrop}>
               <View style={[styles.locationIconBox, { backgroundColor: '#FEF3C7' }]}>
                 <Package size={20} color="#F59E0B" />
@@ -1789,6 +1793,7 @@ export default function HomeScreen() {
                 <ThemedText style={styles.locationText} numberOfLines={1}>Groceries, pharmacy & more — picked up and delivered</ThemedText>
               </View>
             </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.closeLocationBtn} onPress={() => setBookChoiceModalVisible(false)}>
               <ThemedText style={styles.closeLocationBtnText}>Cancel</ThemedText>
             </TouchableOpacity>
@@ -1954,7 +1959,11 @@ export default function HomeScreen() {
         onFallbackToManual={() => {
           router.push({ pathname: '/post-requirement/step1', params: { selectedAddress: pendingVoiceAddress, lat: pendingVoiceLat?.toString() ?? '', lng: pendingVoiceLng?.toString() ?? '' } });
         }}
-        onPickupDropoffDetected={() => {
+        // Left unset (not just a no-op) while the admin portal has Pickup &
+        // Delivery turned off — the voice modal only tries the handoff this
+        // enables when the prop is actually passed, so this was the one path
+        // that could still reach the disabled feature by speaking to the AI.
+        onPickupDropoffDetected={appConfig?.modules.pickup_delivery !== false ? () => {
           // The voice modal already called onClose() itself — this just
           // hands off to the same dedicated flow the Home banner and "Book
           // Now" chooser use, treating the location this voice session
@@ -1963,7 +1972,7 @@ export default function HomeScreen() {
           setPendingDropoffLng(pendingVoiceLng);
           setPendingDropoffAddress(pendingVoiceAddress);
           setPickupDropModalVisible(true);
-        }}
+        } : undefined}
       />
 
       {/* ── Quick Need (Super Fast) Modal ── */}
