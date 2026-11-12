@@ -99,12 +99,19 @@ export default function RootLayout() {
       // check were ever wrong.
       clearHomeCache().catch(() => {});
       // A stale leftover token can 401 a background call (e.g. FCM
-      // registration on launch) seconds after the user already landed on
-      // /login themselves. Redirecting to /login again in that case still
-      // triggers a fresh mount of the screen, silently wiping anything
-      // they'd already typed (a half-entered phone number) — so skip the
-      // redirect entirely when we're already there.
-      if (pathnameRef.current !== '/login') {
+      // registration or the app-config socket on launch) while the person
+      // is on a screen that never needed a session in the first place —
+      // not just /login (the original case this guarded), but /register
+      // and /forgot-password too: creating a brand-new account is exactly
+      // when a leftover token from a PREVIOUS install/account is most
+      // likely to still be sitting in Keychain (it survives an uninstall
+      // by design) and most jarring to surface as "Signed out" over, since
+      // nothing was ever signed in this launch to begin with. Redirecting
+      // there again would also silently wipe anything already typed (a
+      // half-filled registration form) — so skip the redirect/alert
+      // entirely on any of these.
+      const PRE_AUTH_ROUTES = ['/login', '/register', '/forgot-password'];
+      if (!PRE_AUTH_ROUTES.includes(pathnameRef.current)) {
         // Previously a silent, unexplained router.replace() — most jarring
         // when it fires because the user tapped a notification (a call
         // invite, a chat message) and got dumped onto the login screen
