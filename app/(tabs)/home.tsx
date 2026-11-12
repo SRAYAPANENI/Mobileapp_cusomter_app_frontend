@@ -53,6 +53,7 @@ import {
   Package,
   Paintbrush,
   Pencil,
+  Search,
   ShieldCheck,
   Snowflake,
   Sparkles,
@@ -65,6 +66,7 @@ import {
   X as XIcon,
   Zap,
 } from 'lucide-react-native';
+import { GooglePlacesService, GooglePlaceSuggestion } from '@/services/google-places';
 import Reanimated, {
   FadeInUp,
   useAnimatedStyle,
@@ -73,8 +75,9 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, BackHandler, Dimensions, FlatList, Linking, Modal, Platform, Animated as RNAnimated, Easing as RNEasing, RefreshControl, ScrollView, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { Text } from '@/components/scaled-text';
+import { Text, TextInput } from '@/components/scaled-text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
 // Conditionally import MapView only for native platforms
 let MapView: any;
@@ -307,6 +310,16 @@ export default function HomeScreen() {
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [mapReady, setMapReady] = useState(false);
   const [isLocationModalVisible, setIsLocationModalVisible] = useState(false);
+  // The "Confirm Service Location" modal's own address search — same
+  // GooglePlacesService used by register.tsx/profile.tsx, so a customer can
+  // type any address here too instead of being limited to current-location
+  // or a previously-saved one (the only two options this modal offered
+  // before). Reset whenever the modal opens so a stale search from a
+  // previous booking doesn't linger into the next one.
+  const [locationSearchQuery, setLocationSearchQuery] = useState('');
+  const [locationSuggestions, setLocationSuggestions] = useState<GooglePlaceSuggestion[]>([]);
+  const [locationSearching, setLocationSearching] = useState(false);
+  const [locationSearchError, setLocationSearchError] = useState<string | null>(null);
   const [isExitModalVisible, setIsExitModalVisible] = useState(false);
   const [showLocationModal, setShowLocationModal] = useState(false);
   // True once we've established location truly can't be obtained (permission
@@ -905,6 +918,54 @@ export default function HomeScreen() {
 
   const handleCancelJob = (jobId: string) => {
     setJobs(prev => prev.filter(j => j.id !== jobId));
+  };
+
+  useEffect(() => {
+    if (!isLocationModalVisible) return;
+    setLocationSearchQuery('');
+    setLocationSuggestions([]);
+    setLocationSearching(false);
+    setLocationSearchError(null);
+  }, [isLocationModalVisible]);
+
+  useEffect(() => {
+    if (!isLocationModalVisible || locationSearchQuery.trim().length < 2) {
+      setLocationSuggestions([]);
+      setLocationSearchError(null);
+      return;
+    }
+    const controller = new AbortController();
+    const handle = setTimeout(async () => {
+      setLocationSearching(true);
+      try {
+        const bias = location ? { latitude: location.coords.latitude, longitude: location.coords.longitude } : undefined;
+        const results = await GooglePlacesService.searchAddress(locationSearchQuery, controller.signal, bias);
+        if (controller.signal.aborted) return;
+        setLocationSuggestions(results);
+        setLocationSearchError(results.length === 0 ? 'No locations found' : null);
+      } catch (e: any) {
+        if (controller.signal.aborted) return;
+        setLocationSuggestions([]);
+        setLocationSearchError(`Could not fetch locations: ${e?.message || 'check your connection.'}`);
+      } finally {
+        if (!controller.signal.aborted) setLocationSearching(false);
+      }
+    }, 300);
+    return () => { clearTimeout(handle); controller.abort(); };
+  }, [locationSearchQuery, isLocationModalVisible, location]);
+
+  const selectLocationSuggestion = async (item: GooglePlaceSuggestion) => {
+    try {
+      setLocationSearching(true);
+      const details = await GooglePlacesService.getPlaceDetails(item.place_id);
+      setLocationSuggestions([]);
+      setLocationSearchQuery('');
+      confirmLocationSelection(details.formatted_address, details.latitude, details.longitude);
+    } catch {
+      setLocationSearchError('Could not fetch location details. Please check your internet connection.');
+    } finally {
+      setLocationSearching(false);
+    }
   };
 
   const confirmLocationSelection = (addr: string, lat?: number, lng?: number) => {
@@ -1804,10 +1865,43 @@ export default function HomeScreen() {
       {/* ── Location Modal ── */}
       <Modal statusBarTranslucent navigationBarTranslucent visible={isLocationModalVisible} transparent animationType="fade" onRequestClose={() => setIsLocationModalVisible(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setIsLocationModalVisible(false)}>
+          {/* The address search box added here needs the keyboard to not just
+              bury this bottom sheet — this modal had no text input before,
+              so nothing previously needed it. */}
+          <KeyboardAvoidingView behavior="padding" style={styles.keyboardAvoidingFill}>
           <Reanimated.View entering={FadeInUp} style={[styles.locationModalContent, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12 }]}>
             <View style={styles.locationModalHeader}>
               <ThemedText style={styles.locationModalTitle}>Confirm Service Location</ThemedText>
               <ThemedText style={styles.locationModalSubtitle}>Where do you need the service?</ThemedText>
+            </View>
+            {/* The search box's own suggestions, plus however many saved
+                addresses there are, can run taller than the screen once the
+                keyboard is up — scrollable so both stay reachable instead of
+                the list just overflowing past the sheet's bottom. */}
+            <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 420 }}>
+            <View style={styles.searchFieldWrap}>
+              <View style={styles.searchFieldRow}>
+                <Search size={16} color={themeColors.textMuted} />
+                <TextInput
+                  style={styles.searchFieldInput}
+                  placeholder="Search for an address"
+                  placeholderTextColor={themeColors.textMuted}
+                  value={locationSearchQuery}
+                  onChangeText={setLocationSearchQuery}
+                />
+                {locationSearching && <ActivityIndicator size="small" color={themeColors.textMuted} />}
+              </View>
+              {locationSuggestions.length > 0 && (
+                <View style={styles.searchSuggestionsBox}>
+                  {locationSuggestions.map(item => (
+                    <TouchableOpacity key={item.place_id} style={styles.searchSuggestionRow} onPress={() => selectLocationSuggestion(item)}>
+                      <Text style={styles.searchSuggestionMain} numberOfLines={1}>{item.structured_formatting.main_text}</Text>
+                      <Text style={styles.searchSuggestionSecondary} numberOfLines={1}>{item.structured_formatting.secondary_text}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              {!!locationSearchError && <Text style={styles.searchErrorText}>{locationSearchError}</Text>}
             </View>
             <TouchableOpacity style={styles.locationOption} onPress={() => confirmLocationSelection(address, location?.coords.latitude, location?.coords.longitude)}>
               <View style={[styles.locationIconBox, { backgroundColor: '#E0F2FE' }]}>
@@ -1851,10 +1945,12 @@ export default function HomeScreen() {
                 );
               })
             )}
+            </ScrollView>
             <TouchableOpacity style={styles.closeLocationBtn} onPress={() => setIsLocationModalVisible(false)}>
               <ThemedText style={styles.closeLocationBtnText}>Cancel</ThemedText>
             </TouchableOpacity>
           </Reanimated.View>
+          </KeyboardAvoidingView>
         </TouchableOpacity>
       </Modal>
 
@@ -2751,6 +2847,10 @@ function makeStyles(t: typeof Colors.light) {
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
+  keyboardAvoidingFill: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
   locationModalContent: {
     backgroundColor: t.card,
     borderTopLeftRadius: 32,
@@ -2909,6 +3009,57 @@ function makeStyles(t: typeof Colors.light) {
     fontFamily: Fonts.poppins,
     color: t.textSecondary,
     marginTop: 4,
+  },
+  searchFieldWrap: {
+    marginBottom: 16,
+  },
+  searchFieldRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: t.surface,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    height: 50,
+  },
+  searchFieldInput: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 18,
+    fontFamily: Fonts.poppins,
+    color: t.textPrimary,
+  },
+  searchSuggestionsBox: {
+    marginTop: 8,
+    backgroundColor: t.surface,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  searchSuggestionRow: {
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: t.borderSubtle,
+  },
+  searchSuggestionMain: {
+    fontSize: 13.5,
+    lineHeight: 18,
+    fontFamily: Fonts.poppinsSemiBold,
+    color: t.textPrimary,
+  },
+  searchSuggestionSecondary: {
+    fontSize: 11.5,
+    lineHeight: 16,
+    fontFamily: Fonts.poppins,
+    color: t.textSecondary,
+    marginTop: 2,
+  },
+  searchErrorText: {
+    fontSize: 11.5,
+    lineHeight: 16,
+    fontFamily: Fonts.poppins,
+    color: '#EF4444',
+    marginTop: 6,
   },
   locationOption: {
     flexDirection: 'row',
