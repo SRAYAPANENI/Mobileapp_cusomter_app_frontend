@@ -61,12 +61,12 @@ export default function SplashScreen() {
     // window to resolve in the background instead of starting from zero
     // the moment the user actually lands there.
     //
-    // Chained after clearStaleSessionAfterReinstall() — a pre-uninstall
-    // token can still be sitting in SecureStore/Keychain on a fresh install
-    // (see that function's own comment); reading it here before the clear
-    // has a chance to run would read back a dead session as "logged in" for
-    // this one launch, briefly show the home screen from cache, then bounce
-    // into a confusing "Signed Out" the moment a live call gets rejected.
+    // Chained after staleSessionCleared (services/api.ts) — a pre-uninstall
+    // token can still be sitting in SecureStore/Keychain on a fresh install;
+    // reading it here before that clear has a chance to run would read back
+    // a dead session as "logged in" for this one launch, briefly show the
+    // home screen from cache, then bounce into a confusing "Signed Out" the
+    // moment a live call gets rejected.
     const tokenPromise = staleSessionCleared.then(() => TokenStore.getAccessToken());
     tokenPromise.then(token => {
       if (token) prefetchHomeEssentials();
