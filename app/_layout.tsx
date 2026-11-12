@@ -109,8 +109,12 @@ export default function RootLayout() {
       // nothing was ever signed in this launch to begin with. Redirecting
       // there again would also silently wipe anything already typed (a
       // half-filled registration form) — so skip the redirect/alert
-      // entirely on any of these.
-      const PRE_AUTH_ROUTES = ['/login', '/register', '/forgot-password'];
+      // entirely on any of these. '/' (app/index.tsx, the splash) is in
+      // here too: its own 2.5s branding animation is exactly the window
+      // the app-config socket and FCM registration resolve in, so a dead
+      // leftover token can just as easily surface this before the person
+      // has navigated anywhere at all.
+      const PRE_AUTH_ROUTES = ['/', '/login', '/register', '/forgot-password'];
       if (!PRE_AUTH_ROUTES.includes(pathnameRef.current)) {
         // Previously a silent, unexplained router.replace() — most jarring
         // when it fires because the user tapped a notification (a call
