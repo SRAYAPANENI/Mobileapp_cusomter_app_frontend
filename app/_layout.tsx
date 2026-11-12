@@ -154,6 +154,7 @@ export default function RootLayout() {
                       <Stack.Screen name="register" options={{ animation: 'slide_from_right' }} />
                       <Stack.Screen name="forgot-password" options={{ animation: 'slide_from_right' }} />
                       <Stack.Screen name="(tabs)" options={{ animation: 'slide_from_right' }} />
+                      <Stack.Screen name="pickup-drop" options={{ animation: 'slide_from_right' }} />
                       <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
                     </Stack>
                     <NetworkStatusBanner />

@@ -6,13 +6,14 @@ import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
-import { router } from 'expo-router';
-import { ArrowDownToLine, ArrowUpFromLine, Bookmark, Camera, ClipboardPaste, CheckCircle2, Home, IdCard, MapPin, Package, ShieldAlert, Square, SquareCheck, Store, Video as VideoIcon, X } from 'lucide-react-native';
-import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { ArrowDownToLine, ArrowUpFromLine, Bookmark, Camera, ChevronLeft, ClipboardPaste, CheckCircle2, Home, IdCard, MapPin, ShieldAlert, Square, SquareCheck, Store, Video as VideoIcon, X } from 'lucide-react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, BackHandler, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Text, TextInput } from '@/components/scaled-text';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ThemedView } from '@/components/themed-view';
+import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 import { PickupOptions } from '@/components/pickup-options';
 import {
   DEFAULT_PERSON_PICKUP_RULES, PersonPickupRules, PickupDetails, PickupDirection, PickupPurchase, PickupSource, PickupTiming,
@@ -22,22 +23,23 @@ import {
 
 type MediaItem = { uri: string; type: 'image' | 'video' };
 
-// Posted directly from the home screen's Pickup & Drop banner — no
-// intermediate picker screen (same "modal, not a route" pattern as
-// QuickNeedModal). The customer's already-confirmed location (from the
-// shared location picker in home.tsx) becomes the DROPOFF point — "bring it
-// to me here". The pickup is either a store (an allowlisted business) or a
+// Pushed from the home screen's Pickup & Drop banner, carrying the
+// customer's already-confirmed location (from the shared location picker in
+// home.tsx) as route params — that becomes the DROPOFF point ("bring it to
+// me here"). The pickup is either a store (an allowlisted business) or a
 // person at any address — a friend's house — with its own safeguards
 // (services/pickupOptions.ts, server: app/domain/pickup.py).
-interface Props {
-  visible: boolean;
-  dropoffAddress: string;
-  dropoffLat: number | null;
-  dropoffLng: number | null;
-  onClose: () => void;
-  onPosted: () => void;
-}
-
+//
+// A full page, not a bottom-sheet modal (that's how this screen used to
+// work, in components/pickup-dropoff-modal.tsx, now removed) — this is the
+// longest, most field-heavy of the home screen's "quick post" flows, and a
+// bottom sheet has to anchor itself to the screen's bottom edge, which means
+// the whole sheet (header included) has to slide up to clear the keyboard;
+// there's no way to keep the header still without risking the Post button
+// ending up hidden behind the keyboard instead. A normal pushed page doesn't
+// have that constraint — the header sits in its own fixed area above a
+// KeyboardAvoidingView, exactly like edit-job.tsx, and the keyboard just
+// shrinks the scrollable area beneath it.
 type Phase = 'confirm' | 'posting' | 'success';
 
 /** A place saved on the customer's profile, with a pin. */
@@ -55,11 +57,26 @@ const ITEM_SIZES: { key: ItemSize; label: string; hint: string }[] = [
   { key: 'BULKY', label: 'Van', hint: 'Needs a van or pickup truck' },
 ];
 
-export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropoffLng, onClose, onPosted }: Props) {
-  const insets = useSafeAreaInsets();
+export default function PickupDropScreen() {
+  const bottomInset = useBottomInset();
   const appAlert = useAppAlert();
+  const params = useLocalSearchParams<{ dropoffAddress?: string; dropoffLat?: string; dropoffLng?: string }>();
+  const dropoffAddress = params.dropoffAddress ?? '';
+  const dropoffLat = params.dropoffLat ? Number(params.dropoffLat) : null;
+  const dropoffLng = params.dropoffLng ? Number(params.dropoffLng) : null;
 
   const [phase, setPhase] = useState<Phase>('confirm');
+
+  // The old modal blocked its own onRequestClose outside 'confirm' so a
+  // post in flight couldn't be backed out of mid-way — a pushed page needs
+  // the same guard explicitly (Android's hardware/gesture back here; the
+  // Stack.Screen below covers iOS's edge-swipe gesture), since the stack's
+  // default back behavior would otherwise just pop it.
+  useEffect(() => {
+    if (phase === 'confirm') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
+    return () => sub.remove();
+  }, [phase]);
   const [source, setSource] = useState<PickupSource>('STORE');
   // From a person: bring it to me (my location is the drop-off), or send it
   // from me (my location is the pickup; the search finds the drop-off).
@@ -105,6 +122,10 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
   // The search that last finished with nothing (so it can say why), and the
   // text a choice wrote into the box (so it doesn't search for it again).
   const [noResultsFor, setNoResultsFor] = useState<string | null>(null);
+  // A search that actually FAILED (bad connection, a non-2xx from Google) —
+  // kept separate from noResultsFor so a flaky network isn't shown as the
+  // same "No matches" copy as a genuine zero-result search.
+  const [pickupSearchError, setPickupSearchError] = useState<string | null>(null);
   const chosenTextRef = useRef<string | null>(null);
   // A shared location link that couldn't be read, and why.
   const [linkError, setLinkError] = useState<string | null>(null);
@@ -112,20 +133,6 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
   const [reached, setReached] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!visible) return;
-    setPhase('confirm');
-    setReached(null);
-    setSource('STORE');
-    setDirection('TO_ME');
-    setDescription('');
-    setItemSize('SMALL');
-    resetPickupPlace();
-    setMedia([]);
-    setTiming({ kind: 'ASAP' }); setPurchase('PREPAID'); setLimitText(''); setDropoffNotes('');
-    setPickupDetails({}); setShoppingItems([newShoppingItem()]);
-    setPersonItem(''); setValueText(''); setHandoverName(''); setHandoverPhone(''); setDeclared(false);
-    setIdOnFile(null);
-    setSaveForLater(false);
     (SkoFyApi.addresses.list() as Promise<any[]>)
       .then((list) => setSavedAddresses((list ?? [])
         .filter((a) => a.lat != null && a.lng != null)
@@ -133,18 +140,28 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
       .catch(() => setSavedAddresses([]));
     SkoFyApi.jobs.getPickupPlaceTypes().then(setAllowedPickupTypes).catch(() => {});
     SkoFyApi.jobs.getPersonPickupRules().then(setRules).catch(() => {});
+    resolveSkill();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Re-checked on every focus, not just on mount — "Add it now" on the ID
+  // notice below pushes to /profile and back to THIS same page instance (so
+  // the form stays filled in), unlike the old modal, which fully closed and
+  // reopened fresh on every use. Without this, idOnFile stayed stuck at
+  // false after adding it, permanently blocking the post with a now-wrong
+  // "Add your ID in Profile first" error.
+  useFocusEffect(useCallback(() => {
     SkoFyApi.customers.getProfile()
       .then((p) => { setIdOnFile(hasIdOnFile(p)); setMyName(p.name?.trim() ?? ''); })
       .catch(() => setIdOnFile(null));
-    resolveSkill();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+  }, []));
 
   const resetPickupPlace = () => {
     setPickupQuery(''); setPickupSuggestions([]); setPickupTypeError(null);
     setPickupPlaceId(null); setPickupPlaceType(null);
     setPickupLat(null); setPickupLng(null);
     setChosenSavedId(null); setNoResultsFor(null); setLinkError(null);
+    setPickupSearchError(null);
     chosenTextRef.current = null;
   };
 
@@ -210,9 +227,14 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
     }
   };
 
+  // Bumped by the retry link below to re-run the search effect on the exact
+  // same query — nothing else in its dependency list changes on a plain retry.
+  const [retryNonce, setRetryNonce] = useState(0);
+
   useEffect(() => {
     setNoResultsFor(null);
     setLinkError(null);
+    setPickupSearchError(null);
     if (pickupQuery.length < 2 || pickupQuery === chosenTextRef.current) {
       setPickupSuggestions([]); setPickupSearching(false); return;
     }
@@ -248,17 +270,21 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
         if (controller.signal.aborted) return; // a newer search is on its way
         setPickupSuggestions(results);
         setNoResultsFor(results.length === 0 ? pickupQuery : null);
-      } catch (e) {
+      } catch (e: any) {
         if (controller.signal.aborted) return;
         if (__DEV__) console.warn('Pickup address search failed:', e);
         setPickupSuggestions([]);
-        setNoResultsFor(pickupQuery);
+        // Distinct from "No matches" — this is a search that FAILED (bad
+        // connection, a non-2xx from Google), not one that genuinely came
+        // back empty. Conflating the two showed "No matches" for real
+        // addresses whenever the request itself didn't make it through.
+        setPickupSearchError(e?.message || 'Could not search — check your connection.');
       } finally {
         if (!controller.signal.aborted) setPickupSearching(false);
       }
     }, 350);
     return () => { clearTimeout(handle); controller.abort(); };
-  }, [pickupQuery, dropoffLat, dropoffLng, allowedPickupTypes, source]);
+  }, [pickupQuery, dropoffLat, dropoffLng, allowedPickupTypes, source, retryNonce]);
 
   const handlePickupSelect = async (item: GooglePlaceSuggestion) => {
     setPickupSuggestions([]);
@@ -302,7 +328,7 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
   // Both images and videos in one picker — same mediaTypes list step1.tsx
   // uses for its own "gallery" pick path, just without the separate
   // record-video/camera entry point that flow has (this is a lightweight
-  // one-step modal, not a full wizard).
+  // single-step page, not a full wizard).
   const pickMedia = async () => {
     if (media.length >= 3) return;
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -317,7 +343,6 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
   };
 
   const goAddId = () => {
-    onClose();
     router.push('/profile');
   };
 
@@ -393,7 +418,9 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
       setReached(count);
       setPhase('success');
       // Nobody near the pickup: leave the message up long enough to read.
-      setTimeout(() => onPosted(), count === 0 ? 4000 : 1400);
+      // Popping back to home re-triggers its own focus effect, which already
+      // refreshes the job list — no extra callback needed here for that.
+      setTimeout(() => router.back(), count === 0 ? 4000 : 1400);
     } catch (e: any) {
       setPhase('confirm');
       appAlert.show('error', 'Could not post', e?.message || 'Please check your connection and try again.');
@@ -425,36 +452,49 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
   }, [pickupLat, pickupLng, dropoffLat, dropoffLng, sendFromMe, itemSize]);
 
   return (
-    <Modal statusBarTranslucent navigationBarTranslucent visible={visible} animationType="slide" transparent onRequestClose={phase === 'confirm' ? onClose : undefined}>
-      <KeyboardAvoidingView behavior="padding" automaticOffset style={s.backdrop}>
-        <View style={[s.sheet, { paddingBottom: Math.max(insets.bottom, 20) }]}>
-          <View style={s.dragHandle} />
+    <ThemedView style={s.container}>
+      {/* Disables the iOS edge-swipe-back gesture outside 'confirm' — the
+          BackHandler above only covers Android's hardware/gesture back. */}
+      <Stack.Screen options={{ gestureEnabled: phase === 'confirm' }} />
+      <View style={s.header}>
+        {phase === 'confirm' ? (
+          <TouchableOpacity style={s.backButton} onPress={() => router.back()}>
+            <ChevronLeft size={24} color="#111827" />
+          </TouchableOpacity>
+        ) : <View style={s.backButton} />}
+        <Text style={s.headerTitle}>Pickup & Drop</Text>
+        <View style={{ width: 40 }} />
+      </View>
 
-          <View style={s.headerRow}>
-            <View style={s.iconWrap}>
-              <Package size={24} color="#0EA5E9" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.title}>Pickup & Drop</Text>
-              <Text style={s.subtitle}>We'll pick it up and bring it to you.</Text>
-            </View>
-            {phase === 'confirm' && (
-              <TouchableOpacity onPress={onClose} style={s.closeBtn}>
-                <X size={20} color="#6B7280" />
-              </TouchableOpacity>
-            )}
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
+          {/* Where from: a store, or a person at any address */}
+          <View style={s.sourceRow}>
+            {([['STORE', 'From a store', Store], ['PERSON', 'From a person', Home]] as const).map(([key, label, Icon]) => {
+              const on = source === key;
+              return (
+                <TouchableOpacity
+                  key={key}
+                  style={[s.sourceChip, on && s.sourceChipOn]}
+                  onPress={() => chooseSource(key)}
+                  disabled={phase !== 'confirm'}
+                >
+                  <Icon size={15} color={on ? '#111827' : '#6B7280'} />
+                  <Text style={[s.sourceText, on && s.sourceTextOn]}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
-          <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 460 }}>
-            {/* Where from: a store, or a person at any address */}
+          {fromPerson && (
             <View style={s.sourceRow}>
-              {([['STORE', 'From a store', Store], ['PERSON', 'From a person', Home]] as const).map(([key, label, Icon]) => {
-                const on = source === key;
+              {([['TO_ME', 'Bring it to me', ArrowDownToLine], ['FROM_ME', 'Send from me', ArrowUpFromLine]] as const).map(([key, label, Icon]) => {
+                const on = direction === key;
                 return (
                   <TouchableOpacity
                     key={key}
                     style={[s.sourceChip, on && s.sourceChipOn]}
-                    onPress={() => chooseSource(key)}
+                    onPress={() => setDirection(key)}
                     disabled={phase !== 'confirm'}
                   >
                     <Icon size={15} color={on ? '#111827' : '#6B7280'} />
@@ -463,279 +503,267 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
                 );
               })}
             </View>
+          )}
 
-            {fromPerson && (
-              <View style={s.sourceRow}>
-                {([['TO_ME', 'Bring it to me', ArrowDownToLine], ['FROM_ME', 'Send from me', ArrowUpFromLine]] as const).map(([key, label, Icon]) => {
-                  const on = direction === key;
-                  return (
-                    <TouchableOpacity
-                      key={key}
-                      style={[s.sourceChip, on && s.sourceChipOn]}
-                      onPress={() => setDirection(key)}
-                      disabled={phase !== 'confirm'}
-                    >
-                      <Icon size={15} color={on ? '#111827' : '#6B7280'} />
-                      <Text style={[s.sourceText, on && s.sourceTextOn]}>{label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-
-            <View style={s.fieldWrap}>
-              <Text style={s.fieldLabel}>
-                {!fromPerson ? 'Pickup from (store, pharmacy, etc.)'
-                  : sendFromMe ? 'Deliver to (a friend, family, anyone)' : 'Pickup address (a friend, family, anyone)'}
-              </Text>
-              <View style={s.searchInputRow}>
-                {fromPerson ? <Home size={16} color="#6B7280" /> : <Store size={16} color="#6B7280" />}
-                <TextInput
-                  style={s.searchInput}
-                  placeholder={fromPerson ? 'Search an address, or paste a location link' : 'Search for a business'}
-                  placeholderTextColor="#9CA3AF"
-                  value={pickupQuery}
-                  onChangeText={(t) => {
-                    setPickupQuery(t); setPickupTypeError(null);
-                    if (chosenTextRef.current && t !== chosenTextRef.current) {
-                      chosenTextRef.current = null;
-                      setPickupLat(null); setPickupLng(null); setPickupPlaceId(null); setPickupPlaceType(null);
-                      setChosenSavedId(null);
-                    }
-                  }}
-                  onBlur={() => { setTimeout(() => setPickupSuggestions([]), 200); }}
-                  editable={phase === 'confirm'}
-                />
-                {pickupSearching && <ActivityIndicator size="small" color="#6B7280" />}
-              </View>
-              {pickupSuggestions.length > 0 && (
-                <View style={s.suggestionsBox}>
-                  {pickupSuggestions.map(item => (
-                    <TouchableOpacity key={item.place_id} style={s.suggestionRow} onPress={() => handlePickupSelect(item)}>
-                      <Text style={s.suggestionMainText} numberOfLines={1}>{item.structured_formatting.main_text}</Text>
-                      <Text style={s.suggestionSecondaryText} numberOfLines={1}>{item.structured_formatting.secondary_text}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-              {!!linkError && <Text style={s.fieldError}>{linkError}</Text>}
-              {miles != null && !tooFar && (
-                <Text style={s.hintText}>About {miles < 1 ? 'under 1' : Math.round(miles)} mile{miles >= 1.5 ? 's' : ''} {sendFromMe ? 'from you' : 'from the drop-off'}</Text>
-              )}
-              {fromPerson && !hasPickupPoint && phase === 'confirm' && (
-                <TouchableOpacity style={s.pasteRow} onPress={pasteLink}>
-                  <ClipboardPaste size={14} color="#0EA5E9" />
-                  <Text style={s.pasteText}>Paste a location link</Text>
-                  <Text style={s.pasteHint}>shared on WhatsApp or Google Maps</Text>
-                </TouchableOpacity>
-              )}
-              {!!noResultsFor && !pickupSearching && pickupSuggestions.length === 0 && (
-                source === 'STORE' ? (
-                  <TouchableOpacity onPress={() => { const q = pickupQuery; chooseSource('PERSON'); setPickupQuery(q); }}>
-                    <Text style={s.hintText}>
-                      No stores match. Picking up from a friend or family? <Text style={s.hintLink}>Switch to “From a person”</Text>
-                    </Text>
-                  </TouchableOpacity>
-                ) : (
-                  <Text style={s.hintText}>No matches — try the street and city, e.g. “12 Oak St, Dallas”.</Text>
-                )
-              )}
-              {pickupTypeError && <Text style={s.fieldError}>{pickupTypeError}</Text>}
-
-              {fromPerson && savedAddresses.length > 0 && (
-                <View style={s.savedRow}>
-                  {savedAddresses.map((a) => {
-                    const on = chosenSavedId === a.id;
-                    return (
-                      <TouchableOpacity
-                        key={a.id}
-                        style={[s.savedChip, on && s.savedChipOn]}
-                        onPress={() => chooseSaved(a)}
-                        disabled={phase !== 'confirm'}
-                      >
-                        <Bookmark size={13} color={on ? '#111827' : '#6B7280'} />
-                        <Text style={[s.savedText, on && s.savedTextOn]} numberOfLines={1}>{a.label}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
-              {fromPerson && hasPickupPoint && !chosenSavedId && (
-                <TouchableOpacity style={s.saveRow} onPress={() => setSaveForLater((v) => !v)} disabled={phase !== 'confirm'}>
-                  {saveForLater ? <SquareCheck size={18} color="#10B981" /> : <Square size={18} color="#6B7280" />}
-                  <Text style={s.saveText}>
-                    Save this address{handoverName.trim() ? ` as “${handoverName.trim()}'s place”` : ''} for next time
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            <View style={s.locationRow}>
-              <MapPin size={16} color="#6B7280" />
-              <Text style={s.locationText} numberOfLines={2}>
-                {sendFromMe ? 'Pick up from you: ' : 'Deliver to: '}{dropoffAddress || 'Current location'}
-              </Text>
-            </View>
-
-            {fromPerson ? (
-              <>
-                {idOnFile === false && (
-                  <TouchableOpacity style={s.idNotice} onPress={goAddId}>
-                    <IdCard size={18} color="#B45309" />
-                    <Text style={s.idNoticeText}>A pickup from a person needs your ID on your profile. <Text style={s.idNoticeLink}>Add it now</Text></Text>
-                  </TouchableOpacity>
-                )}
-
-                <View style={s.fieldWrap}>
-                  <Text style={s.fieldLabel}>What's the item?</Text>
-                  <TextInput
-                    style={s.input}
-                    placeholder="e.g. keys, a charger, a box"
-                    placeholderTextColor="#9CA3AF"
-                    value={personItem}
-                    onChangeText={setPersonItem}
-                    maxLength={200}
-                    editable={phase === 'confirm'}
-                  />
-                </View>
-
-                <View style={s.fieldWrap}>
-                  <Text style={s.fieldLabel}>What's it worth? (up to ${rules.max_value})</Text>
-                  <View style={s.amountRow}>
-                    <Text style={s.dollar}>$</Text>
-                    <TextInput
-                      style={s.amountInput}
-                      placeholder="40"
-                      placeholderTextColor="#9CA3AF"
-                      value={valueText}
-                      onChangeText={setValueText}
-                      keyboardType="decimal-pad"
-                      maxLength={7}
-                      editable={phase === 'confirm'}
-                    />
-                  </View>
-                </View>
-
-                <View style={s.fieldWrap}>
-                  <Text style={s.fieldLabel}>{sendFromMe ? "Who's receiving it?" : "Who's handing it over?"}</Text>
-                  <TextInput
-                    style={s.input}
-                    placeholder="Their name"
-                    placeholderTextColor="#9CA3AF"
-                    value={handoverName}
-                    onChangeText={setHandoverName}
-                    maxLength={120}
-                    editable={phase === 'confirm'}
-                  />
-                  <TextInput
-                    style={[s.input, { marginTop: 8 }]}
-                    placeholder={sendFromMe
-                      ? 'Their phone (optional) — so the provider can call on arrival'
-                      : 'Their phone (optional) — shared only with the provider you hire'}
-                    placeholderTextColor="#9CA3AF"
-                    value={handoverPhone}
-                    onChangeText={setHandoverPhone}
-                    keyboardType="phone-pad"
-                    maxLength={30}
-                    editable={phase === 'confirm'}
-                  />
-                </View>
-
-                <TouchableOpacity style={s.declareRow} onPress={() => setDeclared(d => !d)} disabled={phase !== 'confirm'}>
-                  {declared ? <SquareCheck size={20} color="#10B981" /> : <Square size={20} color="#6B7280" />}
-                  <Text style={s.declareText}>
-                    It isn't {rules.banned}. It will be shown to the provider before they take it — they can refuse it.
-                  </Text>
-                </TouchableOpacity>
-              </>
-            ) : null}
-
-            <View style={s.fieldWrap}>
-              <Text style={s.fieldLabel}>{fromPerson ? 'Anything else the provider should know? (optional)' : 'What do you need picked up?'}</Text>
+          <View style={s.fieldWrap}>
+            <Text style={s.fieldLabel}>
+              {!fromPerson ? 'Pickup from (store, pharmacy, etc.)'
+                : sendFromMe ? 'Deliver to (a friend, family, anyone)' : 'Pickup address (a friend, family, anyone)'}
+            </Text>
+            <View style={s.searchInputRow}>
+              {fromPerson ? <Home size={16} color="#6B7280" /> : <Store size={16} color="#6B7280" />}
               <TextInput
-                style={s.notesInput}
-                placeholder={fromPerson ? 'e.g. Ring the bell, it’s in a blue bag' : 'e.g. Prescription for John Smith, 2 bags of groceries…'}
+                style={s.searchInput}
+                placeholder={fromPerson ? 'Search an address, or paste a location link' : 'Search for a business'}
                 placeholderTextColor="#9CA3AF"
-                value={description}
-                onChangeText={setDescription}
-                multiline
+                value={pickupQuery}
+                onChangeText={(t) => {
+                  setPickupQuery(t); setPickupTypeError(null);
+                  if (chosenTextRef.current && t !== chosenTextRef.current) {
+                    chosenTextRef.current = null;
+                    setPickupLat(null); setPickupLng(null); setPickupPlaceId(null); setPickupPlaceType(null);
+                    setChosenSavedId(null);
+                  }
+                }}
+                onBlur={() => { setTimeout(() => setPickupSuggestions([]), 200); }}
                 editable={phase === 'confirm'}
               />
+              {pickupSearching && <ActivityIndicator size="small" color="#6B7280" />}
             </View>
+            {pickupSuggestions.length > 0 && (
+              <View style={s.suggestionsBox}>
+                {pickupSuggestions.map(item => (
+                  <TouchableOpacity key={item.place_id} style={s.suggestionRow} onPress={() => handlePickupSelect(item)}>
+                    <Text style={s.suggestionMainText} numberOfLines={1}>{item.structured_formatting.main_text}</Text>
+                    <Text style={s.suggestionSecondaryText} numberOfLines={1}>{item.structured_formatting.secondary_text}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            {!!linkError && <Text style={s.fieldError}>{linkError}</Text>}
+            {miles != null && !tooFar && (
+              <Text style={s.hintText}>About {miles < 1 ? 'under 1' : Math.round(miles)} mile{miles >= 1.5 ? 's' : ''} {sendFromMe ? 'from you' : 'from the drop-off'}</Text>
+            )}
+            {fromPerson && !hasPickupPoint && phase === 'confirm' && (
+              <TouchableOpacity style={s.pasteRow} onPress={pasteLink}>
+                <ClipboardPaste size={14} color="#0EA5E9" />
+                <Text style={s.pasteText}>Paste a location link</Text>
+                <Text style={s.pasteHint}>shared on WhatsApp or Google Maps</Text>
+              </TouchableOpacity>
+            )}
+            {!!pickupSearchError && !pickupSearching && pickupSuggestions.length === 0 && (
+              <TouchableOpacity onPress={() => setRetryNonce(n => n + 1)}>
+                <Text style={s.fieldError}>{pickupSearchError} <Text style={s.hintLink}>Tap to retry</Text></Text>
+              </TouchableOpacity>
+            )}
+            {!pickupSearchError && !!noResultsFor && !pickupSearching && pickupSuggestions.length === 0 && (
+              source === 'STORE' ? (
+                <TouchableOpacity onPress={() => { const q = pickupQuery; chooseSource('PERSON'); setPickupQuery(q); }}>
+                  <Text style={s.hintText}>
+                    No stores match. Picking up from a friend or family? <Text style={s.hintLink}>Switch to “From a person”</Text>
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={s.hintText}>No matches — try the street and city, e.g. “12 Oak St, Dallas”.</Text>
+              )
+            )}
+            {pickupTypeError && <Text style={s.fieldError}>{pickupTypeError}</Text>}
 
-            {/* How big: a van-size item reaches only providers who can carry it. */}
-            <View style={s.fieldWrap}>
-              <Text style={s.fieldLabel}>How big is it?</Text>
-              <View style={s.sizeRow}>
-                {ITEM_SIZES.map(({ key, label, hint }) => {
-                  const on = itemSize === key;
+            {fromPerson && savedAddresses.length > 0 && (
+              <View style={s.savedRow}>
+                {savedAddresses.map((a) => {
+                  const on = chosenSavedId === a.id;
                   return (
-                    <TouchableOpacity key={key} style={[s.sizeChip, on && s.sourceChipOn]} onPress={() => setItemSize(key)}
-                      disabled={phase !== 'confirm'} accessibilityRole="radio" accessibilityState={{ selected: on }}>
-                      <Text style={[s.sourceText, on && s.sourceTextOn]}>{label}</Text>
-                      <Text style={s.sizeHint}>{hint}</Text>
+                    <TouchableOpacity
+                      key={a.id}
+                      style={[s.savedChip, on && s.savedChipOn]}
+                      onPress={() => chooseSaved(a)}
+                      disabled={phase !== 'confirm'}
+                    >
+                      <Bookmark size={13} color={on ? '#111827' : '#6B7280'} />
+                      <Text style={[s.savedText, on && s.savedTextOn]} numberOfLines={1}>{a.label}</Text>
                     </TouchableOpacity>
                   );
                 })}
               </View>
-            </View>
-
-            <PickupOptions
-              timing={timing}
-              onTimingChange={setTiming}
-              purchase={purchase}
-              onPurchaseChange={setPurchase}
-              limitText={limitText}
-              onLimitTextChange={setLimitText}
-              notes={dropoffNotes}
-              onNotesChange={setDropoffNotes}
-              details={pickupDetails}
-              onDetailsChange={setPickupDetails}
-              items={shoppingItems}
-              onItemsChange={setShoppingItems}
-              editable={phase === 'confirm'}
-              source={source}
-            />
-
-            {fromPerson && (
-              <View style={s.safetyNote}>
-                <ShieldAlert size={14} color="#B45309" />
-                <Text style={s.safetyText}>The provider checks the item before taking it and can refuse anything on the list — the trip is still paid.</Text>
-              </View>
             )}
+            {fromPerson && hasPickupPoint && !chosenSavedId && (
+              <TouchableOpacity style={s.saveRow} onPress={() => setSaveForLater((v) => !v)} disabled={phase !== 'confirm'}>
+                {saveForLater ? <SquareCheck size={18} color="#10B981" /> : <Square size={18} color="#6B7280" />}
+                <Text style={s.saveText}>
+                  Save this address{handoverName.trim() ? ` as “${handoverName.trim()}'s place”` : ''} for next time
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
-            <View style={s.fieldWrap}>
-              <Text style={s.fieldLabel}>Add photos or a video (optional)</Text>
-              <View style={s.mediaRow}>
-                {media.map((item, i) => (
-                  <View key={i} style={s.mediaThumb}>
-                    {item.type === 'video' ? (
-                      // expo-image can't render a video file as a still frame
-                      // — a plain placeholder is simpler and more reliable
-                      // than pulling in thumbnail-generation for a lightweight
-                      // one-step modal like this.
-                      <View style={s.mediaVideoPlaceholder}>
-                        <VideoIcon size={22} color="#fff" />
-                      </View>
-                    ) : (
-                      <Image source={{ uri: item.uri }} style={s.mediaImg} contentFit="cover" />
-                    )}
-                    {phase === 'confirm' && (
-                      <TouchableOpacity style={s.mediaRemove} onPress={() => setMedia(prev => prev.filter((_, idx) => idx !== i))}>
-                        <X size={12} color="#fff" />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                ))}
-                {media.length < 3 && phase === 'confirm' && (
-                  <TouchableOpacity style={s.mediaAdd} onPress={pickMedia}>
-                    <Camera size={20} color="#6B7280" />
-                  </TouchableOpacity>
-                )}
+          <View style={s.locationRow}>
+            <MapPin size={16} color="#6B7280" />
+            <Text style={s.locationText} numberOfLines={2}>
+              {sendFromMe ? 'Pick up from you: ' : 'Deliver to: '}{dropoffAddress || 'Current location'}
+            </Text>
+          </View>
+
+          {fromPerson ? (
+            <>
+              {idOnFile === false && (
+                <TouchableOpacity style={s.idNotice} onPress={goAddId}>
+                  <IdCard size={18} color="#B45309" />
+                  <Text style={s.idNoticeText}>A pickup from a person needs your ID on your profile. <Text style={s.idNoticeLink}>Add it now</Text></Text>
+                </TouchableOpacity>
+              )}
+
+              <View style={s.fieldWrap}>
+                <Text style={s.fieldLabel}>What's the item?</Text>
+                <TextInput
+                  style={s.input}
+                  placeholder="e.g. keys, a charger, a box"
+                  placeholderTextColor="#9CA3AF"
+                  value={personItem}
+                  onChangeText={setPersonItem}
+                  maxLength={200}
+                  editable={phase === 'confirm'}
+                />
               </View>
-            </View>
-          </ScrollView>
 
+              <View style={s.fieldWrap}>
+                <Text style={s.fieldLabel}>What's it worth? (up to ${rules.max_value})</Text>
+                <View style={s.amountRow}>
+                  <Text style={s.dollar}>$</Text>
+                  <TextInput
+                    style={s.amountInput}
+                    placeholder="40"
+                    placeholderTextColor="#9CA3AF"
+                    value={valueText}
+                    onChangeText={setValueText}
+                    keyboardType="decimal-pad"
+                    maxLength={7}
+                    editable={phase === 'confirm'}
+                  />
+                </View>
+              </View>
+
+              <View style={s.fieldWrap}>
+                <Text style={s.fieldLabel}>{sendFromMe ? "Who's receiving it?" : "Who's handing it over?"}</Text>
+                <TextInput
+                  style={s.input}
+                  placeholder="Their name"
+                  placeholderTextColor="#9CA3AF"
+                  value={handoverName}
+                  onChangeText={setHandoverName}
+                  maxLength={120}
+                  editable={phase === 'confirm'}
+                />
+                <TextInput
+                  style={[s.input, { marginTop: 8 }]}
+                  placeholder={sendFromMe
+                    ? 'Their phone (optional) — so the provider can call on arrival'
+                    : 'Their phone (optional) — shared only with the provider you hire'}
+                  placeholderTextColor="#9CA3AF"
+                  value={handoverPhone}
+                  onChangeText={setHandoverPhone}
+                  keyboardType="phone-pad"
+                  maxLength={30}
+                  editable={phase === 'confirm'}
+                />
+              </View>
+
+              <TouchableOpacity style={s.declareRow} onPress={() => setDeclared(d => !d)} disabled={phase !== 'confirm'}>
+                {declared ? <SquareCheck size={20} color="#10B981" /> : <Square size={20} color="#6B7280" />}
+                <Text style={s.declareText}>
+                  It isn't {rules.banned}. It will be shown to the provider before they take it — they can refuse it.
+                </Text>
+              </TouchableOpacity>
+            </>
+          ) : null}
+
+          <View style={s.fieldWrap}>
+            <Text style={s.fieldLabel}>{fromPerson ? 'Anything else the provider should know? (optional)' : 'What do you need picked up?'}</Text>
+            <TextInput
+              style={s.notesInput}
+              placeholder={fromPerson ? 'e.g. Ring the bell, it’s in a blue bag' : 'e.g. Prescription for John Smith, 2 bags of groceries…'}
+              placeholderTextColor="#9CA3AF"
+              value={description}
+              onChangeText={setDescription}
+              multiline
+              editable={phase === 'confirm'}
+            />
+          </View>
+
+          {/* How big: a van-size item reaches only providers who can carry it. */}
+          <View style={s.fieldWrap}>
+            <Text style={s.fieldLabel}>How big is it?</Text>
+            <View style={s.sizeRow}>
+              {ITEM_SIZES.map(({ key, label, hint }) => {
+                const on = itemSize === key;
+                return (
+                  <TouchableOpacity key={key} style={[s.sizeChip, on && s.sourceChipOn]} onPress={() => setItemSize(key)}
+                    disabled={phase !== 'confirm'} accessibilityRole="radio" accessibilityState={{ selected: on }}>
+                    <Text style={[s.sourceText, on && s.sourceTextOn]}>{label}</Text>
+                    <Text style={s.sizeHint}>{hint}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          <PickupOptions
+            timing={timing}
+            onTimingChange={setTiming}
+            purchase={purchase}
+            onPurchaseChange={setPurchase}
+            limitText={limitText}
+            onLimitTextChange={setLimitText}
+            notes={dropoffNotes}
+            onNotesChange={setDropoffNotes}
+            details={pickupDetails}
+            onDetailsChange={setPickupDetails}
+            items={shoppingItems}
+            onItemsChange={setShoppingItems}
+            editable={phase === 'confirm'}
+            source={source}
+          />
+
+          {fromPerson && (
+            <View style={s.safetyNote}>
+              <ShieldAlert size={14} color="#B45309" />
+              <Text style={s.safetyText}>The provider checks the item before taking it and can refuse anything on the list — the trip is still paid.</Text>
+            </View>
+          )}
+
+          <View style={s.fieldWrap}>
+            <Text style={s.fieldLabel}>Add photos or a video (optional)</Text>
+            <View style={s.mediaRow}>
+              {media.map((item, i) => (
+                <View key={i} style={s.mediaThumb}>
+                  {item.type === 'video' ? (
+                    // expo-image can't render a video file as a still frame
+                    // — a plain placeholder is simpler and more reliable
+                    // than pulling in thumbnail-generation for a lightweight
+                    // single-step page like this.
+                    <View style={s.mediaVideoPlaceholder}>
+                      <VideoIcon size={22} color="#fff" />
+                    </View>
+                  ) : (
+                    <Image source={{ uri: item.uri }} style={s.mediaImg} contentFit="cover" />
+                  )}
+                  {phase === 'confirm' && (
+                    <TouchableOpacity style={s.mediaRemove} onPress={() => setMedia(prev => prev.filter((_, idx) => idx !== i))}>
+                      <X size={12} color="#fff" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+              {media.length < 3 && phase === 'confirm' && (
+                <TouchableOpacity style={s.mediaAdd} onPress={pickMedia}>
+                  <Camera size={20} color="#6B7280" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </ScrollView>
+
+        <View style={padBottom(s.footer, bottomInset)}>
           {skillResolveError && (
             <TouchableOpacity onPress={resolveSkill} style={s.retryRow}>
               <Text style={s.retryText}>Couldn't connect — tap to retry</Text>
@@ -783,23 +811,23 @@ export function PickupDropoffModal({ visible, dropoffAddress, dropoffLat, dropof
           )}
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+    </ThemedView>
   );
 }
 
 const s = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  sheet: {
+  container: { flex: 1, backgroundColor: Colors.light.background },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingBottom: 16,
     backgroundColor: Colors.light.card,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    padding: 20, gap: 14,
+    borderBottomWidth: 1, borderBottomColor: '#E5E7EB',
   },
-  dragHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginBottom: 4 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  iconWrap: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#E0F2FE', alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 17, lineHeight: 21, fontFamily: Fonts.poppinsBold, color: '#111827' },
-  subtitle: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppins, color: '#6B7280', marginTop: 2 },
-  closeBtn: { padding: 4 },
+  backButton: { width: 40, height: 40, justifyContent: 'center' },
+  headerTitle: { fontSize: 17, lineHeight: 21, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  scrollContent: { padding: 20 },
 
   sourceRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
   sizeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -901,6 +929,11 @@ const s = StyleSheet.create({
   estimate: { marginBottom: 10, padding: 12, borderRadius: 14, backgroundColor: '#F0F9FF', borderWidth: 1, borderColor: '#BAE6FD', gap: 4 },
   estimateText: { fontSize: 15, lineHeight: 21, fontFamily: Fonts.poppinsBold, color: '#0C4A6E' },
   estimateHint: { fontSize: 12, lineHeight: 17, fontFamily: Fonts.poppins, color: '#075985' },
+  footer: {
+    padding: 16,
+    backgroundColor: Colors.light.card,
+    borderTopWidth: 1, borderTopColor: '#E5E7EB',
+  },
   postButton: { backgroundColor: '#FFCE48', borderRadius: 16, paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
   postButtonDisabled: { opacity: 0.5 },
   postButtonText: { fontSize: 15, lineHeight: 19, fontFamily: Fonts.poppinsBold, color: '#111827' },

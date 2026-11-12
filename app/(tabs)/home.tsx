@@ -4,7 +4,6 @@ import AnimatedBrandMark from '@/components/animated-brand-mark';
 import { Skeleton } from '@/components/skeleton';
 import { VoicePostModal } from '@/components/voice-post-modal';
 import { QuickNeedModal } from '@/components/quick-need-modal';
-import { PickupDropoffModal } from '@/components/pickup-dropoff-modal';
 import { NoInternetState } from '@/components/no-internet-state';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -359,11 +358,6 @@ export default function HomeScreen() {
   // Home banner already uses). ─────────────────────────────────────────────
   const [bookChoiceModalVisible, setBookChoiceModalVisible] = useState(false);
 
-  // ── Pickup & Drop state — posts via a modal, not a route ───────────────────
-  const [pickupDropModalVisible, setPickupDropModalVisible] = useState(false);
-  const [pendingDropoffLat, setPendingDropoffLat] = useState<number | null>(null);
-  const [pendingDropoffLng, setPendingDropoffLng] = useState<number | null>(null);
-  const [pendingDropoffAddress, setPendingDropoffAddress] = useState<string>('');
   const orbPulse = useRef(new RNAnimated.Value(1)).current;
   // Dot wave anims — 4 dots, each scales independently (staggered bounce like Google Assistant)
   const dotAnims = useRef([0,1,2,3].map(() => new RNAnimated.Value(1))).current;
@@ -873,9 +867,9 @@ export default function HomeScreen() {
   const handlePickupDropTrigger = () => {
     // The location confirmed here becomes the DROPOFF point ("bring it to
     // me here"). Only the pickup point (a verified business) is asked
-    // separately, inside PickupDropoffModal — the single dedicated place
-    // this feature lives now (reached from this banner and from the "Book
-    // Now" chooser below).
+    // separately, on the pushed /pickup-drop page — the single dedicated
+    // place this feature lives now (reached from this banner and from the
+    // "Book Now" chooser below).
     setPreselectedProfession('');
     setPostMode('pickupdrop');
     setIsLocationModalVisible(true);
@@ -982,10 +976,14 @@ export default function HomeScreen() {
       setPendingQuickAddress(addr);
       setQuickNeedModalVisible(true);
     } else if (postMode === 'pickupdrop') {
-      setPendingDropoffLat(lat ?? null);
-      setPendingDropoffLng(lng ?? null);
-      setPendingDropoffAddress(addr);
-      setPickupDropModalVisible(true);
+      router.push({
+        pathname: '/pickup-drop',
+        params: {
+          dropoffAddress: addr,
+          dropoffLat: lat?.toString() ?? '',
+          dropoffLng: lng?.toString() ?? '',
+        },
+      });
     } else {
       router.push({
         pathname: '/post-requirement/step1',
@@ -2064,10 +2062,14 @@ export default function HomeScreen() {
           // hands off to the same dedicated flow the Home banner and "Book
           // Now" chooser use, treating the location this voice session
           // already had as the dropoff point.
-          setPendingDropoffLat(pendingVoiceLat);
-          setPendingDropoffLng(pendingVoiceLng);
-          setPendingDropoffAddress(pendingVoiceAddress);
-          setPickupDropModalVisible(true);
+          router.push({
+            pathname: '/pickup-drop',
+            params: {
+              dropoffAddress: pendingVoiceAddress,
+              dropoffLat: pendingVoiceLat?.toString() ?? '',
+              dropoffLng: pendingVoiceLng?.toString() ?? '',
+            },
+          });
         } : undefined}
       />
 
@@ -2081,19 +2083,6 @@ export default function HomeScreen() {
         onClose={() => setQuickNeedModalVisible(false)}
         onPosted={() => {
           setQuickNeedModalVisible(false);
-          if (location) refreshDashboard(location.coords.latitude, location.coords.longitude);
-        }}
-      />
-
-      {/* ── Pickup & Drop Modal ── */}
-      <PickupDropoffModal
-        visible={pickupDropModalVisible}
-        dropoffAddress={pendingDropoffAddress}
-        dropoffLat={pendingDropoffLat}
-        dropoffLng={pendingDropoffLng}
-        onClose={() => setPickupDropModalVisible(false)}
-        onPosted={() => {
-          setPickupDropModalVisible(false);
           if (location) refreshDashboard(location.coords.latitude, location.coords.longitude);
         }}
       />

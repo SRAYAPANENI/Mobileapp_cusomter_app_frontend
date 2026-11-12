@@ -70,7 +70,7 @@ export function PickupOptions(p: Props) {
       )}
 
       {/* From a person nothing is bought, and who hands it over replaces the
-          store's order details (pickup-dropoff-modal asks for that). */}
+          store's order details (app/pickup-drop.tsx asks for that). */}
       {p.source !== 'PERSON' && (<>
       <Text style={s.label}>Paying for the order</Text>
       <Segmented
