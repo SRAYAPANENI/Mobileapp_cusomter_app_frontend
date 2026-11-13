@@ -632,6 +632,10 @@ export interface AppConfig {
   maintenance: { enabled: boolean; message: string | null; until: string | null; scheduled_at: string | null };
   modules: Record<string, boolean>;
   terms: { version: number; content: string; updated_at: string; needs_review?: boolean };
+  version?: {
+    android: { min_version: string | null; latest_version: string | null; store_url: string | null };
+    ios: { min_version: string | null; latest_version: string | null; store_url: string | null };
+  };
 }
 
 export const SkoFyApi = {
@@ -674,7 +678,12 @@ export const SkoFyApi = {
      * Verify OTP. Returns tokens + user info.
      * Automatically stores tokens and user in SecureStore.
      */
-    verifyOTP: async (phone: string, otp: string): Promise<AuthUser> => {
+    // purpose: same check sendOTP's own purpose already ran — re-enforced
+    // here too (not just trusted from that earlier call) so this endpoint
+    // doesn't silently auto-create/auto-add-a-role for a phone this screen
+    // never actually intended to register. Optional for the same backward-
+    // compatibility reason sendOTP's is.
+    verifyOTP: async (phone: string, otp: string, purpose?: 'login' | 'register'): Promise<AuthUser> => {
       const normalised = phone.startsWith('+1') ? phone : `+1${phone.replace(/[\s\-\(\)\.]/g, '')}`;
       const data = await request<{
         tokens: { access_token: string; refresh_token: string };
@@ -686,7 +695,7 @@ export const SkoFyApi = {
         account_restored?: boolean;
       }>('/auth/verify-otp', {
         method: 'POST',
-        body: JSON.stringify({ phone: normalised, otp, role: 'customer' }),
+        body: JSON.stringify({ phone: normalised, otp, role: 'customer', purpose }),
         skipAuth: true,
       });
       // Defensive only — the backend already grants exactly the role
