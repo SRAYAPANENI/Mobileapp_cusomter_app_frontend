@@ -147,7 +147,7 @@ export default function LoginScreen() {
     }
     try {
       setIsLoading(true);
-      const user = await SkoFyApi.auth.verifyOTP(phoneNumber, otp);
+      const user = await SkoFyApi.auth.verifyOTP(phoneNumber, otp, 'login');
       // is_new_role (not is_new_user) is what actually means "no Customer
       // profile exists yet for this phone" — mirrors register.tsx's own
       // guard against the opposite mistake (an already-registered number
@@ -190,6 +190,10 @@ export default function LoginScreen() {
       router.replace('/home');
       if (user.account_restored) showDialog('Welcome back', 'Your account deletion is cancelled — your account stays open.');
     } catch (err: any) {
+      // Now enforced server-side too (not just at Send Code) — this screen
+      // passes purpose:'login' above, so a number with no Customer profile
+      // raises here instead of silently logging in as a bare account.
+      if (offerRegister(err)) return;
       showFeedback('error', 'Login Failed', err?.message || 'Invalid OTP. Please try again.');
     } finally {
       setIsLoading(false);
