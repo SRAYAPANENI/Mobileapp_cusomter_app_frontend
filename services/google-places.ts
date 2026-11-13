@@ -14,6 +14,10 @@ export interface GooglePlaceSuggestion {
   description: string;
   place_id: string;
   distance?: string;
+  // Every Google type the place carries (e.g. a Walgreens is "drugstore"
+  // AND "convenience_store") — lets a caller rank or judge suggestions
+  // without filtering the search itself. Empty for plain addresses.
+  types: string[];
   structured_formatting: {
     main_text: string;
     secondary_text: string;
@@ -33,6 +37,10 @@ export interface PlaceDetails {
   // Undefined for place lookups that didn't request it (most callers don't
   // need it) or when Places itself doesn't return one.
   primary_type?: string;
+  // All of the place's Google types — a store is judged on these, not just
+  // primary_type (Walgreens' primary is "drugstore", McDonald's'
+  // "fast_food_restaurant"; both also carry an allowed type).
+  types?: string[];
 }
 
 // Generate a random session token for billing optimization (New API uses sessionToken as part of the request)
@@ -46,44 +54,23 @@ export const GooglePlacesService = {
     input: string,
     signal?: AbortSignal,
     coords?: { latitude: number, longitude: number },
-    // Restricts suggestions to specific Google Places primary types — used
-    // by pickup/dropoff job posting to only surface business-type pickup
-    // points (grocery, pharmacy, etc.), not arbitrary/residential addresses.
-    // This is a UX-level hint, not the actual security gate — the backend
-    // independently validates the selected place's type against its own
-    // allowlist (settings.PICKUP_ALLOWED_PLACE_TYPES) before accepting it.
-    includedPrimaryTypes?: string[],
   ): Promise<GooglePlaceSuggestion[]> => {
     if (!input || input.length < 2) return [];
 
     try {
       const url = `https://places.googleapis.com/v1/places:autocomplete`;
 
-      // Default to central India center if no coords provided for bias
-      const latitude = coords?.latitude || 20.5937;
-      const longitude = coords?.longitude || 78.9629;
-
-      const body: Record<string, unknown> = {
-        input,
-        locationBias: {
-          circle: {
-            center: { latitude, longitude },
-            radius: 50000 // 50km radius bias
-          }
-        },
-        sessionToken
-      };
-      if (includedPrimaryTypes?.length) {
-        // Google's Autocomplete (New) API hard-caps this at 5 values and
-        // 400s the whole request otherwise (INVALID_ARGUMENT) — confirmed
-        // live against the API. settings.PICKUP_ALLOWED_PLACE_TYPES has 11
-        // entries, so every pickup search was silently failing and landing
-        // on the caller's empty-suggestions catch block. This is a UX-only
-        // hint (the backend re-validates the full allowlist independently),
-        // so truncating here is safe — it just narrows autocomplete, not the
-        // actual gate.
-        body.includedPrimaryTypes = includedPrimaryTypes.slice(0, 5);
+      const body: Record<string, unknown> = { input, sessionToken };
+      // Biased toward the given point when there is one. Without one Google
+      // biases by the phone's IP, which is better than any fixed default
+      // (this used to fall back to the middle of India).
+      if (coords) {
+        body.locationBias = { circle: { center: { latitude: coords.latitude, longitude: coords.longitude }, radius: 50000 } };
       }
+      // No type filter: Google takes at most 5 types and judges them on a
+      // place's PRIMARY type only, which buried nearby stores ("McDonalds"
+      // near Dallas suggested a bakery in another town) — callers that care
+      // rank the results on `types` instead.
 
       const response = await fetch(url, {
         method: 'POST',
@@ -122,6 +109,7 @@ export const GooglePlacesService = {
           return {
             description: prediction.text.text,
             place_id: prediction.placeId,
+            types: prediction.types ?? [],
             structured_formatting: {
               main_text: prediction.structuredFormat.mainText.text,
               secondary_text: prediction.structuredFormat.secondaryText?.text || '',
@@ -152,7 +140,7 @@ export const GooglePlacesService = {
   getPlaceDetails: async (place_id: string): Promise<PlaceDetails> => {
     try {
       // Fields must be specified for the New API
-      const fields = 'location,formattedAddress,addressComponents,primaryType';
+      const fields = 'location,formattedAddress,addressComponents,primaryType,types';
       const url = `https://places.googleapis.com/v1/places/${place_id}?fields=${fields}&key=${GOOGLE_PLACES_API_KEY}&sessionToken=${sessionToken}`;
 
       const response = await fetch(url);
@@ -167,6 +155,7 @@ export const GooglePlacesService = {
           longitude: json.location.longitude,
           formatted_address: json.formattedAddress,
           primary_type: json.primaryType,
+          types: json.types ?? [],
         };
 
         // Extract specific components (v1 uses different names)

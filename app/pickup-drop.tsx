@@ -48,6 +48,18 @@ type SavedAddress = { id: string; label: string; full_address: string; lat: numb
 const SKILL_PROFESSION = 'Personal Errands';
 const SKILL_NAME = 'Pickup & Delivery Errands';
 
+/** The allowed store type a place counts as, or null when it isn't one.
+ * Its primary type first, then any of its other types: Google files a
+ * Walgreens under "drugstore" and a McDonald's under "fast_food_restaurant",
+ * neither on the list, though both also carry an allowed type
+ * ("convenience_store", "restaurant"). Judging on the primary alone turned
+ * them away. The type found is what the job sends as pickup_place_type,
+ * which the backend checks against the same list. */
+function storeTypeOf(primary: string | null | undefined, types: string[] | undefined, allowed: string[]): string | null {
+  if (primary && allowed.includes(primary)) return primary;
+  return types?.find((t) => allowed.includes(t)) ?? null;
+}
+
 type ItemSize = 'SMALL' | 'MEDIUM' | 'LARGE' | 'BULKY';
 // The same four sizes the provider prices (Rates & hosting).
 const ITEM_SIZES: { key: ItemSize; label: string; hint: string }[] = [
@@ -263,11 +275,18 @@ export default function PickupDropScreen() {
         const bias = dropoffLat != null && dropoffLng != null
           ? { latitude: dropoffLat, longitude: dropoffLng }
           : undefined;
-        // A store: only allowlisted businesses. A person: any address.
-        const results = await GooglePlacesService.searchAddress(
-          pickupQuery, controller.signal, bias, source === 'STORE' ? allowedPickupTypes : undefined,
-        );
+        // The same open search as register's address box. For a store, the
+        // places that count as one come first; the rest stay listed (a
+        // choice is still checked on tap), so a store Google files oddly
+        // is never missing from the list.
+        const found = await GooglePlacesService.searchAddress(pickupQuery, controller.signal, bias);
         if (controller.signal.aborted) return; // a newer search is on its way
+        const results = source === 'STORE'
+          ? [
+              ...found.filter((r) => storeTypeOf(null, r.types, allowedPickupTypes)),
+              ...found.filter((r) => !storeTypeOf(null, r.types, allowedPickupTypes)),
+            ]
+          : found;
         setPickupSuggestions(results);
         setNoResultsFor(results.length === 0 ? pickupQuery : null);
       } catch (e: any) {
@@ -299,11 +318,11 @@ export default function PickupDropScreen() {
     try {
       const details = await GooglePlacesService.getPlaceDetails(item.place_id);
       setPickupPlaceId(item.place_id);
-      setPickupPlaceType(details.primary_type ?? null);
+      const storeType = storeTypeOf(details.primary_type, details.types, allowedPickupTypes);
+      setPickupPlaceType(storeType ?? details.primary_type ?? null);
       setPickupLat(details.latitude);
       setPickupLng(details.longitude);
-      const isAllowed = source === 'PERSON'
-        || (!!details.primary_type && allowedPickupTypes.includes(details.primary_type));
+      const isAllowed = source === 'PERSON' || !!storeType;
       setPickupTypeError(isAllowed
         ? null
         : "This doesn't look like a supported store (grocery, pharmacy, etc). Choose a business — or a pickup from a person.");
