@@ -939,8 +939,13 @@ export default function HomeScreen() {
         setLocationSearchError(results.length === 0 ? 'No locations found' : null);
       } catch (e: any) {
         if (controller.signal.aborted) return;
+        if (__DEV__) console.warn('Location search failed:', e);
         setLocationSuggestions([]);
-        setLocationSearchError(`Could not fetch locations: ${e?.message || 'check your connection.'}`);
+        // The raw message (e.g. a Google API error code) is only shown in
+        // dev — useful for catching a real key/config problem during
+        // testing, but implementation detail nobody posting a job should
+        // see in production.
+        setLocationSearchError(__DEV__ ? `Could not fetch locations: ${e?.message || 'check your connection.'}` : 'Could not fetch locations. Check your connection and try again.');
       } finally {
         if (!controller.signal.aborted) setLocationSearching(false);
       }

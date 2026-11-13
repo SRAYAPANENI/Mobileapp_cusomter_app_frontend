@@ -327,10 +327,12 @@ export default function ProfileScreen() {
             // The generic "Check internet" wording used to hide whatever
             // actually failed (DNS, TLS, a non-2xx Google response, a
             // malformed body) behind one unhelpful string regardless of
-            // cause — surfacing the real error message here so a genuine
-            // network issue is distinguishable from an API/key problem
-            // without needing console access to the device.
-            setSearchError(`Could not fetch locations: ${error?.message || 'check your connection.'}`);
+            // cause — the real error message is surfaced in dev (how we
+            // actually caught a real key-restriction bug during testing),
+            // without needing console access to the device. In production
+            // that detail is implementation/third-party-API internals, not
+            // something to show someone editing their profile.
+            setSearchError(__DEV__ ? `Could not fetch locations: ${error?.message || 'check your connection.'}` : 'Could not fetch locations. Check your connection and try again.');
           }
         } finally {
           setIsSearching(false);

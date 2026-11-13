@@ -278,7 +278,12 @@ export default function PickupDropScreen() {
         // connection, a non-2xx from Google), not one that genuinely came
         // back empty. Conflating the two showed "No matches" for real
         // addresses whenever the request itself didn't make it through.
-        setPickupSearchError(e?.message || 'Could not search — check your connection.');
+        // The raw message (e.g. a Google API error code) is only shown in
+        // dev — it's exactly how we caught a real key-restriction bug
+        // during testing, but it's implementation detail nobody building a
+        // job post should see in production; a generic, actionable message
+        // there instead.
+        setPickupSearchError(__DEV__ ? (e?.message || 'Could not search — check your connection.') : 'Could not search right now. Check your connection and try again.');
       } finally {
         if (!controller.signal.aborted) setPickupSearching(false);
       }
