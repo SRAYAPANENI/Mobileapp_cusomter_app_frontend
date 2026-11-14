@@ -1267,7 +1267,7 @@ function setupCallKeepForIOS() {
       maximumCallGroups: '1',
       maximumCallsPerCallGroup: '1',
     },
-    android: { alertTitle: '', alertDescription: '', cancelButton: '', okButton: '' },
+    android: { alertTitle: '', alertDescription: '', cancelButton: '', okButton: '', additionalPermissions: [] },
   }).catch((err) => console.warn('Failed to set up CallKeep (iOS):', err));
 
   RNCallKeep.addEventListener('didDisplayIncomingCall', async ({ callUUID, payload }: any) => {

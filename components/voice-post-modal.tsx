@@ -656,7 +656,9 @@ export function VoicePostModal({
         detectedLanguageRef.current = language;
       }
       if (!text?.trim()) {
-        if (phaseRef.current === 'processing') setPhase('idle');
+        // Re-read: the phase moved on to 'processing' during the awaits above,
+        // which TypeScript can't see (it still assumes the 'listening' check).
+        if ((phaseRef.current as Phase) === 'processing') setPhase('idle');
         setTimeout(() => { if (phaseRef.current === 'idle') startListening(); }, 300);
         return;
       }

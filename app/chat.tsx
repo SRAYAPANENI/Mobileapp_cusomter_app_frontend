@@ -830,7 +830,7 @@ export default function ChatScreen() {
               });
               // Android: the phone's ringtone via Android's own player (the
               // library's player was silent on phones with a custom ringtone).
-              if (!ringingOnCallKit && !startInAppRingtone()) InCallManager.startRingtone('_DEFAULT_', RING_PATTERN);
+              if (!ringingOnCallKit && !startInAppRingtone()) InCallManager.startRingtone('_DEFAULT_', RING_PATTERN, 'default', -1);
               sendSignal({ type: 'call_ring' });
               wasConnectedRef.current = false;
               clearCallTimeout();

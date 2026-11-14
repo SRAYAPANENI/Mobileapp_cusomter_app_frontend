@@ -6,7 +6,9 @@ import InCallManager from 'react-native-incall-manager';
 export const callSounds = {
   /** Someone's calling us: the phone's own ringtone. */
   ring(): void {
-    InCallManager.startRingtone('_DEFAULT_');
+    // No vibration (0), the default iOS category, looping until stopped:
+    // the library's own defaults, spelled out because its typings want all four.
+    InCallManager.startRingtone('_DEFAULT_', 0, 'default', -1);
   },
   /** We're calling: ringback in the call's audio route. */
   ringback(): void {
