@@ -5,9 +5,16 @@ import Constants from 'expo-constants';
  * Uses the API key from app.json
  */
 
-export const GOOGLE_PLACES_API_KEY = Constants.expoConfig?.android?.config?.googleMaps?.apiKey ?? '';
-if (!GOOGLE_PLACES_API_KEY && __DEV__) {
-  console.warn('GOOGLE_PLACES_API_KEY is not configured — set android.config.googleMaps.apiKey in app.json/app.config.js.');
+// Read from `extra`: Expo strips `android.config` from the config embedded in
+// a release build (it treats it as private), so the googleMaps key is only
+// there in dev — a release APK sent an empty key and every search failed with
+// PERMISSION_DENIED. `android.config.googleMaps` stays for the native Maps SDK.
+export const GOOGLE_PLACES_API_KEY: string =
+  (Constants.expoConfig?.extra?.googlePlacesApiKey as string | undefined)
+  ?? Constants.expoConfig?.android?.config?.googleMaps?.apiKey
+  ?? '';
+if (!GOOGLE_PLACES_API_KEY) {
+  console.warn('GOOGLE_PLACES_API_KEY is not configured — set expo.extra.googlePlacesApiKey in app.json.');
 }
 
 export interface GooglePlaceSuggestion {
@@ -95,8 +102,13 @@ export const GooglePlacesService = {
       // apart, so it's read out here rather than just reporting the status.
       if (!response.ok) {
         const errJson = await response.json().catch(() => null);
-        const detail = errJson?.error?.status
-          ? `${errJson.error.status}: ${errJson.error.message || ''}`.trim()
+        // ErrorInfo.reason says WHY (API_KEY_IP_ADDRESS_BLOCKED,
+        // API_KEY_ANDROID_APP_BLOCKED, SERVICE_DISABLED, BILLING_DISABLED…)
+        // where status alone is just PERMISSION_DENIED for all of them.
+        const reason = errJson?.error?.details?.find((d: any) => d?.reason)?.reason;
+        const code = reason || errJson?.error?.status;
+        const detail = code
+          ? `${code}: ${errJson.error.message || ''}`.trim()
           : `${response.status} ${response.statusText}`;
         throw new Error(`Places API error — ${detail}`);
       }

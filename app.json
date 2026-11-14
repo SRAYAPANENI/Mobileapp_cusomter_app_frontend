@@ -124,6 +124,9 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "googlePlacesApiKey": "AIzaSyC9GCq5AcsfOek3gTzAJHe1105SryMJc8Q"
     }
   }
 }

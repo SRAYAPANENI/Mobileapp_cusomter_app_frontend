@@ -279,7 +279,16 @@ export default function PickupDropScreen() {
         // places that count as one come first; the rest stay listed (a
         // choice is still checked on tap), so a store Google files oddly
         // is never missing from the list.
-        const found = await GooglePlacesService.searchAddress(pickupQuery, controller.signal, bias);
+        let found: GooglePlaceSuggestion[];
+        try {
+          found = await GooglePlacesService.searchAddress(pickupQuery, controller.signal, bias);
+        } catch (first) {
+          if (controller.signal.aborted) return;
+          // On some phones the biased, cancellable request fails where
+          // register's plain one works. Ask again exactly as register does.
+          if (__DEV__) console.warn('Pickup search failed, retrying plain:', first);
+          found = await GooglePlacesService.searchAddress(pickupQuery);
+        }
         if (controller.signal.aborted) return; // a newer search is on its way
         const results = source === 'STORE'
           ? [
@@ -302,7 +311,12 @@ export default function PickupDropScreen() {
         // during testing, but it's implementation detail nobody building a
         // job post should see in production; a generic, actionable message
         // there instead.
-        setPickupSearchError(__DEV__ ? (e?.message || 'Could not search — check your connection.') : 'Could not search right now. Check your connection and try again.');
+        // Production shows only a short code (e.g. PERMISSION_DENIED, 403,
+        // TypeError) so a tester's screenshot says why, without the raw text.
+        const code = /—\s*([A-Z_]+|\d{3})/.exec(e?.message ?? '')?.[1] ?? e?.name;
+        setPickupSearchError(__DEV__
+          ? (e?.message || 'Could not search — check your connection.')
+          : `Could not search right now. Check your connection and try again.${code ? ` (${code})` : ''}`);
       } finally {
         if (!controller.signal.aborted) setPickupSearching(false);
       }
