@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated as RNAnimated, Easing as RNEasing, Image, Linking, Modal, ScrollView, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Animated as RNAnimated, Easing as RNEasing, Image, Linking, ScrollView, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Text, TextInput } from '@/components/scaled-text';
 import * as Speech from 'expo-speech';
 import * as SecureStore from 'expo-secure-store';
@@ -13,6 +13,7 @@ import { Fonts } from '@/constants/theme';
 import { SkoFyApi, JobShapePayload } from '@/services/api';
 import { hasPassed } from '@/services/schedule-slots';
 
+import { Popup } from '@/components/popup';
 // Every AI call failure used to be shown as "Check your internet/connection"
 // regardless of actual cause — including a real 429 rate limit (a very
 // plausible thing to hit during an active back-and-forth voice
@@ -1002,7 +1003,7 @@ export function VoicePostModal({
     : ['#38BDF8', '#F472B6', '#34D399'];
 
   return (
-    <Modal visible={visible} transparent={false} animationType="slide" statusBarTranslucent onRequestClose={onClose}>
+    <Popup closeOn={phase === 'posting' ? 'none' : 'back'} visible={visible} transparent={false} animationType="slide" statusBarTranslucent onClose={onClose}>
       <StatusBar backgroundColor={C.bg} barStyle={dark ? 'light-content' : 'dark-content'} />
       <View style={s.screen}>
 
@@ -1511,7 +1512,7 @@ export function VoicePostModal({
         )}
 
       </View>
-    </Modal>
+    </Popup>
   );
 }
 

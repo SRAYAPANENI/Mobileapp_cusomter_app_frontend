@@ -73,11 +73,12 @@ import Reanimated, {
   withTiming,
 } from 'react-native-reanimated';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, Dimensions, FlatList, Linking, Modal, Platform, Animated as RNAnimated, Easing as RNEasing, RefreshControl, ScrollView, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Dimensions, FlatList, Linking, Platform, Animated as RNAnimated, Easing as RNEasing, RefreshControl, ScrollView, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Text, TextInput } from '@/components/scaled-text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
+import { Popup } from '@/components/popup';
 // Conditionally import MapView only for native platforms
 let MapView: any;
 let Marker: any;
@@ -1828,9 +1829,9 @@ export default function HomeScreen() {
       {/* ── Book Now chooser — Standard Job vs Pickup & Drop, asked before
           location so Pickup & Drop gets its own dedicated flow instead of
           being a toggle inside the standard wizard ── */}
-      <Modal statusBarTranslucent navigationBarTranslucent visible={bookChoiceModalVisible} transparent animationType="fade" onRequestClose={() => setBookChoiceModalVisible(false)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setBookChoiceModalVisible(false)}>
-          <Reanimated.View entering={FadeInUp} style={[styles.locationModalContent, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12 }]}>
+      <Popup closeOn="outside" statusBarTranslucent navigationBarTranslucent visible={bookChoiceModalVisible} transparent animationType="fade" onClose={() => setBookChoiceModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <Reanimated.View onStartShouldSetResponder={() => true} entering={FadeInUp} style={[styles.locationModalContent, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12 }]}>
             <View style={styles.locationModalHeader}>
               <ThemedText style={styles.locationModalTitle}>What do you need?</ThemedText>
               <ThemedText style={styles.locationModalSubtitle}>Choose the kind of job you want to post</ThemedText>
@@ -1862,17 +1863,17 @@ export default function HomeScreen() {
               <ThemedText style={styles.closeLocationBtnText}>Cancel</ThemedText>
             </TouchableOpacity>
           </Reanimated.View>
-        </TouchableOpacity>
-      </Modal>
+        </View>
+      </Popup>
 
       {/* ── Location Modal ── */}
-      <Modal statusBarTranslucent navigationBarTranslucent visible={isLocationModalVisible} transparent animationType="fade" onRequestClose={() => setIsLocationModalVisible(false)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setIsLocationModalVisible(false)}>
+      <Popup closeOn="outside" statusBarTranslucent navigationBarTranslucent visible={isLocationModalVisible} transparent animationType="fade" onClose={() => setIsLocationModalVisible(false)}>
+        <View style={styles.modalOverlay}>
           {/* The address search box added here needs the keyboard to not just
               bury this bottom sheet — this modal had no text input before,
               so nothing previously needed it. */}
           <KeyboardAvoidingView behavior="padding" style={styles.keyboardAvoidingFill}>
-          <Reanimated.View entering={FadeInUp} style={[styles.locationModalContent, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12 }]}>
+          <Reanimated.View onStartShouldSetResponder={() => true} entering={FadeInUp} style={[styles.locationModalContent, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12 }]}>
             <View style={styles.locationModalHeader}>
               <ThemedText style={styles.locationModalTitle}>Confirm Service Location</ThemedText>
               <ThemedText style={styles.locationModalSubtitle}>Where do you need the service?</ThemedText>
@@ -1954,13 +1955,13 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </Reanimated.View>
           </KeyboardAvoidingView>
-        </TouchableOpacity>
-      </Modal>
+        </View>
+      </Popup>
 
       {/* ── View Location Sheet (header pill tap) ── */}
-      <Modal statusBarTranslucent navigationBarTranslucent visible={showViewLocationSheet} transparent animationType="slide" onRequestClose={() => setShowViewLocationSheet(false)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowViewLocationSheet(false)}>
-          <Reanimated.View entering={FadeInUp} style={[styles.locationSheetContainer, { paddingBottom: Math.max(insets.bottom, 20) + 12 }]}>
+      <Popup closeOn="outside" statusBarTranslucent navigationBarTranslucent visible={showViewLocationSheet} transparent animationType="slide" onClose={() => setShowViewLocationSheet(false)}>
+        <View style={styles.modalOverlay}>
+          <Reanimated.View onStartShouldSetResponder={() => true} entering={FadeInUp} style={[styles.locationSheetContainer, { paddingBottom: Math.max(insets.bottom, 20) + 12 }]}>
             {/* Top drag handle indicator */}
             <View style={styles.sheetHandleBar} />
 
@@ -2011,8 +2012,8 @@ export default function HomeScreen() {
               <ThemedText style={styles.sheetCloseBtnText}>Close</ThemedText>
             </TouchableOpacity>
           </Reanimated.View>
-        </TouchableOpacity>
-      </Modal>
+        </View>
+      </Popup>
 
       {/* Leaving the app: the shared dialog. Closing it first matters —
           Android can keep the JS alive after exitApp(), and reopening would

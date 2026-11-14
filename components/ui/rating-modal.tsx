@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, StyleSheet, View, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, TouchableOpacity } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { ThemedText } from '../themed-text';
@@ -8,6 +8,7 @@ import { Star, CheckCircle2 } from 'lucide-react-native';
 import { NO_OFF_APP_ANSWER, OffAppAnswer, OffAppQuestion } from '@/components/off-app-question';
 import Animated, { SlideInDown, FadeIn } from 'react-native-reanimated';
 
+import { Popup } from '@/components/popup';
 export interface RatingDimensions {
   skill_rating: number;
   punctuality_rating: number;
@@ -71,7 +72,7 @@ export function RatingModal({ visible, onClose, onSubmit, providerName, onSkip, 
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={isSubmitted ? onClose : onSkip}>
+    <Popup closeOn={submitting ? 'none' : 'back'} visible={visible} transparent animationType="fade" onClose={isSubmitted ? onClose : onSkip}>
       <KeyboardAvoidingView style={styles.overlay} behavior="padding" automaticOffset>
         {!isSubmitted ? (
           <Animated.View entering={SlideInDown.duration(260)} style={styles.card}>
@@ -158,7 +159,7 @@ export function RatingModal({ visible, onClose, onSubmit, providerName, onSkip, 
           </Animated.View>
         )}
       </KeyboardAvoidingView>
-    </Modal>
+    </Popup>
   );
 }
 

@@ -7,9 +7,10 @@ import { SkoFyApi } from '@/services/api';
 import { fromParts } from '@/services/schedule-slots';
 import { Repeat } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
+import { Popup, PopupCard } from '@/components/popup';
 const CADENCES: { value: 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY'; label: string }[] = [
   { value: 'WEEKLY', label: 'Every week' },
   { value: 'BIWEEKLY', label: 'Every 2 weeks' },
@@ -60,9 +61,9 @@ export function RepeatBookingSheet({ job, onClose, onMessage }: Props) {
 
   return (
     <>
-    <Modal visible={!!job && !picker} transparent animationType="fade" onRequestClose={onClose}>
+    <Popup closeOn={sending ? 'none' : 'back'} visible={!!job && !picker} transparent animationType="fade" onClose={onClose}>
       <KeyboardAvoidingView behavior="padding" style={s.overlay}>
-        <View style={s.sheet}>
+        <PopupCard style={s.sheet}>
           <View style={s.row}>
             <Repeat size={20} color="#111827" />
             <ThemedText style={s.title}>Book {job?.providerName ?? 'them'} regularly</ThemedText>
@@ -98,9 +99,9 @@ export function RepeatBookingSheet({ job, onClose, onMessage }: Props) {
               {sending ? <ActivityIndicator color="#111827" /> : <ThemedText style={s.primaryText}>Send to provider</ThemedText>}
             </TouchableOpacity>
           </View>
-        </View>
+        </PopupCard>
       </KeyboardAvoidingView>
-    </Modal>
+    </Popup>
       <DatePickerModal
         visible={picker === 'day'}
         onClose={() => setPicker(null)}

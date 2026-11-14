@@ -4,7 +4,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AlertTriangle, Check, X } from 'lucide-react-native';
 import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated';
 import React, { createContext, ReactNode, useContext, useState } from 'react';
-import { Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Popup } from '@/components/popup';
 
 type FeedbackType = 'success' | 'error' | 'info';
 
@@ -45,6 +46,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setFeedback(prev => ({ ...prev, visible: false }));
   };
 
+  const acknowledgeFeedback = () => {
+    hideFeedback();
+    feedback.onConfirm?.();
+  };
+
   return (
     <AppContext.Provider value={{
       showFeedback,
@@ -55,13 +61,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       {children}
 
       {/* Global Feedback Modal */}
-      <Modal visible={feedback.visible} transparent animationType="fade">
+      {/* One button, one outcome: closing it any way counts as "Got it". */}
+      <Popup visible={feedback.visible} transparent animationType="fade" closeOn="outside" onClose={acknowledgeFeedback}>
         <View style={styles.overlay}>
           <Animated.View entering={FadeIn.duration(300)} style={StyleSheet.absoluteFillObject}>
             <View style={styles.blur} />
           </Animated.View>
 
-          <Animated.View entering={ZoomIn.duration(400).springify()} style={styles.card}>
+          <Animated.View entering={ZoomIn.duration(400).springify()} style={styles.card} onStartShouldSetResponder={() => true}>
             <View style={[
               styles.iconCircle,
               { backgroundColor: feedback.type === 'success' ? '#10B981' : feedback.type === 'error' ? '#EF4444' : '#F59E0B' }
@@ -76,16 +83,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
             <TouchableOpacity
               style={[styles.button, { backgroundColor: themeColors.brand }]}
-              onPress={() => {
-                hideFeedback();
-                feedback.onConfirm?.();
-              }}
+              onPress={acknowledgeFeedback}
             >
               <ThemedText style={styles.buttonText}>Got it</ThemedText>
             </TouchableOpacity>
           </Animated.View>
         </View>
-      </Modal>
+      </Popup>
 
       {/* Global Loading Overlay */}
       {loading && (

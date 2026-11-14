@@ -53,7 +53,7 @@ import {
   XCircle
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, Modal, Platform, ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Platform, ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
@@ -61,6 +61,7 @@ import { usePushPreference } from '@/hooks/use-push-preference';
 import { padBottom } from '@/hooks/use-bottom-inset';
 import { usePullRefresh } from '@/hooks/use-pull-refresh';
 
+import { Popup, PopupCard } from '@/components/popup';
 interface JobHistory {
   id: string;
   title: string;
@@ -1172,17 +1173,17 @@ export default function ProfileScreen() {
       </ScrollView>
 
       {/* Settings Modal Integrated logic */}
-      <Modal statusBarTranslucent navigationBarTranslucent
+      <Popup closeOn="outside" statusBarTranslucent navigationBarTranslucent
         visible={isSettingsOpen}
         transparent={true}
         animationType="slide"
-        onRequestClose={() => setIsSettingsOpen(false)}
+        onClose={() => setIsSettingsOpen(false)}
       >
         {/* Stops below the status bar and the list scrolls: with every row it
             can be taller than a small screen, and a bottom-anchored sheet then
             grows up under the status bar. */}
         <View style={[styles.modalOverlay, { paddingTop: insets.top + 12 }]}>
-          <View style={[styles.modalContent, modalBottomPad, { maxHeight: '100%' }]}>
+          <PopupCard style={[styles.modalContent, modalBottomPad, { maxHeight: '100%' }]}>
             <View style={styles.modalHeader}>
               <ThemedText style={styles.modalTitle}>Settings</ThemedText>
               <TouchableOpacity onPress={() => setIsSettingsOpen(false)}>
@@ -1327,16 +1328,16 @@ export default function ProfileScreen() {
             >
               <ThemedText style={styles.closeModalButtonText}>Close</ThemedText>
             </TouchableOpacity>
-          </View>
+          </PopupCard>
         </View>
-      </Modal>
+      </Popup>
 
       {/* Change Password Modal */}
-      <Modal statusBarTranslucent navigationBarTranslucent
+      <Popup closeOn={isSavingPassword ? 'none' : 'back'} statusBarTranslucent navigationBarTranslucent
         visible={isPasswordOpen}
         animationType="fade"
         transparent
-        onRequestClose={() => { setIsPasswordOpen(false); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setShowCurrentPassword(false); setShowNewPassword(false); setShowConfirmPassword(false); }}
+        onClose={() => { setIsPasswordOpen(false); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setShowCurrentPassword(false); setShowNewPassword(false); setShowConfirmPassword(false); }}
       >
         <KeyboardAvoidingView
           style={[styles.modalOverlay, { justifyContent: 'center', padding: 20 }]}
@@ -1431,17 +1432,13 @@ export default function ProfileScreen() {
             </View>
           </View>
         </KeyboardAvoidingView>
-      </Modal>
+      </Popup>
 
       {/* Photo Options Modal */}
-      <Modal visible={isPhotoSheetOpen} transparent animationType="fade" onRequestClose={() => setIsPhotoSheetOpen(false)}>
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setIsPhotoSheetOpen(false)}
-        >
+      <Popup closeOn="outside" visible={isPhotoSheetOpen} transparent animationType="fade" onClose={() => setIsPhotoSheetOpen(false)}>
+        <View style={styles.modalOverlay}>
           {/* Lifted above the navigation bar, whichever kind the phone uses. */}
-          <View style={[styles.photoSheet, { marginBottom: 24 + insets.bottom }]}>
+          <PopupCard style={[styles.photoSheet, { marginBottom: 24 + insets.bottom }]}>
             <View style={styles.photoSheetHeader}>
               <ThemedText style={styles.photoSheetTitle}>Profile Photo</ThemedText>
             </View>
@@ -1469,16 +1466,16 @@ export default function ProfileScreen() {
                 <ThemedText style={[styles.photoOptionText, { color: '#EF4444' }]}>Remove Photo</ThemedText>
               </TouchableOpacity>
             )}
-          </View>
-        </TouchableOpacity>
-      </Modal>
+          </PopupCard>
+        </View>
+      </Popup>
 
       {/* Add Address Modal */}
-      <Modal
+      <Popup closeOn="back"
         visible={isAddAddressOpen}
         transparent
         animationType="fade"
-        onRequestClose={() => {
+        onClose={() => {
           setIsAddAddressOpen(false);
           setNewAddressType('');
           setNewAddressValue('');
@@ -1594,7 +1591,7 @@ export default function ProfileScreen() {
             </View>
           </View>
         </KeyboardAvoidingView>
-      </Modal>
+      </Popup>
 
       {/* Remove an ID document photo: confirmed in the shared dialog. */}
       <AppAlert
@@ -1617,11 +1614,11 @@ export default function ProfileScreen() {
 
       {/* ID Document Full-Screen Viewer — the Front/Back/Extra thumbnails
           are a tiny 3-up row, too small to actually read an ID off of. */}
-      <Modal
+      <Popup closeOn="outside"
         visible={viewingDocIdx !== null}
         transparent
         animationType="fade"
-        onRequestClose={() => setViewingDocIdx(null)}
+        onClose={() => setViewingDocIdx(null)}
       >
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)' }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: insets.top + 10, paddingHorizontal: 20, paddingBottom: 10 }}>
@@ -1642,10 +1639,10 @@ export default function ProfileScreen() {
             )}
           </View>
         </View>
-      </Modal>
+      </Popup>
 
       {/* Update Email Modal */}
-      <Modal statusBarTranslucent navigationBarTranslucent visible={isEmailModalOpen} transparent animationType="fade" onRequestClose={() => { setIsEmailModalOpen(false); setEmailInput(''); }}>
+      <Popup closeOn={emailSaving ? 'none' : 'back'} statusBarTranslucent navigationBarTranslucent visible={isEmailModalOpen} transparent animationType="fade" onClose={() => { setIsEmailModalOpen(false); setEmailInput(''); }}>
         <KeyboardAvoidingView
           style={[styles.modalOverlay, { justifyContent: 'center', padding: 20 }]}
           behavior="padding"
@@ -1704,7 +1701,7 @@ export default function ProfileScreen() {
             </View>
           </View>
         </KeyboardAvoidingView>
-      </Modal>
+      </Popup>
 
       {/* Profile's own messages, in the shared dialog. */}
       <AppAlert

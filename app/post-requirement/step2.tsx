@@ -22,13 +22,14 @@ import {
 } from 'lucide-react-native';
 import { SkoFyApi } from '@/services/api';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Dimensions, FlatList, Modal, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Dimensions, FlatList, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { FadeIn, FadeInUp, SlideInUp } from 'react-native-reanimated';
 import { fitBottom, padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 import AnimatedLogoMark from '@/components/animated-logo-mark';
 
+import { Popup } from '@/components/popup';
 const { width } = Dimensions.get('window');
 
 // Offline fallback when the backend is unreachable — real list always comes from GET /skills/professions
@@ -343,9 +344,9 @@ export default function VerifyProblemScreen() {
       </KeyboardAvoidingView>
 
       {/* Profession Selection Modal */}
-      <Modal statusBarTranslucent navigationBarTranslucent visible={showProfessionModal} animationType="slide" transparent>
+      <Popup closeOn="outside" statusBarTranslucent navigationBarTranslucent visible={showProfessionModal} animationType="slide" transparent onClose={() => setShowProfessionModal(false)}>
         <KeyboardAvoidingView style={styles.modalOverlay} behavior="padding" automaticOffset>
-          <Animated.View entering={SlideInUp} style={padBottom(styles.modalContent, bottomInset)}>
+          <Animated.View onStartShouldSetResponder={() => true} entering={SlideInUp} style={padBottom(styles.modalContent, bottomInset)}>
             <View style={styles.modalHeader}>
               <ThemedText style={styles.modalTitle}>Select Profession</ThemedText>
               <TouchableOpacity onPress={() => setShowProfessionModal(false)}>
@@ -384,12 +385,12 @@ export default function VerifyProblemScreen() {
             />
           </Animated.View>
         </KeyboardAvoidingView>
-      </Modal>
+      </Popup>
 
       {/* Skills Selection Modal */}
-      <Modal statusBarTranslucent navigationBarTranslucent visible={showSkillsModal} animationType="slide" transparent>
+      <Popup closeOn="outside" statusBarTranslucent navigationBarTranslucent visible={showSkillsModal} animationType="slide" transparent onClose={() => setShowSkillsModal(false)}>
         <View style={styles.modalOverlay}>
-          <Animated.View entering={SlideInUp} style={padBottom(styles.modalContent, bottomInset)}>
+          <Animated.View onStartShouldSetResponder={() => true} entering={SlideInUp} style={padBottom(styles.modalContent, bottomInset)}>
             <View style={styles.modalHeader}>
               <ThemedText style={styles.modalTitle}>Edit Skills</ThemedText>
               <TouchableOpacity onPress={() => setShowSkillsModal(false)}>
@@ -424,7 +425,7 @@ export default function VerifyProblemScreen() {
             </TouchableOpacity>
           </Animated.View>
         </View>
-      </Modal>
+      </Popup>
 
       <DatePickerModal
         visible={showDatePicker}

@@ -16,7 +16,7 @@ import {
   XCircle
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, FlatList, Keyboard, Linking, Modal, Platform, ScrollView, StyleSheet, TouchableOpacity, Vibration, View } from 'react-native';
+import { ActivityIndicator, BackHandler, FlatList, Keyboard, Linking, Platform, ScrollView, StyleSheet, TouchableOpacity, Vibration, View } from 'react-native';
 import { Text, TextInput } from '@/components/scaled-text';
 import { OffAppNote } from '@/components/off-app-note';
 import { NO_OFF_APP_ANSWER, OffAppAnswer, OffAppQuestion } from '@/components/off-app-question';
@@ -40,6 +40,7 @@ import { answerIosRing, claimOutgoingCall, markCallEnded, releaseOutgoingCall, s
 import { useOpenScreen } from '@/services/openScreens';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
+import { Popup } from '@/components/popup';
 // No-answer cutoff — like a real phone call, ringing/calling shouldn't go on forever.
 // The server ends an unanswered call after 45s and says why; this is only
 // the fallback if that message never arrives.
@@ -1213,7 +1214,7 @@ export default function ChatScreen() {
       {appAlert.element}
 
       {/* Mutual rating modal — shown once when opening a completed job chat */}
-      <Modal statusBarTranslucent navigationBarTranslucent visible={ratingVisible} transparent animationType="fade" onRequestClose={() => { markRatingSkipped(jobId); setRatingVisible(false); }}>
+      <Popup closeOn={ratingSubmitting ? 'none' : 'back'} statusBarTranslucent navigationBarTranslucent visible={ratingVisible} transparent animationType="fade" onClose={() => { markRatingSkipped(jobId); setRatingVisible(false); }}>
         <KeyboardAvoidingView style={styles.ratingOverlay} behavior="padding" automaticOffset>
           <View style={padBottom(styles.ratingSheet, bottomInset)}>
             <Text style={styles.ratingTitle}>Rate your experience</Text>
@@ -1278,7 +1279,7 @@ export default function ChatScreen() {
             </View>
           </View>
         </KeyboardAvoidingView>
-      </Modal>
+      </Popup>
     </KeyboardAvoidingView>
   );
 }

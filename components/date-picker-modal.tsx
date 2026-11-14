@@ -2,11 +2,12 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import React, { useMemo, useState } from 'react';
-import { Dimensions, Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Dimensions, StyleSheet, TouchableOpacity, View } from 'react-native';
 import Animated, { SlideInUp } from 'react-native-reanimated';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react-native';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
+import { Popup } from '@/components/popup';
 const { width } = Dimensions.get('window');
 
 const getDaysInMonth = (month: number, year: number) => new Date(year, month + 1, 0).getDate();
@@ -76,9 +77,9 @@ export function DatePickerModal({ visible, onClose, selectedDateLabel, onSelect 
   };
 
   return (
-    <Modal statusBarTranslucent navigationBarTranslucent visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+    <Popup closeOn="outside" statusBarTranslucent navigationBarTranslucent visible={visible} animationType="fade" transparent onClose={onClose}>
       <View style={styles.modalOverlay}>
-        <Animated.View entering={SlideInUp} style={padBottom(styles.modalContent, bottomInset)}>
+        <Animated.View onStartShouldSetResponder={() => true} entering={SlideInUp} style={padBottom(styles.modalContent, bottomInset)}>
           <View style={styles.modalHeader}>
             <ThemedText style={styles.modalTitle}>Select Date</ThemedText>
             <TouchableOpacity onPress={onClose}>
@@ -129,7 +130,7 @@ export function DatePickerModal({ visible, onClose, selectedDateLabel, onSelect 
           </View>
         </Animated.View>
       </View>
-    </Modal>
+    </Popup>
   );
 }
 

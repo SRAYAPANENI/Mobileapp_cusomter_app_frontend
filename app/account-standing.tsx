@@ -8,10 +8,11 @@ import { SkoFyApi, StrikeView } from '@/services/api';
 import { router, useFocusEffect } from 'expo-router';
 import { ChevronLeft, Gift, ShieldCheck, ShieldAlert } from 'lucide-react-native';
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Modal, ScrollView, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { usePullRefresh } from '@/hooks/use-pull-refresh';
 
+import { Popup } from '@/components/popup';
 const date = (iso: string) => new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
 
 // Credits Dodorez gave when a provider let the customer down, and any strikes
@@ -125,7 +126,7 @@ export default function AccountStandingScreen() {
         </ScrollView>
       )}
 
-      <Modal visible={!!appealing} transparent animationType="fade" onRequestClose={() => setAppealing(null)}>
+      <Popup closeOn={sending ? 'none' : 'back'} visible={!!appealing} transparent animationType="fade" onClose={() => setAppealing(null)}>
         <KeyboardAvoidingView behavior="padding" style={s.overlay}>
           <View style={s.sheet}>
             <ThemedText style={s.cardTitle}>Appeal this strike</ThemedText>
@@ -153,7 +154,7 @@ export default function AccountStandingScreen() {
             </View>
           </View>
         </KeyboardAvoidingView>
-      </Modal>
+      </Popup>
       {appAlert.element}
     </ThemedView>
   );

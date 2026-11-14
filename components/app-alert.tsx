@@ -9,12 +9,12 @@ import {
 import React, { useEffect } from 'react';
 import {
   Dimensions,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
+import { Popup, PopupCard } from './popup';
 import { ThemedText } from './themed-text';
 
 export type AlertType = 'success' | 'error' | 'warning' | 'info' | 'copied';
@@ -84,6 +84,7 @@ export function AppAlert({
   // Two actions sit side by side (the main one on the right); more stack,
   // so no label is ever squeezed.
   const stacked = actions.length > 2;
+  const isNotice = !buttons || (buttons.length === 1 && !buttons[0].onPress);
 
   useEffect(() => {
     if (visible && autoDismissMs) {
@@ -96,9 +97,18 @@ export function AppAlert({
     // One steady fade, from the Modal alone. The card used to spring in from
     // nothing (overshooting, so it bounced up and down) while the backdrop
     // faded in a second time on top of the Modal's own fade.
-    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onDismiss}>
+    <Popup
+      visible={visible}
+      transparent
+      animationType="fade"
+      statusBarTranslucent
+      onClose={onDismiss}
+      // A plain notice closes on a tap outside. A question, or a button that
+      // does something, waits for the person to choose.
+      closeOn={isNotice ? 'outside' : 'back'}
+    >
       <View style={styles.scrim}>
-        <View style={styles.card} accessibilityViewIsModal accessibilityRole="alert">
+        <PopupCard style={styles.card} accessibilityViewIsModal accessibilityRole="alert">
           {/* The icon beside the words, not above them: one glance reads
               what kind of message it is and what it says. */}
           <View style={styles.head}>
@@ -147,9 +157,9 @@ export function AppAlert({
               );
             })}
           </View>
-        </View>
+        </PopupCard>
       </View>
-    </Modal>
+    </Popup>
   );
 }
 

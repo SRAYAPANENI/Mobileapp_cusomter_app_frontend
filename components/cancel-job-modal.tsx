@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, View, TouchableOpacity, Platform, ScrollView, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, Platform, ScrollView, StyleSheet } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,6 +9,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { CancelPreview, SkoFyApi } from '@/services/api';
 import { AlertTriangle } from 'lucide-react-native';
 
+import { Popup } from '@/components/popup';
 const PRE_HIRE_REASONS = [
   'Changed my mind',
   'Posted by mistake',
@@ -90,7 +91,7 @@ export function CancelJobModal({ visible, jobId, scenario = 'pre-hire', onClose,
   };
 
   return (
-    <Modal statusBarTranslucent navigationBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Popup closeOn={cancelling ? 'none' : 'back'} statusBarTranslucent navigationBarTranslucent visible={visible} transparent animationType="slide" onClose={onClose}>
       <KeyboardAvoidingView style={styles.modalOverlay} behavior="padding" automaticOffset>
         <View style={[styles.reasonModalContainer, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12 }]}>
           <View style={styles.modalIndicator} />
@@ -169,7 +170,7 @@ export function CancelJobModal({ visible, jobId, scenario = 'pre-hire', onClose,
           </View>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+    </Popup>
   );
 }
 

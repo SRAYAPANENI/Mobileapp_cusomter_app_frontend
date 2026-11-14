@@ -6,11 +6,12 @@ import { CheckoutBreakdown, CheckoutOffer, SkoFyApi } from '@/services/api';
 import * as Haptics from 'expo-haptics';
 import { BadgePercent, CheckCircle2, Tag } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Modal, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Popup } from '@/components/popup';
 interface CheckoutSheetProps {
   visible: boolean;
   jobId: string;
@@ -113,7 +114,7 @@ export function CheckoutSheet({ visible, jobId, onPay, onClose }: CheckoutSheetP
   const close = () => { if (!paying) onClose(); };
 
   return (
-    <Modal statusBarTranslucent navigationBarTranslucent visible={visible} transparent animationType="slide" onRequestClose={close}>
+    <Popup closeOn={paying ? 'none' : 'back'} statusBarTranslucent navigationBarTranslucent visible={visible} transparent animationType="slide" onClose={close}>
       <KeyboardAvoidingView style={s.overlay} behavior="padding" automaticOffset>
         <View style={[s.container, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12 }]}>
           <View style={s.handle} />
@@ -280,7 +281,7 @@ export function CheckoutSheet({ visible, jobId, onPay, onClose }: CheckoutSheetP
           )}
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+    </Popup>
   );
 }
 

@@ -20,7 +20,7 @@ import {
   Send
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActionSheetIOS, ActivityIndicator, FlatList, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActionSheetIOS, ActivityIndicator, FlatList, Keyboard, Platform, Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 // The keyboard-controller version: works with KeyboardProvider (app/_layout.tsx)
 // on Android — React Native's own one shifted the layout as the keyboard
@@ -30,6 +30,7 @@ import Animated, { FadeInLeft, FadeInRight } from 'react-native-reanimated';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 import AnimatedLogoMark from '@/components/animated-logo-mark';
 
+import { Popup } from '@/components/popup';
 interface Message {
   id: string;
   /** What the list renders it by. A sent message keeps its first key when the
@@ -672,11 +673,11 @@ export default function SupportChatScreen() {
         onToggleSpeaker={supportCall.toggleSpeaker}
       />
       {/* A photo full screen: tap anywhere to close. */}
-      <Modal visible={!!viewing} transparent animationType="fade" onRequestClose={() => setViewing(null)}>
+      <Popup closeOn="outside" visible={!!viewing} transparent animationType="fade" onClose={() => setViewing(null)}>
         <Pressable style={styles.viewer} onPress={() => setViewing(null)} accessibilityLabel="Close photo">
           {viewing ? <Image source={{ uri: viewing }} style={styles.viewerImage} contentFit="contain" /> : null}
         </Pressable>
-      </Modal>
+      </Popup>
       {alert.element}
     </KeyboardAvoidingView>
   );

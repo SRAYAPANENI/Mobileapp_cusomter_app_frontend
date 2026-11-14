@@ -8,9 +8,10 @@ import {
 } from '@/services/schedule-slots';
 import { Clock3, X, Zap } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import Animated, { SlideInUp } from 'react-native-reanimated';
 
+import { Popup } from '@/components/popup';
 interface TimePickerModalProps {
   visible: boolean;
   onClose: () => void;
@@ -127,9 +128,9 @@ export function TimePickerModal({
   };
 
   return (
-    <Modal statusBarTranslucent navigationBarTranslucent visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+    <Popup closeOn="outside" statusBarTranslucent navigationBarTranslucent visible={visible} animationType="fade" transparent onClose={onClose}>
       <View style={styles.modalOverlay}>
-        <Animated.View entering={SlideInUp} style={padBottom(styles.modalContent, bottomInset)}>
+        <Animated.View onStartShouldSetResponder={() => true} entering={SlideInUp} style={padBottom(styles.modalContent, bottomInset)}>
           <View style={styles.modalHeader}>
             <ThemedText style={styles.modalTitle}>{title}</ThemedText>
             <TouchableOpacity onPress={onClose}>
@@ -199,7 +200,7 @@ export function TimePickerModal({
           </TouchableOpacity>
         </Animated.View>
       </View>
-    </Modal>
+    </Popup>
   );
 }
 

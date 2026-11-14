@@ -6,11 +6,12 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, CheckCircle2, MapPin, X } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Text, TextInput } from '@/components/scaled-text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
+import { Popup } from '@/components/popup';
 // Posted directly from the Explore Services tile row (see home.tsx) — no
 // intermediate picker screen. Title/description/skill come from the tapped
 // QuickNeed; the only inputs here are the (already-confirmed) location, an
@@ -102,7 +103,7 @@ export function QuickNeedModal({ visible, need, lat, lng, address, onClose, onPo
   if (!need) return null;
 
   return (
-    <Modal statusBarTranslucent navigationBarTranslucent visible={visible} animationType="slide" transparent onRequestClose={phase === 'confirm' ? onClose : undefined}>
+    <Popup closeOn={phase === 'confirm' ? 'back' : 'none'} statusBarTranslucent navigationBarTranslucent visible={visible} animationType="slide" transparent onClose={onClose}>
       <KeyboardAvoidingView style={s.backdrop} behavior="padding" automaticOffset>
         <View style={[s.sheet, { paddingBottom: Math.max(insets.bottom, 20) }]}>
           <View style={s.dragHandle} />
@@ -187,7 +188,7 @@ export function QuickNeedModal({ visible, need, lat, lng, address, onClose, onPo
           )}
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+    </Popup>
   );
 }
 

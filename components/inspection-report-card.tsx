@@ -5,9 +5,10 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, CheckCircle2, ClipboardCheck, ShieldAlert, X } from 'lucide-react-native';
 import React, { useState } from 'react';
-import { ActivityIndicator, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
+import { Popup } from '@/components/popup';
 export type InspectionReport = {
   findings?: string;
   result?: 'QUOTE' | 'NO_WORK';
@@ -115,7 +116,7 @@ export function InspectionReportCard({ jobId, jobStatus, report, confirmed, disp
         </>
       )}
 
-      <Modal visible={reporting} transparent animationType="fade" onRequestClose={() => setReporting(false)}>
+      <Popup closeOn={sending ? 'none' : 'back'} visible={reporting} transparent animationType="fade" onClose={() => setReporting(false)}>
         <KeyboardAvoidingView behavior="padding" style={s.overlay}>
           <View style={s.sheet}>
             <Text style={s.sheetTitle}>The inspection wasn't done</Text>
@@ -160,7 +161,7 @@ export function InspectionReportCard({ jobId, jobStatus, report, confirmed, disp
             </View>
           </View>
         </KeyboardAvoidingView>
-      </Modal>
+      </Popup>
     </View>
   );
 }

@@ -35,7 +35,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   View,
-  Modal,
 } from 'react-native';
 import Animated, {
   FadeInDown,
@@ -44,6 +43,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePullRefresh } from '@/hooks/use-pull-refresh';
 
+import { Popup } from '@/components/popup';
 const { width } = Dimensions.get('window');
 
 type WorkProofItem = { id: string; type: 'image' | 'video'; url: string; thumbnail: string; skill: string };
@@ -329,7 +329,7 @@ export default function ProviderDetailsScreen() {
   return (
     <ThemedView style={styles.container}>
       {/* Media Viewer Modal */}
-      <Modal visible={viewerVisible} transparent animationType="fade" onRequestClose={closeMedia}>
+      <Popup closeOn={selectedMedia?.type === 'video' ? 'back' : 'outside'} visible={viewerVisible} transparent animationType="fade" onClose={closeMedia}>
         <View style={styles.viewerContainer}>
           {/* Edge-to-edge: placed by the real bar heights, not fixed numbers. */}
           <TouchableOpacity style={[styles.closeViewer, { top: insets.top + 16 }]} onPress={closeMedia}>
@@ -361,7 +361,7 @@ export default function ProviderDetailsScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+      </Popup>
 
       {/* Header with Overlay */}
       <View style={styles.header}>

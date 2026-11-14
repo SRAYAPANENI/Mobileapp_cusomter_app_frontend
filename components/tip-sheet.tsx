@@ -4,9 +4,10 @@ import { Fonts } from '@/constants/theme';
 import { useHirePayment } from '@/hooks/use-hire-payment';
 import { SkoFyApi, TipInfo } from '@/services/api';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
+import { Popup } from '@/components/popup';
 interface Props {
   jobId: string | null;
   providerName: string;
@@ -46,7 +47,7 @@ export function TipSheet({ jobId, providerName, onClose, onMessage }: Props) {
   };
 
   return (
-    <Modal visible={!!jobId} transparent animationType="fade" onRequestClose={onClose}>
+    <Popup closeOn={paying ? 'none' : 'back'} visible={!!jobId} transparent animationType="fade" onClose={onClose}>
       <KeyboardAvoidingView behavior="padding" style={s.overlay}>
         <View style={s.sheet}>
           <ThemedText style={s.title}>Tip {providerName}</ThemedText>
@@ -87,7 +88,7 @@ export function TipSheet({ jobId, providerName, onClose, onMessage }: Props) {
           </View>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+    </Popup>
   );
 }
 

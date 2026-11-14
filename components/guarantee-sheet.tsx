@@ -5,9 +5,10 @@ import { GuaranteeInfo, PhotoFile, SkoFyApi } from '@/services/api';
 import * as ImagePicker from 'expo-image-picker';
 import { ShieldCheck } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
+import { Popup, PopupCard } from '@/components/popup';
 const MAX_PHOTOS = 4;
 
 const STATUS_TEXT: Record<string, string> = {
@@ -59,9 +60,9 @@ export function GuaranteeSheet({ jobId, onClose, onMessage }: Props) {
 
   const claim = info?.claim;
   return (
-    <Modal visible={!!jobId} transparent animationType="fade" onRequestClose={onClose}>
+    <Popup closeOn={busy ? 'none' : 'back'} visible={!!jobId} transparent animationType="fade" onClose={onClose}>
       <KeyboardAvoidingView behavior="padding" style={s.overlay}>
-        <View style={s.sheet}>
+        <PopupCard style={s.sheet}>
           <View style={s.row}>
             <ShieldCheck size={20} color="#059669" />
             <ThemedText style={s.title}>Dodorez guarantee</ThemedText>
@@ -115,9 +116,9 @@ export function GuaranteeSheet({ jobId, onClose, onMessage }: Props) {
           <TouchableOpacity style={[s.secondary, { marginTop: 8 }]} onPress={onClose} disabled={busy}>
             <ThemedText style={s.secondaryText}>Close</ThemedText>
           </TouchableOpacity>
-        </View>
+        </PopupCard>
       </KeyboardAvoidingView>
-    </Modal>
+    </Popup>
   );
 }
 
