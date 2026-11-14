@@ -13,6 +13,7 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { usePullRefresh } from '@/hooks/use-pull-refresh';
 
 import { Popup } from '@/components/popup';
+import { useButtonRowFit } from '@/hooks/use-button-row-fit';
 const date = (iso: string) => new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
 
 // Credits Dodorez gave when a provider let the customer down, and any strikes
@@ -20,6 +21,7 @@ const date = (iso: string) => new Date(iso).toLocaleDateString([], { month: 'sho
 // the app — with why, when it expires, and an appeal to a senior member of
 // the team (docs/MONEY_RULES_DESIGN.md §3, §5, §10).
 export default function AccountStandingScreen() {
+  const appealFit = useButtonRowFit();
   const bottomInset = useBottomInset();
   const appAlert = useAppAlert();
   const [loading, setLoading] = useState(true);
@@ -140,16 +142,16 @@ export default function AccountStandingScreen() {
               multiline
               maxLength={2000}
             />
-            <View style={s.buttons}>
-              <TouchableOpacity style={s.secondary} onPress={() => setAppealing(null)} disabled={sending}>
-                <ThemedText style={s.secondaryText}>Cancel</ThemedText>
+            <View style={[s.buttons, appealFit.row]}>
+              <TouchableOpacity style={[s.secondary, appealFit.button]} onPress={() => setAppealing(null)} disabled={sending}>
+                <ThemedText onTextLayout={appealFit.onLabelLayout} style={s.secondaryText}>Cancel</ThemedText>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[s.primary, (reason.trim().length < 20 || sending) && { opacity: 0.5 }]}
+                style={[[s.primary, (reason.trim().length < 20 || sending) && { opacity: 0.5 }], appealFit.button]}
                 onPress={sendAppeal}
                 disabled={reason.trim().length < 20 || sending}
               >
-                {sending ? <ActivityIndicator color="#111827" /> : <ThemedText style={s.primaryText}>Send appeal</ThemedText>}
+                {sending ? <ActivityIndicator color="#111827" /> : <ThemedText onTextLayout={appealFit.onLabelLayout} style={s.primaryText}>Send appeal</ThemedText>}
               </TouchableOpacity>
             </View>
           </View>

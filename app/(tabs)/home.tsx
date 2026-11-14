@@ -1842,7 +1842,7 @@ export default function HomeScreen() {
               </View>
               <View style={styles.locationInfo}>
                 <ThemedText style={styles.locationLabel}>Post a Job</ThemedText>
-                <ThemedText style={styles.locationText} numberOfLines={1}>Describe a problem, get matched with a provider</ThemedText>
+                <ThemedText style={styles.locationText}>Describe a problem, get matched with a provider</ThemedText>
               </View>
             </TouchableOpacity>
             {/* Hidden if the admin portal turned this module off (same
@@ -1855,7 +1855,7 @@ export default function HomeScreen() {
               </View>
               <View style={styles.locationInfo}>
                 <ThemedText style={styles.locationLabel}>Pickup & Drop</ThemedText>
-                <ThemedText style={styles.locationText} numberOfLines={1}>Groceries, pharmacy & more — picked up and delivered</ThemedText>
+                <ThemedText style={styles.locationText}>Groceries, pharmacy & more — picked up and delivered</ThemedText>
               </View>
             </TouchableOpacity>
             )}
@@ -1899,8 +1899,8 @@ export default function HomeScreen() {
                 <View style={styles.searchSuggestionsBox}>
                   {locationSuggestions.map(item => (
                     <TouchableOpacity key={item.place_id} style={styles.searchSuggestionRow} onPress={() => selectLocationSuggestion(item)}>
-                      <Text style={styles.searchSuggestionMain} numberOfLines={1}>{item.structured_formatting.main_text}</Text>
-                      <Text style={styles.searchSuggestionSecondary} numberOfLines={1}>{item.structured_formatting.secondary_text}</Text>
+                      <Text style={styles.searchSuggestionMain} numberOfLines={2}>{item.structured_formatting.main_text}</Text>
+                      <Text style={styles.searchSuggestionSecondary} numberOfLines={2}>{item.structured_formatting.secondary_text}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -1913,7 +1913,7 @@ export default function HomeScreen() {
               </View>
               <View style={styles.locationInfo}>
                 <ThemedText style={styles.locationLabel}>Current Location</ThemedText>
-                <ThemedText style={styles.locationText} numberOfLines={1}>{address}</ThemedText>
+                <ThemedText style={styles.locationText} numberOfLines={2}>{address}</ThemedText>
               </View>
             </TouchableOpacity>
             <View style={styles.modalDivider}>
@@ -1943,7 +1943,7 @@ export default function HomeScreen() {
                     </View>
                     <View style={styles.locationInfo}>
                       <ThemedText style={styles.locationLabel}>{item.label}</ThemedText>
-                      <ThemedText style={styles.locationText} numberOfLines={1}>{item.full_address}</ThemedText>
+                      <ThemedText style={styles.locationText} numberOfLines={2}>{item.full_address}</ThemedText>
                     </View>
                   </TouchableOpacity>
                 );
@@ -1988,7 +1988,7 @@ export default function HomeScreen() {
                 <View style={styles.sheetLocPinBox}>
                   <Navigation size={18} color="#FFCE48" fill="#FFCE48" />
                 </View>
-                <ThemedText style={styles.sheetAddressText} numberOfLines={2}>
+                <ThemedText style={styles.sheetAddressText}>
                   {locationUnavailable ? 'Location unavailable — tap re-detect below' : address}
                 </ThemedText>
               </View>

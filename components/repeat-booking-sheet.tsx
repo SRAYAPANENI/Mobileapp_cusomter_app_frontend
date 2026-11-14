@@ -11,6 +11,7 @@ import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-nat
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
 import { Popup, PopupCard } from '@/components/popup';
+import { useButtonRowFit } from '@/hooks/use-button-row-fit';
 const CADENCES: { value: 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY'; label: string }[] = [
   { value: 'WEEKLY', label: 'Every week' },
   { value: 'BIWEEKLY', label: 'Every 2 weeks' },
@@ -27,6 +28,7 @@ interface Props {
 // each visit is booked for you a couple of days ahead, and a quote or a
 // booking price at or under your limit is paid from your saved card.
 export function RepeatBookingSheet({ job, onClose, onMessage }: Props) {
+  const fit = useButtonRowFit();
   const [cadence, setCadence] = useState<'WEEKLY' | 'BIWEEKLY' | 'MONTHLY'>('WEEKLY');
   const [day, setDay] = useState<{ label: string; iso: string } | null>(null);
   const [time, setTime] = useState<{ label: string; hour: string; minute: string; period: 'AM' | 'PM' } | null>(null);
@@ -91,12 +93,12 @@ export function RepeatBookingSheet({ job, onClose, onMessage }: Props) {
             Leave it empty to approve each price yourself. Each visit is booked for you two days ahead. Any visiting fee, and a quote or booking price at or under this
             amount, is paid from your saved card and still held until the work is done. Pause or stop any time.
           </ThemedText>
-          <View style={s.row}>
-            <TouchableOpacity style={s.secondary} onPress={onClose} disabled={sending}>
-              <ThemedText style={s.secondaryText}>Cancel</ThemedText>
+          <View style={[s.row, fit.row]}>
+            <TouchableOpacity style={[s.secondary, fit.button]} onPress={onClose} disabled={sending}>
+              <ThemedText onTextLayout={fit.onLabelLayout} style={s.secondaryText}>Cancel</ThemedText>
             </TouchableOpacity>
-            <TouchableOpacity style={[s.primary, (!firstAt || sending) && { opacity: 0.5 }]} disabled={!firstAt || sending} onPress={send}>
-              {sending ? <ActivityIndicator color="#111827" /> : <ThemedText style={s.primaryText}>Send to provider</ThemedText>}
+            <TouchableOpacity style={[[s.primary, (!firstAt || sending) && { opacity: 0.5 }], fit.button]} disabled={!firstAt || sending} onPress={send}>
+              {sending ? <ActivityIndicator color="#111827" /> : <ThemedText onTextLayout={fit.onLabelLayout} style={s.primaryText}>Send to provider</ThemedText>}
             </TouchableOpacity>
           </View>
         </PopupCard>

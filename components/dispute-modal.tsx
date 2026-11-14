@@ -10,6 +10,7 @@ import { SkoFyApi } from '@/services/api';
 import { AlertTriangle } from 'lucide-react-native';
 
 import { Popup } from '@/components/popup';
+import { useButtonRowFit } from '@/hooks/use-button-row-fit';
 const MIN_REASON_LENGTH = 5;
 
 interface DisputeModalProps {
@@ -22,6 +23,7 @@ interface DisputeModalProps {
 }
 
 export function DisputeModal({ visible, jobId, onClose, onDisputed }: DisputeModalProps) {
+  const fit = useButtonRowFit();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -71,16 +73,16 @@ export function DisputeModal({ visible, jobId, onClose, onDisputed }: DisputeMod
 
           {error && <ThemedText style={styles.errorText}>{error}</ThemedText>}
 
-          <View style={styles.modalFooter}>
-            <TouchableOpacity style={styles.modalCloseBtn} onPress={onClose}>
-              <ThemedText style={styles.modalCloseBtnText}>Cancel</ThemedText>
+          <View style={[styles.modalFooter, fit.row]}>
+            <TouchableOpacity style={[styles.modalCloseBtn, fit.button]} onPress={onClose}>
+              <ThemedText onTextLayout={fit.onLabelLayout} style={styles.modalCloseBtnText}>Cancel</ThemedText>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.confirmCancelBtn, !canSubmit && { opacity: 0.5 }]}
+              style={[[styles.confirmCancelBtn, !canSubmit && { opacity: 0.5 }], fit.button]}
               disabled={!canSubmit}
               onPress={handleConfirm}
             >
-              <ThemedText style={styles.confirmCancelBtnText}>
+              <ThemedText onTextLayout={fit.onLabelLayout} style={styles.confirmCancelBtnText}>
                 {submitting ? 'Submitting...' : 'Submit Dispute'}
               </ThemedText>
             </TouchableOpacity>

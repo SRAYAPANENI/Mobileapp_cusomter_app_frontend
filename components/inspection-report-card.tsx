@@ -9,6 +9,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } fro
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
 import { Popup } from '@/components/popup';
+import { useButtonRowFit } from '@/hooks/use-button-row-fit';
 export type InspectionReport = {
   findings?: string;
   result?: 'QUOTE' | 'NO_WORK';
@@ -32,6 +33,7 @@ interface Props {
 // nothing: it was in this same app); "Not done yet" sends the provider back
 // to it; "It wasn't done" holds the fee for support.
 export function InspectionReportCard({ jobId, jobStatus, report, confirmed, disputed, onChanged, onError }: Props) {
+  const fit = useButtonRowFit();
   const [busy, setBusy] = useState<'yes' | 'no' | null>(null);
   const [reporting, setReporting] = useState(false);
   const [reason, setReason] = useState('');
@@ -147,16 +149,16 @@ export function InspectionReportCard({ jobId, jobStatus, report, confirmed, disp
                 </TouchableOpacity>
               )}
             </View>
-            <View style={s.sheetButtons}>
-              <TouchableOpacity style={s.cancelBtn} onPress={() => setReporting(false)} disabled={sending}>
-                <Text style={s.secondaryText}>Go back</Text>
+            <View style={[s.sheetButtons, fit.row]}>
+              <TouchableOpacity style={[s.cancelBtn, fit.button]} onPress={() => setReporting(false)} disabled={sending}>
+                <Text onTextLayout={fit.onLabelLayout} style={s.secondaryText}>Go back</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[s.reportBtn, (reason.trim().length < 10 || sending) && { opacity: 0.5 }]}
+                style={[[s.reportBtn, (reason.trim().length < 10 || sending) && { opacity: 0.5 }], fit.button]}
                 onPress={sendReport}
                 disabled={reason.trim().length < 10 || sending}
               >
-                {sending ? <ActivityIndicator color="#fff" /> : <Text style={s.reportBtnText}>Report it</Text>}
+                {sending ? <ActivityIndicator color="#fff" /> : <Text onTextLayout={fit.onLabelLayout} style={s.reportBtnText}>Report it</Text>}
               </TouchableOpacity>
             </View>
           </View>

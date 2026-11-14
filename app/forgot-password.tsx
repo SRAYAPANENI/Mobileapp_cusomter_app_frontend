@@ -47,7 +47,7 @@ export default function ForgotPasswordScreen() {
       err.error_code === 'NO_ACCOUNT' ? 'No Account Found' : 'Not a Customer Account Yet',
       err.message,
       [
-        { text: 'Change number', variant: 'secondary', onPress: () => { setIsCodeSent(false); setOtp(''); codeTimer.reset(); } },
+        { text: 'Change number', variant: 'secondary', cancel: true, onPress: () => { setIsCodeSent(false); setOtp(''); codeTimer.reset(); } },
         { text: 'Register', variant: 'primary', onPress: () => router.replace({ pathname: '/register', params: { prefillPhone: phoneNumber } }) },
       ],
     );

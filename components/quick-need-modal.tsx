@@ -125,7 +125,7 @@ export function QuickNeedModal({ visible, need, lat, lng, address, onClose, onPo
 
           <View style={s.locationRow}>
             <MapPin size={16} color="#6B7280" />
-            <Text style={s.locationText} numberOfLines={2}>{address || 'Current location'}</Text>
+            <Text style={s.locationText} numberOfLines={3}>{address || 'Current location'}</Text>
           </View>
 
           <View style={s.notesWrap}>

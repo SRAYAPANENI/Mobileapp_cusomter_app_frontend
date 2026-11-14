@@ -18,7 +18,8 @@ export interface NativeStyleButton {
 interface Options {
   /** What it's about; guessed from the title and buttons when not given. */
   type?: AlertType;
-  /** Accepted for Alert.alert compatibility; Back always closes the dialog. */
+  /** false: a tap outside doesn't close it, for a dialog that must be
+   * answered. Back still does. Defaults to true, as on Android. */
   cancelable?: boolean;
 }
 
@@ -27,6 +28,7 @@ interface Pending {
   title: string;
   message: string;
   buttons?: AlertButton[];
+  dismissable: boolean;
 }
 
 let present: ((a: Pending) => void) | null = null;
@@ -53,6 +55,7 @@ function toButtons(buttons?: NativeStyleButton[]): AlertButton[] | undefined {
   return [...cancels, ...rest].map((b) => ({
     text: b.text ?? 'OK',
     onPress: b.onPress,
+    cancel: b.style === 'cancel',
     variant: b.style === 'cancel' ? 'secondary'
       : b.style === 'destructive' ? 'destructive'
       : b === lastPlain ? 'primary' : 'secondary',
@@ -72,6 +75,7 @@ export function showDialog(title: string, message?: string, buttons?: NativeStyl
     title,
     message: message ?? '',
     buttons: toButtons(buttons),
+    dismissable: options?.cancelable !== false,
   };
   present(next);
 }
@@ -97,6 +101,7 @@ export function AlertHost() {
       title={current?.title ?? ''}
       message={current?.message ?? ''}
       buttons={current?.buttons}
+      dismissable={current?.dismissable ?? true}
       onDismiss={close}
     />
   );

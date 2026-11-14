@@ -9,6 +9,7 @@ import { ActivityIndicator, Image, ScrollView, StyleSheet, TouchableOpacity, Vie
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
 import { Popup, PopupCard } from '@/components/popup';
+import { useButtonRowFit } from '@/hooks/use-button-row-fit';
 const MAX_PHOTOS = 4;
 
 const STATUS_TEXT: Record<string, string> = {
@@ -29,6 +30,7 @@ interface Props {
 // within the guarantee window of a job paid in the app — the provider is
 // asked to fix it free first, then Dodorez refunds or explains why not.
 export function GuaranteeSheet({ jobId, onClose, onMessage }: Props) {
+  const fit = useButtonRowFit();
   const [info, setInfo] = useState<GuaranteeInfo | null>(null);
   const [description, setDescription] = useState('');
   const [photos, setPhotos] = useState<PhotoFile[]>([]);
@@ -74,12 +76,12 @@ export function GuaranteeSheet({ jobId, onClose, onMessage }: Props) {
               {claim.decision_note && <ThemedText style={s.muted}>Our team: {claim.decision_note}</ThemedText>}
               {claim.refund_amount != null && <ThemedText style={s.body}>Refund: ${claim.refund_amount.toFixed(2)}</ThemedText>}
               {claim.status === 'FIX_OFFERED' && (busy ? <ActivityIndicator color="#111827" /> : (
-                <View style={[s.row, { marginTop: 10 }]}>
-                  <TouchableOpacity style={s.secondary} onPress={() => run(() => SkoFyApi.guarantee.result(jobId!, false), 'Sent to our team')}>
-                    <ThemedText style={s.secondaryText}>Still not fixed</ThemedText>
+                <View style={[[s.row, { marginTop: 10 }], fit.row]}>
+                  <TouchableOpacity style={[s.secondary, fit.button]} onPress={() => run(() => SkoFyApi.guarantee.result(jobId!, false), 'Sent to our team')}>
+                    <ThemedText onTextLayout={fit.onLabelLayout} style={s.secondaryText}>Still not fixed</ThemedText>
                   </TouchableOpacity>
-                  <TouchableOpacity style={s.primary} onPress={() => run(() => SkoFyApi.guarantee.result(jobId!, true), 'Thanks')}>
-                    <ThemedText style={s.primaryText}>It's fixed</ThemedText>
+                  <TouchableOpacity style={[s.primary, fit.button]} onPress={() => run(() => SkoFyApi.guarantee.result(jobId!, true), 'Thanks')}>
+                    <ThemedText onTextLayout={fit.onLabelLayout} style={s.primaryText}>It's fixed</ThemedText>
                   </TouchableOpacity>
                 </View>
               ))}

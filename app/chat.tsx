@@ -41,6 +41,7 @@ import { useOpenScreen } from '@/services/openScreens';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
 import { Popup } from '@/components/popup';
+import { useButtonRowFit } from '@/hooks/use-button-row-fit';
 // No-answer cutoff — like a real phone call, ringing/calling shouldn't go on forever.
 // The server ends an unanswered call after 45s and says why; this is only
 // the fallback if that message never arrives.
@@ -108,6 +109,7 @@ function endedLabelFor(reason: string | undefined, state: CallState): string | n
 }
 
 export default function ChatScreen() {
+  const ratingFit = useButtonRowFit();
   const bottomInset = useBottomInset();
   const { jobId, id, name: paramName, profileImage: paramProfileImage, profession: paramProfession, autoAnswer, autoCall, callId: callIdParam, returnOnEnd } = useLocalSearchParams<{
     jobId: string;
@@ -1243,12 +1245,12 @@ export default function ChatScreen() {
               />
               <OffAppQuestion providerName={name || 'the provider'} value={ratingOffApp} onChange={setRatingOffApp} />
             </ScrollView>
-            <View style={styles.ratingActions}>
-              <TouchableOpacity style={styles.ratingSkipBtn} onPress={() => { markRatingSkipped(jobId); setRatingVisible(false); }}>
-                <Text style={styles.ratingSkipText}>Skip</Text>
+            <View style={[styles.ratingActions, ratingFit.row]}>
+              <TouchableOpacity style={[styles.ratingSkipBtn, ratingFit.button]} onPress={() => { markRatingSkipped(jobId); setRatingVisible(false); }}>
+                <Text onTextLayout={ratingFit.onLabelLayout} style={styles.ratingSkipText}>Skip</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.ratingSubmitBtn, ratingSubmitting && { opacity: 0.6 }]}
+                style={[[styles.ratingSubmitBtn, ratingSubmitting && { opacity: 0.6 }], ratingFit.button]}
                 disabled={ratingSubmitting}
                 onPress={async () => {
                   if (Object.values(ratings).some(v => v === 0)) {
@@ -1274,7 +1276,7 @@ export default function ChatScreen() {
                   }
                 }}
               >
-                <Text style={styles.ratingSubmitText}>{ratingSubmitting ? 'Submitting…' : 'Submit Rating'}</Text>
+                <Text onTextLayout={ratingFit.onLabelLayout} style={styles.ratingSubmitText}>{ratingSubmitting ? 'Submitting…' : 'Submit Rating'}</Text>
               </TouchableOpacity>
             </View>
           </View>

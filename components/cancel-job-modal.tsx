@@ -10,6 +10,7 @@ import { CancelPreview, SkoFyApi } from '@/services/api';
 import { AlertTriangle } from 'lucide-react-native';
 
 import { Popup } from '@/components/popup';
+import { useButtonRowFit } from '@/hooks/use-button-row-fit';
 const PRE_HIRE_REASONS = [
   'Changed my mind',
   'Posted by mistake',
@@ -53,6 +54,7 @@ interface CancelJobModalProps {
 }
 
 export function CancelJobModal({ visible, jobId, scenario = 'pre-hire', onClose, onCancelled }: CancelJobModalProps) {
+  const fit = useButtonRowFit();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
@@ -151,19 +153,19 @@ export function CancelJobModal({ visible, jobId, scenario = 'pre-hire', onClose,
           {error && <ThemedText style={styles.errorText}>{error}</ThemedText>}
           </ScrollView>
 
-          <View style={styles.modalFooter}>
-            <TouchableOpacity style={styles.modalCloseBtn} onPress={onClose}>
-              <ThemedText style={styles.modalCloseBtnText}>Go Back</ThemedText>
+          <View style={[styles.modalFooter, fit.row]}>
+            <TouchableOpacity style={[styles.modalCloseBtn, fit.button]} onPress={onClose}>
+              <ThemedText onTextLayout={fit.onLabelLayout} style={styles.modalCloseBtnText}>Go Back</ThemedText>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[
+              style={[[
                 styles.confirmCancelBtn,
                 (!selectedReason || cancelling || (selectedReason === 'Other' && !otherReason.trim())) && { opacity: 0.5 },
-              ]}
+              ], fit.button]}
               disabled={!selectedReason || (selectedReason === 'Other' && !otherReason.trim()) || cancelling}
               onPress={handleConfirm}
             >
-              <ThemedText style={styles.confirmCancelBtnText}>
+              <ThemedText onTextLayout={fit.onLabelLayout} style={styles.confirmCancelBtnText}>
                 {cancelling ? 'Cancelling...' : 'Confirm Cancel'}
               </ThemedText>
             </TouchableOpacity>

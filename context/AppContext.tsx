@@ -61,8 +61,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       {children}
 
       {/* Global Feedback Modal */}
-      {/* One button, one outcome: closing it any way counts as "Got it". */}
-      <Popup visible={feedback.visible} transparent animationType="fade" closeOn="outside" onClose={acknowledgeFeedback}>
+      {/* A tap outside or Back only closes it; "Got it" also does what comes
+          next (on login, going on to Register). */}
+      <Popup visible={feedback.visible} transparent animationType="fade" closeOn="outside" onClose={hideFeedback}>
         <View style={styles.overlay}>
           <Animated.View entering={FadeIn.duration(300)} style={StyleSheet.absoluteFillObject}>
             <View style={styles.blur} />

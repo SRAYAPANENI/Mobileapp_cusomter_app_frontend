@@ -12,6 +12,7 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Popup } from '@/components/popup';
+import { useButtonRowFit } from '@/hooks/use-button-row-fit';
 interface CheckoutSheetProps {
   visible: boolean;
   jobId: string;
@@ -38,6 +39,8 @@ const money = (n: number) => `$${n.toFixed(2)}`;
  * fee and the provider's share never changes) — nothing is calculated here.
  */
 export function CheckoutSheet({ visible, jobId, onPay, onClose }: CheckoutSheetProps) {
+  const errorFit = useButtonRowFit();
+  const fit = useButtonRowFit();
   const colorScheme = useColorScheme() ?? 'light';
   const t = Colors[colorScheme];
   const s = useMemo(() => makeStyles(t), [colorScheme]);
@@ -130,12 +133,12 @@ export function CheckoutSheet({ visible, jobId, onPay, onClose }: CheckoutSheetP
           ) : loadError || !breakdown ? (
             <View style={{ gap: 16 }}>
               <ThemedText style={s.errorText}>{loadError ?? "Couldn't load the payment details."}</ThemedText>
-              <View style={s.footer}>
-                <TouchableOpacity style={s.secondaryBtn} onPress={close} accessibilityRole="button">
-                  <ThemedText style={s.secondaryBtnText}>Go Back</ThemedText>
+              <View style={[s.footer, errorFit.row]}>
+                <TouchableOpacity style={[s.secondaryBtn, errorFit.button]} onPress={close} accessibilityRole="button">
+                  <ThemedText onTextLayout={errorFit.onLabelLayout} style={s.secondaryBtnText}>Go Back</ThemedText>
                 </TouchableOpacity>
-                <TouchableOpacity style={s.primaryBtn} onPress={load} accessibilityRole="button">
-                  <ThemedText style={s.primaryBtnText}>Try Again</ThemedText>
+                <TouchableOpacity style={[s.primaryBtn, errorFit.button]} onPress={load} accessibilityRole="button">
+                  <ThemedText onTextLayout={errorFit.onLabelLayout} style={s.primaryBtnText}>Try Again</ThemedText>
                 </TouchableOpacity>
               </View>
             </View>
@@ -166,10 +169,10 @@ export function CheckoutSheet({ visible, jobId, onPay, onClose }: CheckoutSheetP
                         >
                           <BadgePercent size={22} color={o.usable ? SUCCESS : t.textMuted} />
                           <View style={{ flex: 1, minWidth: 0 }}>
-                            <ThemedText style={[s.offerTitle, !o.usable && { color: t.textMuted }]} numberOfLines={1}>
+                            <ThemedText style={[s.offerTitle, !o.usable && { color: t.textMuted }]} numberOfLines={2}>
                               {o.title}
                             </ThemedText>
-                            <ThemedText style={[s.offerSub, { color: o.usable ? SUCCESS : t.textMuted }]} numberOfLines={2}>
+                            <ThemedText style={[s.offerSub, { color: o.usable ? SUCCESS : t.textMuted }]}>
                               {o.usable ? `Save ${money(o.discount)} · ${o.code}` : o.unusable_reason}
                             </ThemedText>
                           </View>
@@ -261,12 +264,12 @@ export function CheckoutSheet({ visible, jobId, onPay, onClose }: CheckoutSheetP
                 </View>
               </ScrollView>
 
-              <View style={s.footer}>
-                <TouchableOpacity style={s.secondaryBtn} onPress={close} disabled={paying} accessibilityRole="button">
-                  <ThemedText style={s.secondaryBtnText}>Go Back</ThemedText>
+              <View style={[s.footer, fit.row]}>
+                <TouchableOpacity style={[s.secondaryBtn, fit.button]} onPress={close} disabled={paying} accessibilityRole="button">
+                  <ThemedText onTextLayout={fit.onLabelLayout} style={s.secondaryBtnText}>Go Back</ThemedText>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[s.primaryBtn, (paying || !!applyingCode) && { opacity: 0.7 }]}
+                  style={[[s.primaryBtn, (paying || !!applyingCode) && { opacity: 0.7 }], fit.button]}
                   onPress={pay}
                   disabled={paying || !!applyingCode}
                   accessibilityRole="button"
@@ -274,7 +277,7 @@ export function CheckoutSheet({ visible, jobId, onPay, onClose }: CheckoutSheetP
                 >
                   {paying
                     ? <ActivityIndicator color="#111827" />
-                    : <ThemedText style={s.primaryBtnText}>Pay {money(breakdown.total)}</ThemedText>}
+                    : <ThemedText onTextLayout={fit.onLabelLayout} style={s.primaryBtnText}>Pay {money(breakdown.total)}</ThemedText>}
                 </TouchableOpacity>
               </View>
             </>

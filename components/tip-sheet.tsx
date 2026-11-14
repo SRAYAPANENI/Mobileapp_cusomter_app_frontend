@@ -8,6 +8,7 @@ import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-nat
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
 import { Popup } from '@/components/popup';
+import { useButtonRowFit } from '@/hooks/use-button-row-fit';
 interface Props {
   jobId: string | null;
   providerName: string;
@@ -18,6 +19,7 @@ interface Props {
 // A tip after a finished job (docs/MONEY_RULES_DESIGN.md §11): all of it goes
 // to the provider — no fees either side. Once per job, within a week.
 export function TipSheet({ jobId, providerName, onClose, onMessage }: Props) {
+  const fit = useButtonRowFit();
   const { payTip } = useHirePayment();
   const [info, setInfo] = useState<TipInfo | null>(null);
   const [chosen, setChosen] = useState<number | null>(null);
@@ -73,15 +75,15 @@ export function TipSheet({ jobId, providerName, onClose, onMessage }: Props) {
               />
             </>
           )}
-          <View style={s.buttons}>
-            <TouchableOpacity style={s.secondary} onPress={onClose} disabled={paying}>
-              <ThemedText style={s.secondaryText}>{info?.allowed ? 'Not now' : 'Close'}</ThemedText>
+          <View style={[s.buttons, fit.row]}>
+            <TouchableOpacity style={[s.secondary, fit.button]} onPress={onClose} disabled={paying}>
+              <ThemedText onTextLayout={fit.onLabelLayout} style={s.secondaryText}>{info?.allowed ? 'Not now' : 'Close'}</ThemedText>
             </TouchableOpacity>
             {info?.allowed && (
-              <TouchableOpacity style={[s.primary, (!amount || amount <= 0 || paying) && { opacity: 0.5 }]} onPress={send}
+              <TouchableOpacity style={[[s.primary, (!amount || amount <= 0 || paying) && { opacity: 0.5 }], fit.button]} onPress={send}
                 disabled={!amount || amount <= 0 || paying}>
                 {paying ? <ActivityIndicator color="#111827" /> : (
-                  <ThemedText style={s.primaryText}>{amount && amount > 0 ? `Tip $${amount.toFixed(2)}` : 'Tip'}</ThemedText>
+                  <ThemedText onTextLayout={fit.onLabelLayout} style={s.primaryText}>{amount && amount > 0 ? `Tip $${amount.toFixed(2)}` : 'Tip'}</ThemedText>
                 )}
               </TouchableOpacity>
             )}

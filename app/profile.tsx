@@ -995,7 +995,7 @@ export default function ProfileScreen() {
                                   {renderHighlightedText(sug.structured_formatting.main_text, sug.structured_formatting.main_text_matched_substrings || [])}
                                   <View style={styles.suggestionDetails}>
                                     {sug.distance && <ThemedText style={styles.suggestionDistance}>{sug.distance}</ThemedText>}
-                                    <ThemedText style={styles.suggestionSecondaryText} numberOfLines={1}>{sug.structured_formatting.secondary_text}</ThemedText>
+                                    <ThemedText style={styles.suggestionSecondaryText} numberOfLines={2}>{sug.structured_formatting.secondary_text}</ThemedText>
                                   </View>
                                 </View>
                               </TouchableOpacity>
@@ -1556,7 +1556,7 @@ export default function ProfileScreen() {
                           {renderHighlightedText(sug.structured_formatting.main_text, sug.structured_formatting.main_text_matched_substrings || [])}
                           <View style={styles.suggestionDetails}>
                             {sug.distance && <ThemedText style={styles.suggestionDistance}>{sug.distance}</ThemedText>}
-                            <ThemedText style={styles.suggestionSecondaryText} numberOfLines={1}>{sug.structured_formatting.secondary_text}</ThemedText>
+                            <ThemedText style={styles.suggestionSecondaryText} numberOfLines={2}>{sug.structured_formatting.secondary_text}</ThemedText>
                           </View>
                         </View>
                       </TouchableOpacity>

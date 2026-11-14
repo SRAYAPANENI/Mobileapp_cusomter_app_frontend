@@ -6,7 +6,7 @@ import {
   Info,
   X,
 } from 'lucide-react-native';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Dimensions,
   Pressable,
@@ -26,6 +26,9 @@ export interface AlertButton {
    * "Keep", "Not now". destructive: red, for actions that remove, cancel or
    * end something. */
   variant?: 'primary' | 'secondary' | 'destructive';
+  /** What a tap outside or Back counts as — "Cancel", "Not now". Its
+   * onPress runs when the alert is dismissed that way. */
+  cancel?: boolean;
 }
 
 interface AppAlertProps {
@@ -36,6 +39,9 @@ interface AppAlertProps {
   buttons?: AlertButton[];
   autoDismissMs?: number;
   onDismiss?: () => void;
+  /** A tap outside or Back closes it — "not now", never the alert's action.
+   * false only for an alert that must be answered; Back still closes it. */
+  dismissable?: boolean;
 }
 
 // The dialog is the same neutral card whatever it says. Its meaning is
@@ -75,6 +81,7 @@ export function AppAlert({
   buttons,
   autoDismissMs,
   onDismiss,
+  dismissable = true,
 }: AppAlertProps) {
   const tone = TONE[type];
   const Icon = tone.icon;
@@ -83,8 +90,17 @@ export function AppAlert({
   const actions: AlertButton[] = buttons ?? [{ text: 'OK' }];
   // Two actions sit side by side (the main one on the right); more stack,
   // so no label is ever squeezed.
-  const stacked = actions.length > 2;
-  const isNotice = !buttons || (buttons.length === 1 && !buttons[0].onPress);
+  // Also stacked, full width, when a label would wrap side by side ("Change
+  // number" on a narrow phone or with large text): measured, not guessed.
+  const [labelWraps, setLabelWraps] = useState(false);
+  useEffect(() => { if (visible) setLabelWraps(false); }, [visible, title]);
+  const stacked = actions.length > 2 || labelWraps;
+  // Dismissed without a button: closes, and runs the "Cancel" one's action if
+  // there is one, so whatever it tidies up still gets tidied.
+  const dismiss = () => {
+    onDismiss?.();
+    actions.find((b) => b.cancel)?.onPress?.();
+  };
 
   useEffect(() => {
     if (visible && autoDismissMs) {
@@ -102,10 +118,8 @@ export function AppAlert({
       transparent
       animationType="fade"
       statusBarTranslucent
-      onClose={onDismiss}
-      // A plain notice closes on a tap outside. A question, or a button that
-      // does something, waits for the person to choose.
-      closeOn={isNotice ? 'outside' : 'back'}
+      onClose={dismiss}
+      closeOn={dismissable ? 'outside' : 'back'}
     >
       <View style={styles.scrim}>
         <PopupCard style={styles.card} accessibilityViewIsModal accessibilityRole="alert">
@@ -144,6 +158,7 @@ export function AppAlert({
                   ]}
                 >
                   <ThemedText
+                    onTextLayout={(e) => { if (!stacked && e.nativeEvent.lines.length > 1) setLabelWraps(true); }}
                     style={[
                       styles.buttonText,
                       variant === 'primary' && { color: C.onBrand },

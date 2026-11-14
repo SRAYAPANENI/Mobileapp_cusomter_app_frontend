@@ -14,6 +14,7 @@ import { SkoFyApi, JobShapePayload } from '@/services/api';
 import { hasPassed } from '@/services/schedule-slots';
 
 import { Popup } from '@/components/popup';
+import { useButtonRowFit } from '@/hooks/use-button-row-fit';
 // Every AI call failure used to be shown as "Check your internet/connection"
 // regardless of actual cause — including a real 429 rate limit (a very
 // plausible thing to hit during an active back-and-forth voice
@@ -187,6 +188,8 @@ export function VoicePostModal({
   onJobPosted, onFallbackToManual, onPickupDropoffDetected,
   initialProfession, targetProvider, queuedProviders,
 }: Props) {
+  const confirmFit = useButtonRowFit();
+  const errorFit = useButtonRowFit('first');
   // Locked to light mode app-wide (see hooks/use-color-scheme.ts) — this
   // file imports useColorScheme directly from react-native rather than that
   // wrapper, so it would otherwise still follow the device's real theme.
@@ -1120,7 +1123,7 @@ export function VoicePostModal({
                 )}
                 <View style={s.confirmRow}>
                   <Text style={s.confirmLabel}>Job</Text>
-                  <Text style={s.confirmValue} numberOfLines={2}>{jobData!.title}</Text>
+                  <Text style={s.confirmValue}>{jobData!.title}</Text>
                 </View>
 
                 <View style={s.confirmRow}>
@@ -1163,7 +1166,7 @@ export function VoicePostModal({
                 {!!jobData!.summary && (jobData!.shape?.venue === 'ONLINE') === (serviceMode === 'REMOTE') && (
                   <View style={s.confirmRow}>
                     <Text style={s.confirmLabel}>How</Text>
-                    <Text style={s.confirmValue} numberOfLines={3}>{jobData!.summary}</Text>
+                    <Text style={s.confirmValue}>{jobData!.summary}</Text>
                   </View>
                 )}
 
@@ -1254,12 +1257,12 @@ export function VoicePostModal({
 
             {/* Fixed footer */}
             {phase === 'confirm' && (
-              <View style={s.confirmFooter}>
-                <TouchableOpacity style={s.cancelBtn} onPress={cancelConfirm}>
-                  <Text style={s.cancelBtnText}>Start over</Text>
+              <View style={[s.confirmFooter, confirmFit.row]}>
+                <TouchableOpacity style={[s.cancelBtn, confirmFit.button]} onPress={cancelConfirm}>
+                  <Text onTextLayout={confirmFit.onLabelLayout} style={s.cancelBtnText}>Start over</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[s.postBtn, timePassed && { opacity: 0.5 }]} onPress={doPostJob} disabled={timePassed}>
-                  <Text style={s.postBtnText}>Post Job →</Text>
+                <TouchableOpacity style={[[s.postBtn, timePassed && { opacity: 0.5 }], confirmFit.button]} onPress={doPostJob} disabled={timePassed}>
+                  <Text onTextLayout={confirmFit.onLabelLayout} style={s.postBtnText}>Post Job →</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -1430,20 +1433,20 @@ export function VoicePostModal({
                   <AlertTriangle size={22} color="#FFCE48" />
                 </View>
                 <Text style={s.errorText}>{errorMsg}</Text>
-                <View style={s.errorActions}>
+                <View style={[s.errorActions, errorFit.row]}>
                   {isPermDenied ? (
-                    <TouchableOpacity style={s.retryBtn} onPress={() => Linking.openSettings()}>
-                      <Text style={s.retryText}>Open Settings</Text>
+                    <TouchableOpacity style={[s.retryBtn, errorFit.button]} onPress={() => Linking.openSettings()}>
+                      <Text onTextLayout={errorFit.onLabelLayout} style={s.retryText}>Open Settings</Text>
                     </TouchableOpacity>
                   ) : (
-                    <TouchableOpacity style={s.retryBtn} onPress={handleRetry}>
-                      <Text style={s.retryText}>Try Again</Text>
+                    <TouchableOpacity style={[s.retryBtn, errorFit.button]} onPress={handleRetry}>
+                      <Text onTextLayout={errorFit.onLabelLayout} style={s.retryText}>Try Again</Text>
                     </TouchableOpacity>
                   )}
                   {onFallbackToManual && (
-                    <TouchableOpacity style={s.typeBtn}
+                    <TouchableOpacity style={[s.typeBtn, errorFit.button]}
                       onPress={() => { onClose(); setTimeout(onFallbackToManual!, 300); }}>
-                      <Text style={s.typeText}>Fill Manually</Text>
+                      <Text onTextLayout={errorFit.onLabelLayout} style={s.typeText}>Fill Manually</Text>
                     </TouchableOpacity>
                   )}
                 </View>
