@@ -1039,14 +1039,18 @@ export const SkoFyApi = {
 
     /** Before posting a Pickup & Delivery job: its miles and what nearby
      * providers charge (each one's exact fare shows on their application). */
-    pickupEstimate: async (from: { lat: number; lng: number }, to: { lat: number; lng: number }, size = 'SMALL'): Promise<{
+    pickupEstimate: async (from: { lat: number; lng: number }, to: { lat: number; lng: number }, size = 'SMALL',
+      buyLimit: number | null = null): Promise<{
       miles: number; source: 'ROAD' | 'ESTIMATE'; low: number; high: number; providers: number; typical: boolean; text: string;
       note: string | null;
       /** Where nearby fares start — a starting price, not the price. */
       from_price?: number;
       /** The trip's miles, and what most nearby providers charge. */
       detail?: string;
-    }> => request(`/jobs/pickup-estimate?from_lat=${from.lat}&from_lng=${from.lng}&to_lat=${to.lat}&to_lng=${to.lng}&size=${size}`) as any,
+      /** Buy it for me: how many nearby buy for customers up to the limit, said in a line. */
+      buyers?: number; buy_note?: string;
+    }> => request(`/jobs/pickup-estimate?from_lat=${from.lat}&from_lng=${from.lng}&to_lat=${to.lat}&to_lng=${to.lng}&size=${size}`
+      + (buyLimit ? `&buy_limit=${buyLimit}` : '')) as any,
 
     // Only allowed before a provider is hired (status POSTED/DISTRIBUTED) —
     // the backend rejects this once the job has moved past that.

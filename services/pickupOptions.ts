@@ -98,8 +98,9 @@ export type PickupTiming =
   | { kind: 'ASAP' }
   | { kind: 'SCHEDULED'; at: Date | null };
 
-/** The most a customer can ask a provider to spend for them. */
-export const MAX_PURCHASE_LIMIT = 1000;
+/** The most a customer can ask a provider to spend for them — an everyday
+ * shop, since the provider pays it first (skofy-backend app/domain/pickup.py). */
+export const MAX_PURCHASE_LIMIT = 200;
 
 /** Shown on the form: the platform doesn't do age or licence checks at the door. */
 export const NOT_DELIVERED_NOTE =

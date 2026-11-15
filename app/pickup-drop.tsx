@@ -481,7 +481,10 @@ export default function PickupDropScreen() {
 
   // What it should cost, as soon as both ends are known: priced up front by
   // the trip, like a delivery app (skofy-backend app/domain/trip_fare.py).
-  const [estimate, setEstimate] = useState<{ text: string; detail?: string; typical: boolean; note: string | null } | null>(null);
+  const [estimate, setEstimate] = useState<{ text: string; detail?: string; typical: boolean; note: string | null; buyNote?: string } | null>(null);
+  // Buy it for me reaches only providers who buy for customers this much:
+  // the estimate says how many nearby do.
+  const buyLimit = !fromPerson && purchase === 'BUY_FOR_ME' ? parseLimit(limitText) : null;
   useEffect(() => {
     if (pickupLat == null || pickupLng == null || dropoffLat == null || dropoffLng == null) {
       setEstimate(null);
@@ -493,12 +496,12 @@ export default function PickupDropScreen() {
     let live = true;
     // A moment after the last change, not on every keystroke.
     const timer = setTimeout(() => {
-      SkoFyApi.jobs.pickupEstimate(from, to, itemSize)
-        .then((e) => { if (live) setEstimate({ text: e.text, detail: e.detail, typical: e.typical, note: e.note }); })
+      SkoFyApi.jobs.pickupEstimate(from, to, itemSize, buyLimit)
+        .then((e) => { if (live) setEstimate({ text: e.text, detail: e.detail, typical: e.typical, note: e.note, buyNote: e.buy_note }); })
         .catch(() => { if (live) setEstimate(null); });
     }, 400);
     return () => { live = false; clearTimeout(timer); };
-  }, [pickupLat, pickupLng, dropoffLat, dropoffLng, sendFromMe, itemSize]);
+  }, [pickupLat, pickupLng, dropoffLat, dropoffLng, sendFromMe, itemSize, buyLimit]);
 
   return (
     <ThemedView style={s.container}>
@@ -563,7 +566,8 @@ export default function PickupDropScreen() {
               {fromPerson ? <Home size={16} color="#6B7280" /> : <Store size={16} color="#6B7280" />}
               <TextInput
                 style={s.searchInput}
-                placeholder={fromPerson ? 'Search an address, or paste a location link' : 'Search for a business'}
+                // Pasting a link has its own button just below.
+                placeholder={fromPerson ? 'Search an address' : 'Search for a business'}
                 placeholderTextColor="#9CA3AF"
                 value={pickupQuery}
                 onChangeText={(t) => {
@@ -705,9 +709,7 @@ export default function PickupDropScreen() {
                 />
                 <TextInput
                   style={[s.input, { marginTop: 8 }]}
-                  placeholder={sendFromMe
-                    ? 'Their phone (optional) — so the provider can call on arrival'
-                    : 'Their phone (optional) — shared only with the provider you hire'}
+                  placeholder="Their phone (optional)"
                   placeholderTextColor="#9CA3AF"
                   value={handoverPhone}
                   onChangeText={setHandoverPhone}
@@ -715,6 +717,10 @@ export default function PickupDropScreen() {
                   maxLength={30}
                   editable={phase === 'confirm'}
                 />
+                {/* Said under the box: a placeholder this long didn't fit on one line. */}
+                <Text style={[s.pasteHint, { marginTop: 4 }]}>
+                  {sendFromMe ? 'So the provider can call them on arrival.' : 'Shared only with the provider you hire.'}
+                </Text>
               </View>
 
             </>
@@ -835,6 +841,7 @@ export default function PickupDropScreen() {
               <Text style={s.estimateText}>{estimate.text}</Text>
               {!!estimate.detail && <Text style={s.estimateDetail}>{estimate.detail}</Text>}
               {!!estimate.note && <Text style={s.estimateHint}>{estimate.note}</Text>}
+              {!!estimate.buyNote && <Text style={s.buyNote}>{estimate.buyNote}</Text>}
               <Text style={s.estimateHint}>
                 The final price depends on the provider you choose — you’ll see each one’s exact fare before you hire.
                 No visiting fee, no invoice: you pay when you book.
@@ -989,6 +996,7 @@ const s = StyleSheet.create({
   estimateText: { fontSize: 15, lineHeight: 21, fontFamily: Fonts.poppinsBold, color: '#0C4A6E' },
   estimateDetail: { fontSize: 13, lineHeight: 18, fontFamily: Fonts.poppins, color: '#0C4A6E' },
   estimateHint: { fontSize: 12, lineHeight: 17, fontFamily: Fonts.poppins, color: '#075985' },
+  buyNote: { fontSize: 12, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: '#92400E', backgroundColor: '#FFFBEB', borderRadius: 8, padding: 8 },
   footer: {
     padding: 16,
     backgroundColor: Colors.light.card,

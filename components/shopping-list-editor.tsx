@@ -32,7 +32,7 @@ export function ShoppingListEditor({ items, onChange, editable }: Props) {
               style={s.name}
               value={item.name}
               onChangeText={t => update(i, { name: t })}
-              placeholder={i === 0 ? 'e.g. Whole milk, 1 gallon' : 'Another item'}
+              placeholder={i === 0 ? 'e.g. Milk, 1 gallon' : 'Another item'}
               placeholderTextColor="#9CA3AF"
               maxLength={120}
               editable={editable}

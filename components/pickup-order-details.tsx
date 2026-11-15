@@ -14,8 +14,10 @@ interface Props {
 const FIELDS: { key: keyof PickupDetails; label: string; placeholder: string; keyboard?: 'phone-pad' }[] = [
   { key: 'order_name', label: 'Name on the order', placeholder: 'e.g. John Smith' },
   { key: 'order_number', label: 'Order number', placeholder: 'e.g. #A1234' },
-  { key: 'pickup_code', label: 'Store pickup code', placeholder: 'If the store gave you one' },
-  { key: 'store_contact', label: 'Store phone', placeholder: 'If they need to call the store', keyboard: 'phone-pad' },
+  // Short examples: these boxes are half the width, and the label above
+  // already says what each one is (a long hint wrapped onto two lines).
+  { key: 'pickup_code', label: 'Store pickup code', placeholder: 'e.g. 4471' },
+  { key: 'store_contact', label: 'Store phone', placeholder: 'e.g. 214 555 0100', keyboard: 'phone-pad' },
 ];
 
 // Already paid: what the store needs to hand the order over. All optional —

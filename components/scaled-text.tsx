@@ -61,10 +61,37 @@ export const Text = forwardRef<React.ComponentRef<typeof RNText>, TextProps>(
 );
 Text.displayName = 'Text';
 
+// 3. A one-line box stays one line, centred. On Android a single-line input
+//    wrapped a long placeholder onto a second line, and in a box of fixed
+//    height Android's own padding plus the font's extra spacing made the text
+//    taller than the box — so it scrolled up and down inside it, sitting at a
+//    different height each time. numberOfLines={1} caps it to one line; a
+//    fixed-height box also drops that padding (unless the screen set its
+//    own), the font spacing and any lineHeight, and centres the text.
+const PADDING_KEYS = ['padding', 'paddingVertical', 'paddingTop', 'paddingBottom'] as const;
+
+export function oneLineBoxStyle(style: StyleProp<TextStyle>, multiline?: boolean): StyleProp<TextStyle> {
+  const flat = StyleSheet.flatten(style) ?? {};
+  if (multiline || typeof flat.height !== 'number') return style;
+  const centred: TextStyle = { textAlignVertical: 'center', includeFontPadding: false, ...flat };
+  if (!PADDING_KEYS.some((k) => flat[k] != null)) centred.paddingVertical = 0;
+  delete centred.lineHeight;
+  return centred;
+}
+
 export const TextInput = forwardRef<React.ComponentRef<typeof RNTextInput>, TextInputProps>(
   ({ style, ...props }, ref) => {
     const factor = narrowFactor(useWindowDimensions().width);
-    return <RNTextInput {...scalingProps()} {...props} style={fitToWidth(style, factor)} ref={ref} />;
+    const oneLine = props.multiline ? undefined : 1;
+    return (
+      <RNTextInput
+        {...scalingProps()}
+        numberOfLines={oneLine}
+        {...props}
+        style={fitToWidth(oneLineBoxStyle(style, props.multiline), factor)}
+        ref={ref}
+      />
+    );
   },
 );
 TextInput.displayName = 'TextInput';

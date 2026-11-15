@@ -146,8 +146,8 @@ export function PickupOptions(p: Props) {
 function HoldNote({ limitText }: { limitText: string }) {
   const limit = parseLimit(limitText);
   const text = limit && limit <= MAX_PURCHASE_LIMIT
-    ? `After you hire, we hold $${goodsHoldAmount(limit).toFixed(2)} (items up to $${limit.toFixed(2)} + shopping fee up to $${shoppingFee(limit).toFixed(2)}) plus the card fee. You only pay for what's bought — the rest comes back to you.`
-    : "After you hire, we hold your limit plus a 5% shopping fee. You only pay for what's bought — the rest comes back to you.";
+    ? `After you hire, we hold $${goodsHoldAmount(limit).toFixed(2)} (items up to $${limit.toFixed(2)} + shopping fee up to $${shoppingFee(limit).toFixed(2)}, paid to your shopper) plus the card fee. You only pay for what's bought — the rest comes back to you. Only providers who buy for customers get this job. If the store lets you pay online for pickup, “Already paid” reaches more.`
+    : "After you hire, we hold your limit plus a 5% shopping fee, paid to your shopper. You only pay for what's bought — the rest comes back to you. Only providers who buy for customers get this job.";
   return <Text style={s.holdNote}>{text}</Text>;
 }
 
