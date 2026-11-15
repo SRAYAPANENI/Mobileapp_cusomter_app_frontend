@@ -16,7 +16,7 @@ import { ThemedView } from '@/components/themed-view';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 import { PickupOptions } from '@/components/pickup-options';
 import {
-  DEFAULT_PERSON_PICKUP_RULES, PersonPickupRules, PickupDetails, PickupDirection, PickupPurchase, PickupSource, PickupTiming,
+  DEFAULT_PERSON_PICKUP_RULES, PersonPickupRules, PickupDetails, declarationFor, storeDeclarationError, PickupDirection, PickupPurchase, PickupSource, PickupTiming,
   ShoppingItem, hasIdOnFile, looksLikeLink, newShoppingItem, tripError, tripMiles, parseLimit, personPickupError, pickupJobFields, purchaseError,
   shoppingListError, timingError,
 } from '@/services/pickupOptions';
@@ -118,7 +118,8 @@ export default function PickupDropScreen() {
   // What to collect: order details (already paid) or a shopping list (buy for me).
   const [pickupDetails, setPickupDetails] = useState<PickupDetails>({});
   const [shoppingItems, setShoppingItems] = useState<ShoppingItem[]>([newShoppingItem()]);
-  // From a person: the item, its value, who hands it over, and the declaration.
+  // From a person: the item, its value, who hands it over. Either kind: the
+  // declaration of what it isn't (kept word for word with the job).
   const [personItem, setPersonItem] = useState('');
   const [valueText, setValueText] = useState('');
   const [handoverName, setHandoverName] = useState('');
@@ -218,6 +219,7 @@ export default function PickupDropScreen() {
   const chooseSource = (next: PickupSource) => {
     if (next === source) return;
     setSource(next);
+    setDeclared(false); // the sentence changes with the kind — it's ticked again
     resetPickupPlace(); // a store must be re-picked from the allowlist, and vice versa
     if (next === 'PERSON') setPurchase('PREPAID'); // nothing is bought from a person
     else setDirection('TO_ME'); // a store's order always comes to me
@@ -359,7 +361,8 @@ export default function PickupDropScreen() {
       ?? (idOnFile === false ? 'Add your ID in Profile first — it’s needed for a pickup from a person.' : null)
       ?? timingError(timing)
     : (description.trim() ? null : 'Say what you need picked up.')
-      ?? timingError(timing) ?? purchaseError(purchase, limitText) ?? shoppingListError(purchase, shoppingItems));
+      ?? timingError(timing) ?? purchaseError(purchase, limitText) ?? shoppingListError(purchase, shoppingItems)
+      ?? storeDeclarationError(declared, rules));
   // A missing ID is in formError; if the profile couldn't be read, the server still checks it.
   const ready = hasValidPickup && !formError && !!skillId && !resolvingSkill && dropoffLat != null && dropoffLng != null;
 
@@ -438,8 +441,11 @@ export default function PickupDropScreen() {
         job_type: 'PICKUP_DROPOFF',
         dropoff_lat: to.lat, dropoff_lng: to.lng,
         pickup_source: source,
+        // The sentence they ticked, by its version (the server keeps it word for word).
+        item_declared: declared,
+        declaration_version: rules.declaration_version,
         ...(fromPerson
-          ? { pickup_item: item, item_value: parseLimit(valueText) ?? undefined, item_declared: declared }
+          ? { pickup_item: item, item_value: parseLimit(valueText) ?? undefined }
           : { pickup_place_id: pickupPlaceId ?? undefined, pickup_place_type: pickupPlaceType ?? undefined }),
         service_mode: 'ON_SITE',
         posted_via: 'MANUAL',
@@ -461,6 +467,11 @@ export default function PickupDropScreen() {
       setTimeout(() => router.back(), count === 0 ? 4000 : 1400);
     } catch (e: any) {
       setPhase('confirm');
+      // The wording changed since this screen opened: show the new one, to be ticked again.
+      if (e?.error_code === 'DECLARATION_CHANGED') {
+        setDeclared(false);
+        SkoFyApi.jobs.getPersonPickupRules().then(setRules).catch(() => {});
+      }
       appAlert.show('error', 'Could not post', e?.message || 'Please check your connection and try again.');
     }
   };
@@ -706,12 +717,6 @@ export default function PickupDropScreen() {
                 />
               </View>
 
-              <TouchableOpacity style={s.declareRow} onPress={() => setDeclared(d => !d)} disabled={phase !== 'confirm'}>
-                {declared ? <SquareCheck size={20} color="#10B981" /> : <Square size={20} color="#6B7280" />}
-                <Text style={s.declareText}>
-                  It isn't {rules.banned}. It will be shown to the provider before they take it — they can refuse it.
-                </Text>
-              </TouchableOpacity>
             </>
           ) : null}
 
@@ -768,6 +773,19 @@ export default function PickupDropScreen() {
               <Text style={s.safetyText}>The provider checks the item before taking it and can refuse anything on the list — the trip is still paid.</Text>
             </View>
           )}
+
+          {/* What it isn't — a store order or an item from a person. The
+              sentence is the server's, kept word for word with the job. */}
+          <TouchableOpacity
+            style={s.declareRow}
+            onPress={() => setDeclared(d => !d)}
+            disabled={phase !== 'confirm'}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: declared }}
+          >
+            {declared ? <SquareCheck size={20} color="#10B981" /> : <Square size={20} color="#6B7280" />}
+            <Text style={s.declareText}>{declarationFor(source, rules)}</Text>
+          </TouchableOpacity>
 
           <View style={s.fieldWrap}>
             <Text style={s.fieldLabel}>Add photos or a video (optional)</Text>

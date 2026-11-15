@@ -187,7 +187,13 @@ export function CarePanel({ jobId, onMessage }: Props) {
         <View style={s.card}>
           <ThemedText style={s.title}>{job.delivered_at ? (delivery ? 'Delivered ✓' : 'Handed back ✓') : atTheirPlace ? 'Picking up' : 'Hand-back'}</ThemedText>
           {job.delivered_at ? (
-            <ThemedText style={s.muted}>All good? Mark the job as completed below, then rate your provider.</ThemedText>
+            <>
+              {/* The provider's photo of the order at the drop-off. */}
+              {delivery && !!job.dropoff_photo_url && (
+                <Image source={{ uri: job.dropoff_photo_url }} style={s.dropoffPhoto} contentFit="cover" />
+              )}
+              <ThemedText style={s.muted}>All good? Mark the job as completed below, then rate your provider.</ThemedText>
+            </>
           ) : code ? (
             <View style={s.codeBox}>
               <KeyRound size={16} color="#111827" />
@@ -248,4 +254,5 @@ const s = StyleSheet.create({
   absent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: '#FECACA', backgroundColor: '#FEF2F2' },
   absentText: { fontSize: 13.5, lineHeight: 18, fontFamily: Fonts.poppinsBold, color: '#B91C1C' },
   photo: { width: 96, height: 96, borderRadius: 10, marginRight: 8, backgroundColor: '#F3F4F6' },
+  dropoffPhoto: { width: '100%', height: 180, borderRadius: 12, marginBottom: 8, backgroundColor: '#F3F4F6' },
 });

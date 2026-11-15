@@ -966,6 +966,8 @@ export const SkoFyApi = {
       pickup_item?: string;
       item_value?: number;
       item_declared?: boolean;
+      /** Which wording of the declaration was shown (GET /jobs/pickup-from-person). */
+      declaration_version?: string;
       // "ON_SITE" (default) or "REMOTE" — no physical location/distance
       // matching at all (e.g. hiring a developer/consultant).
       service_mode?: 'ON_SITE' | 'REMOTE';

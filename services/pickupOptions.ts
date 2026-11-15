@@ -16,12 +16,39 @@ export interface PersonPickupRules {
   /** Pickup & Drop is local: the furthest the pickup may be from the drop-off. */
   max_trip_km?: number;
   banned: string;
+  /** Never bought or collected at a store. */
+  store_banned?: string;
+  /** The sentence the customer ticks, by where it's collected — kept word for word on the job. */
+  declarations?: Partial<Record<PickupSource, string>>;
+  /** Which wording that is — sent back with the job so the server knows what was agreed. */
+  declaration_version?: string;
 }
 
+const PERSON_BANNED = 'alcohol, tobacco or vapes, cannabis, medication, weapons, cash, or anything illegal';
+const STORE_BANNED = 'alcohol, tobacco or vapes, cannabis, controlled medication, weapons, or anything illegal';
+
+// Word for word the server's (skofy-backend app/domain/pickup.py), for when
+// the rules can't be fetched — same version, so the job records what was shown.
 export const DEFAULT_PERSON_PICKUP_RULES: PersonPickupRules = {
   max_value: 500,
-  banned: 'alcohol, tobacco or vapes, cannabis, medication, weapons, cash, or anything illegal',
+  banned: PERSON_BANNED,
+  store_banned: STORE_BANNED,
+  declarations: {
+    PERSON: `It isn't ${PERSON_BANNED}. It will be shown to the provider before they take it — they can refuse it.`,
+    STORE: `Nothing in this order is ${STORE_BANNED}. The provider won't buy or carry these.`,
+  },
+  declaration_version: '2026-11-15',
 };
+
+/** The sentence the customer ticks for this kind of pickup. */
+export function declarationFor(source: PickupSource, rules: PersonPickupRules): string {
+  return rules.declarations?.[source] ?? DEFAULT_PERSON_PICKUP_RULES.declarations![source]!;
+}
+
+/** Why a store pickup can't be posted yet for want of the declaration, or null. */
+export function storeDeclarationError(declared: boolean, rules: PersonPickupRules): string | null {
+  return declared ? null : `Confirm nothing in this order is ${rules.store_banned ?? STORE_BANNED}.`;
+}
 
 const KM_PER_MILE = 1.609344;
 export const DEFAULT_MAX_TRIP_KM = 80;

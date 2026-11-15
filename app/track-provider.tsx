@@ -354,6 +354,8 @@ export default function TrackProviderScreen() {
   // A pickup can go ahead: a trip's fare booked, or a quoted pickup's visiting fee held.
   const pickupPaid = paysUpfront ? bookingPaid : inspectionFeeStatus === 'HELD';
   const [pickupPhotoUrl, setPickupPhotoUrl] = useState<string | null>(null);
+  // The provider's photo of the order at the drop-off, taken before the code.
+  const [dropoffPhotoUrl, setDropoffPhotoUrl] = useState<string | null>(null);
   const [pickupConfirmedAt, setPickupConfirmedAt] = useState<string | null>(null);
   // Buy it for me: the shopping money held at hire, and what was spent.
   const [purchaseLimit, setPurchaseLimit] = useState<number | null>(null);
@@ -432,6 +434,7 @@ export default function TrackProviderScreen() {
 
   const applyPickupFields = useCallback((j: any) => {
     setPickupPhotoUrl(j.pickup_photo_url ?? null);
+    setDropoffPhotoUrl(j.dropoff_photo_url ?? null);
     setPickupConfirmedAt(j.pickup_confirmed_at ?? null);
     setPurchaseLimit(j.pickup_purchase === 'BUY_FOR_ME' && j.purchase_limit != null ? Number(j.purchase_limit) : null);
     setGoodsAmount(j.goods_amount != null ? Number(j.goods_amount) : null);
@@ -678,7 +681,10 @@ export default function TrackProviderScreen() {
         // name and the button to send it to them (CarePanel leaves it to this).
         if (deliveryOnItsWay) {
           const job: any = await SkoFyApi.jobs.get(jobId).catch(() => null);
-          if (!cancelled && job) setDelivered(!!job.delivered_at);
+          if (!cancelled && job) {
+            setDelivered(!!job.delivered_at);
+            setDropoffPhotoUrl(job.dropoff_photo_url ?? null);
+          }
           if (!job?.delivered_at) {
             const result = await SkoFyApi.jobs.getDeliveryCode(jobId).catch(() => null);
             if (!cancelled && result) setDeliveryCode(result.code);
@@ -1274,6 +1280,9 @@ export default function TrackProviderScreen() {
           {jobStatus === 'IN_PROGRESS' && jobKind === 'PICKUP_DROPOFF' && delivered && !paysUpfront && (
             <View style={styles.inspectionCard}>
               <ThemedText style={styles.inspectionCardTitle}>Delivered ✓</ThemedText>
+              {dropoffPhotoUrl && (
+                <Image source={{ uri: dropoffPhotoUrl }} style={styles.pickupPhoto} contentFit="cover" />
+              )}
               <ThemedText style={styles.inspectionCardBody}>
                 All good? Mark the job as completed, then rate your provider.
               </ThemedText>
