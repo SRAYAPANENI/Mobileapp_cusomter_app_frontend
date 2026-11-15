@@ -317,6 +317,8 @@ export default function ProviderDetailsScreen() {
     // they'll charge to come out and look.
     visitingFee: profile.visiting_fee ?? null,
     hourlyRate: profile.hourly_rate ?? null,
+    // Their prices by skill, as they set them — "$6 + $1.50/mile", "$30/night".
+    prices: (profile.prices ?? []) as { skill: string; text: string }[],
     isIdentityVerified: !!profile.is_identity_verified,
     // Below this HCI confidence, the score doesn't have enough signal behind
     // it to mean much yet — label the provider honestly as new rather than
@@ -461,6 +463,8 @@ export default function ProviderDetailsScreen() {
 
               <ThemedText style={[styles.sectionTitle, { marginTop: 20 }]}>Pricing</ThemedText>
               <View style={styles.priceRow}>
+                {/* A job priced up front (a trip, nights, hours) has no visiting fee. */}
+                {(!jobUnit || jobUnit === 'QUOTE') && (
                 <View style={[styles.priceCard, { flex: 1 }]}>
                   <View>
                     <ThemedText style={styles.priceValue}>
@@ -470,6 +474,7 @@ export default function ProviderDetailsScreen() {
                   </View>
                   <Wallet size={22} color="#9CA3AF" />
                 </View>
+                )}
                 {/* Quoted work: the price comes on the invoice after the
                     inspection (the visiting fee counts toward it). Another
                     set-price job: its own price, not this rate. The hourly
@@ -492,6 +497,18 @@ export default function ProviderDetailsScreen() {
                   </View>
                 ) : null}
               </View>
+              {/* Each skill's price as they set it — a starting point: a job's
+                  own total (its miles, its nights) shows on their application. */}
+              {PROVIDER_DATA.prices.length > 0 && (
+                <View style={styles.skillPrices}>
+                  {PROVIDER_DATA.prices.map((p) => (
+                    <View key={p.skill} style={styles.skillPriceRow}>
+                      <ThemedText style={styles.skillPriceName} numberOfLines={2}>{p.skill}</ThemedText>
+                      <ThemedText style={styles.skillPriceText}>{p.text}</ThemedText>
+                    </View>
+                  ))}
+                </View>
+              )}
             </Animated.View>
           )}
 
@@ -892,6 +909,33 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     fontSize: 12, lineHeight: 16,
     fontFamily: Fonts.poppins,
     color: t.textSecondary,
+  },
+  skillPrices: {
+    marginTop: 12,
+    backgroundColor: t.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: t.border,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+  },
+  skillPriceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+  },
+  skillPriceName: {
+    flex: 1,
+    fontSize: 13, lineHeight: 18,
+    fontFamily: Fonts.poppins,
+    color: t.textSecondary,
+  },
+  skillPriceText: {
+    fontSize: 14, lineHeight: 19,
+    fontFamily: Fonts.poppinsBold,
+    color: t.textPrimary,
   },
   mediaGrid: {
     flexDirection: 'row',

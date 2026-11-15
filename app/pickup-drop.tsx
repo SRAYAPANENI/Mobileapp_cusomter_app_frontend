@@ -481,7 +481,7 @@ export default function PickupDropScreen() {
 
   // What it should cost, as soon as both ends are known: priced up front by
   // the trip, like a delivery app (skofy-backend app/domain/trip_fare.py).
-  const [estimate, setEstimate] = useState<{ text: string; typical: boolean; note: string | null } | null>(null);
+  const [estimate, setEstimate] = useState<{ text: string; detail?: string; typical: boolean; note: string | null } | null>(null);
   useEffect(() => {
     if (pickupLat == null || pickupLng == null || dropoffLat == null || dropoffLng == null) {
       setEstimate(null);
@@ -494,7 +494,7 @@ export default function PickupDropScreen() {
     // A moment after the last change, not on every keystroke.
     const timer = setTimeout(() => {
       SkoFyApi.jobs.pickupEstimate(from, to, itemSize)
-        .then((e) => { if (live) setEstimate({ text: e.text, typical: e.typical, note: e.note }); })
+        .then((e) => { if (live) setEstimate({ text: e.text, detail: e.detail, typical: e.typical, note: e.note }); })
         .catch(() => { if (live) setEstimate(null); });
     }, 400);
     return () => { live = false; clearTimeout(timer); };
@@ -831,10 +831,13 @@ export default function PickupDropScreen() {
           )}
           {phase === 'confirm' && estimate && (
             <View style={s.estimate}>
+              {/* A starting price, not the price: each provider sets their own fare. */}
               <Text style={s.estimateText}>{estimate.text}</Text>
+              {!!estimate.detail && <Text style={s.estimateDetail}>{estimate.detail}</Text>}
               {!!estimate.note && <Text style={s.estimateHint}>{estimate.note}</Text>}
               <Text style={s.estimateHint}>
-                You’ll see each provider’s exact fare before you hire — no visiting fee, no invoice. You pay when you book.
+                The final price depends on the provider you choose — you’ll see each one’s exact fare before you hire.
+                No visiting fee, no invoice: you pay when you book.
               </Text>
             </View>
           )}
@@ -984,6 +987,7 @@ const s = StyleSheet.create({
 
   estimate: { marginBottom: 10, padding: 12, borderRadius: 14, backgroundColor: '#F0F9FF', borderWidth: 1, borderColor: '#BAE6FD', gap: 4 },
   estimateText: { fontSize: 15, lineHeight: 21, fontFamily: Fonts.poppinsBold, color: '#0C4A6E' },
+  estimateDetail: { fontSize: 13, lineHeight: 18, fontFamily: Fonts.poppins, color: '#0C4A6E' },
   estimateHint: { fontSize: 12, lineHeight: 17, fontFamily: Fonts.poppins, color: '#075985' },
   footer: {
     padding: 16,

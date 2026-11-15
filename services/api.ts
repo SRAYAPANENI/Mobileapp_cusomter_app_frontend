@@ -1042,6 +1042,10 @@ export const SkoFyApi = {
     pickupEstimate: async (from: { lat: number; lng: number }, to: { lat: number; lng: number }, size = 'SMALL'): Promise<{
       miles: number; source: 'ROAD' | 'ESTIMATE'; low: number; high: number; providers: number; typical: boolean; text: string;
       note: string | null;
+      /** Where nearby fares start — a starting price, not the price. */
+      from_price?: number;
+      /** The trip's miles, and what most nearby providers charge. */
+      detail?: string;
     }> => request(`/jobs/pickup-estimate?from_lat=${from.lat}&from_lng=${from.lng}&to_lat=${to.lat}&to_lng=${to.lng}&size=${size}`) as any,
 
     // Only allowed before a provider is hired (status POSTED/DISTRIBUTED) —
