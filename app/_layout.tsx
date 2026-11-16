@@ -41,7 +41,6 @@ import UpdateRequiredGate from '@/components/update-required-gate';
 import UpdateAvailableCheck from '@/components/update-available-check';
 import SessionExpiredModal from '@/components/session-expired-modal';
 import { AlertHost } from '@/components/alert-host';
-import { ConnectionBanner } from '@/components/connection-banner';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -168,7 +167,6 @@ export default function RootLayout() {
                   </MaintenanceGate>
                 </UpdateRequiredGate>
                 {/* The app's dialog for showAlert() calls (components/alert-host.tsx). */}
-                <ConnectionBanner />
                 <AlertHost />
                 <UpdateAvailableCheck />
                 <SessionExpiredModal

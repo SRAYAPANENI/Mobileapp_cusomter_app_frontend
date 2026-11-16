@@ -10,7 +10,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useIsOnline } from '@/hooks/use-is-online';
+import { useOfflinePage } from '@/components/offline-gate';
 import { GooglePlacesService, GooglePlaceSuggestion } from '@/services/google-places';
 import { SkoFyApi } from '@/services/api';
 import { isEmail, tidyEmail } from '@/services/email';
@@ -176,7 +176,9 @@ export default function ProfileScreen() {
   const [profileLoading, setProfileLoading] = useState(true);
   // Loading failed: the form would show blanks, and saving them would wipe the name.
   const [profileLoadFailed, setProfileLoadFailed] = useState(false);
-  const isOnline = useIsOnline();
+  // Offline before the profile loaded: the shared page; reloads when back
+  // online — a loaded profile (maybe being edited) is never reloaded under them.
+  const offline = useOfflinePage(!(profileLoading || profileLoadFailed), () => { void loadProfile(); });
 
   const loadProfile = React.useCallback(async (quiet = false) => {
       if (!quiet) setProfileLoading(true);
@@ -742,7 +744,7 @@ export default function ProfileScreen() {
           <ThemedText style={styles.headerTitle}>My Profile</ThemedText>
           <View style={{ width: 22 }} />
         </View>
-        {!isOnline ? (
+        {offline ? (
           <NoInternetState onRetry={() => loadProfile()} />
         ) : profileLoadFailed ? (
           <View style={{ paddingHorizontal: 24, paddingTop: 64, alignItems: 'center', gap: 16 }}>

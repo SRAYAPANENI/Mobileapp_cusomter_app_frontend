@@ -1,4 +1,6 @@
 import { ThemedText } from '@/components/themed-text';
+import { useOfflinePage } from '@/components/offline-gate';
+import { NoInternetState } from '@/components/no-internet-state';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Image } from 'expo-image';
@@ -669,16 +671,26 @@ export default function ChatScreen() {
     TokenStore.getUser().then(u => setMyUserId(u?.user_id ?? null));
   }, []);
 
-  useEffect(() => {
+  // The history, on its own so it can be loaded again after being offline.
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const loadHistory = useCallback(() => {
     if (!jobId) return;
     SkoFyApi.chat.getMessages(jobId).then((msgs: any) => {
       if (Array.isArray(msgs)) {
         setMessages(msgs);
         setHasMoreMessages(msgs.length === MESSAGE_PAGE_SIZE);
+        setHistoryLoaded(true);
       }
     }).catch((err) => {
       console.error('Failed to fetch chat history:', err);
     });
+  }, [jobId]);
+  // Offline with no messages loaded: the shared page in place of them.
+  const offline = useOfflinePage(historyLoaded || messages.length > 0, loadHistory);
+
+  useEffect(() => {
+    if (!jobId) return;
+    loadHistory();
     // Show rating modal if this is a completed job the customer hasn't rated yet
     SkoFyApi.ratingStatus.get(jobId).then(s => {
       // Not if they chose "Maybe later" this session — same rule as the home-screen reminder.
@@ -1165,6 +1177,9 @@ export default function ChatScreen() {
         </View>
       )}
 
+      {offline ? (
+        <NoInternetState onRetry={loadHistory} />
+      ) : (
       <FlatList keyboardShouldPersistTaps="handled"
         ref={flatListRef}
         data={messages}
@@ -1189,6 +1204,7 @@ export default function ChatScreen() {
           <ActivityIndicator style={{ paddingVertical: 12 }} color={themeColors.textSecondary} />
         ) : null}
       />
+      )}
 
       {contactOpen ? (
         <View style={[styles.inputContainer, { paddingBottom: Math.max(insets.bottom, 12) }]}>

@@ -1,4 +1,5 @@
 import NetInfo from '@react-native-community/netinfo';
+import { isOnlineState } from '@/services/connection';
 import { QueryClient, focusManager, onlineManager } from '@tanstack/react-query';
 import { AppState } from 'react-native';
 
@@ -8,7 +9,8 @@ import { AppState } from 'react-native';
 
 // Back online after a dead zone: whatever is stale refreshes by itself.
 onlineManager.setEventListener((setOnline) =>
-  NetInfo.addEventListener((state) => setOnline(state.isConnected !== false)));
+  // The same "online" as the banner and every screen (services/connection.ts).
+  NetInfo.addEventListener((state) => setOnline(isOnlineState(state))));
 
 // Back to the app from another one: the same, as a browser does on tab focus.
 focusManager.setEventListener((setFocused) => {

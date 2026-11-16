@@ -1,4 +1,6 @@
 import { ThemedText } from '@/components/themed-text';
+import { useOfflinePage } from '@/components/offline-gate';
+import { NoInternetState } from '@/components/no-internet-state';
 import { ThemedView } from '@/components/themed-view';
 import { TextInput } from '@/components/scaled-text';
 import { useAppAlert } from '@/components/app-alert';
@@ -25,6 +27,8 @@ export default function AccountStandingScreen() {
   const bottomInset = useBottomInset();
   const appAlert = useAppAlert();
   const [loading, setLoading] = useState(true);
+  // Loaded for real: a failed load used to read as "no strikes, $0 credit".
+  const [loaded, setLoaded] = useState(false);
   const [credit, setCredit] = useState(0);
   const [creditNotes, setCreditNotes] = useState<{ reason: string; remaining: number; created_at: string }[]>([]);
   const [strikes, setStrikes] = useState<StrikeView[]>([]);
@@ -40,10 +44,13 @@ export default function AccountStandingScreen() {
         setCredit(c?.available ?? 0);
         setCreditNotes((c?.credits ?? []).filter((x) => x.remaining > 0));
         setStrikes(s?.strikes ?? []);
+        if (c && s) setLoaded(true);
       })
       .finally(() => setLoading(false));
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  // Offline with nothing loaded: the shared page; reloads when back online.
+  const offline = useOfflinePage(loaded, () => { void load(); });
   const refreshControl = usePullRefresh(() => load(true));
 
   const sendAppeal = async () => {
@@ -73,7 +80,9 @@ export default function AccountStandingScreen() {
         <ThemedText style={s.headerTitle}>Credits & account</ThemedText>
       </View>
 
-      {loading ? (
+      {offline ? (
+        <NoInternetState onRetry={() => { void load(); }} />
+      ) : loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color="#111827" />
       ) : (
         <ScrollView refreshControl={refreshControl} contentContainerStyle={padBottom([s.body, { paddingBottom: 24 }], bottomInset)}>

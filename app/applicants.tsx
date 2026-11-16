@@ -1,4 +1,6 @@
 ﻿import { AppAlert, useAppAlert } from '@/components/app-alert';
+import { useOfflinePage } from '@/components/offline-gate';
+import { NoInternetState } from '@/components/no-internet-state';
 import { CancelJobModal } from '@/components/cancel-job-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -288,6 +290,8 @@ export default function ApplicantsScreen() {
   const [applicants, setApplicants] = useState<(Applicant & { applicationId?: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [hiredIds, setHiredIds] = useState<string[]>([]);
+  // Offline with nothing loaded: the shared page; reloads when back online.
+  const offline = useOfflinePage(applicants.length > 0, () => loadApplicants());
   const [hiringId, setHiringId] = useState<string | null>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [lastHiredName, setLastHiredName] = useState('');
@@ -477,7 +481,9 @@ export default function ApplicantsScreen() {
         )}
       </View>
 
-      {loading ? (
+      {offline ? (
+        <NoInternetState onRetry={() => loadApplicants()} />
+      ) : loading ? (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color="#FFCE48" />
         </View>

@@ -90,7 +90,7 @@ const s = StyleSheet.create({
   label: { fontSize: 13, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: '#374151', marginTop: 4 },
   row: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, padding: 8, gap: 6 },
   topLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  name: { flex: 1, fontSize: 13.5, fontFamily: Fonts.poppins, color: '#111827', paddingVertical: 4 },
+  name: { flex: 1, height: 34, fontSize: 13.5, fontFamily: Fonts.poppins, color: '#111827' },
   stepper: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F3F4F6', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
   qty: { minWidth: 16, textAlign: 'center', fontSize: 13, fontFamily: Fonts.poppinsSemiBold, color: '#111827' },
   choices: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 5 },

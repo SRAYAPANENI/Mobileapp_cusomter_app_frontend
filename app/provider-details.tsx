@@ -1,4 +1,5 @@
 ﻿import { AppAlert, useAppAlert } from '@/components/app-alert';
+import { OfflineScreen, useOfflinePage } from '@/components/offline-gate';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
@@ -254,6 +255,10 @@ export default function ProviderDetailsScreen() {
       setHiring(false);
     }
   };
+
+  // Offline with nothing loaded: the shared page; reloads when back online.
+  const offline = useOfflinePage(!!profile, () => setReloadKey((k) => k + 1));
+  if (offline) return <OfflineScreen onRetry={() => setReloadKey((k) => k + 1)} />;
 
   if (loading) {
     return (

@@ -8,7 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useIsOnline } from '@/hooks/use-is-online';
+import { useOfflinePage } from '@/components/offline-gate';
 import { router, useFocusEffect } from 'expo-router';
 import {
   CalendarX,
@@ -158,7 +158,7 @@ function JobCard({
           <View style={[styles.applicantBadge, hasApplicants && { backgroundColor: '#ECFDF5' }]}>
             <Users size={14} color={hasApplicants ? '#10B981' : '#6B7280'} />
             <ThemedText style={[styles.applicantText, hasApplicants && { color: '#10B981' }]}>
-              {item.applicants} Applicants
+              {item.applicants} Applicant{item.applicants === 1 ? '' : 's'}
             </ThemedText>
           </View>
         ) : null}
@@ -218,6 +218,8 @@ function JobCard({
               onPress={() => {
                 if (item.actionLabel === 'Track Provider') {
                   router.push({ pathname: '/track-provider', params: { jobId: item.id } });
+                } else if (item.actionLabel === 'View Job') {
+                  router.push({ pathname: '/job-details', params: { jobId: item.id } });
                 } else {
                   router.push({ pathname: '/applicants', params: { jobId: item.id } });
                 }
@@ -254,8 +256,10 @@ function mapApiJob(j: any): Job {
     EXPIRED:     { status: 'Expired',   label: 'Deadline Passed',  color: '#6B7280' },
   };
   const mapped = statusMap[j.status] ?? { status: 'Open', label: j.status, color: '#9CA3AF' };
+  // Disputed: support is deciding — nothing to track. Online: no map.
   const actionLabel =
     mapped.status === 'Open' && j.applicant_count > 0 ? 'View Applicants' :
+    j.status === 'DISPUTED' || (mapped.status === 'Ongoing' && j.service_mode === 'REMOTE') ? 'View Job' :
     mapped.status === 'Ongoing' ? 'Track Provider' : undefined;
   const postedAt = j.created_at
     ? `Posted ${new Date(j.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
@@ -269,7 +273,9 @@ function mapApiJob(j: any): Job {
     statusLabel: mapped.label,
     statusColor: mapped.color,
     postedAt,
-    applicants: j.applicant_count > 0 ? j.applicant_count : undefined,
+    // Only while open: after hiring, the count still includes the hired
+    // provider's own application — not someone waiting to be chosen.
+    applicants: mapped.status === 'Open' && j.applicant_count > 0 ? j.applicant_count : undefined,
     actionLabel,
     cancellationReason: j.cancellation_reason ?? undefined,
   };
@@ -283,7 +289,8 @@ export default function MyJobsScreen() {
   const appAlert = useAppAlert();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
-  const isOnline = useIsOnline();
+  // Offline with nothing to show: the shared page; reloads when back online.
+  const offline = useOfflinePage(jobs.length > 0, () => { void loadJobs(); });
   const [refreshing, setRefreshing] = useState(false);
   // "Completed" was previously missing entirely — a job fell out of every
   // tab's filter the moment it finished, with no way to ever come back and
@@ -298,7 +305,7 @@ export default function MyJobsScreen() {
       const data: any[] = await SkoFyApi.jobs.list();
       setJobs(Array.isArray(data) ? data.map(mapApiJob) : []);
     } catch {
-      setJobs([]);
+      // Kept as it was: offline, the jobs already shown stay readable.
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -351,10 +358,12 @@ export default function MyJobsScreen() {
         ))}
       </View>
 
-      {loading ? (
-        !isOnline ? (
-          <NoInternetState onRetry={loadJobs} />
-        ) : (
+      {/* Offline with nothing to show (still loading, or no list yet): the
+          full page. A list already shown stays, with the banner. */}
+      {offline ? (
+        <NoInternetState onRetry={loadJobs} />
+      ) : loading ? (
+        (
           <View style={{ paddingHorizontal: 16, paddingTop: 16, gap: 14 }}>
             {[0, 1, 2, 3].map(i => (
               <View key={i} style={{ gap: 8 }}>

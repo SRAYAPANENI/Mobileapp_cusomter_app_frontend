@@ -8,7 +8,7 @@ import { useSyncExternalStore } from 'react';
 // Every request reports here (services/api.ts timedFetch): an answer of any
 // kind means reachable; no answer, a timeout, or a gateway error (502–504)
 // means not. While unreachable it checks the server's /health every few
-// seconds, so the banner (components/connection-banner.tsx) clears by itself.
+// seconds, so the banner (components/network-status-banner.tsx) clears by itself.
 
 type Listener = () => void;
 

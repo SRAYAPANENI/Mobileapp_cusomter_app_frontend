@@ -190,7 +190,7 @@ const s = StyleSheet.create({
   hint: { fontSize: 12.5, lineHeight: 17, fontFamily: Fonts.poppins, color: '#6B7280' },
   amountBox: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 10, height: 38, minWidth: 90 },
   dollar: { fontSize: 15, fontFamily: Fonts.poppinsSemiBold, color: '#111827', marginRight: 2 },
-  amountInput: { flex: 1, fontSize: 15, fontFamily: Fonts.poppinsSemiBold, color: '#111827', paddingVertical: 0 },
+  amountInput: { flex: 1, height: 36, fontSize: 15, fontFamily: Fonts.poppinsSemiBold, color: '#111827', paddingVertical: 0 },
   notes: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, padding: 10, minHeight: 54, fontSize: 13.5, fontFamily: Fonts.poppins, color: '#111827', textAlignVertical: 'top' },
   holdNote: { fontSize: 12, lineHeight: 17, fontFamily: Fonts.poppins, color: '#4B5563', backgroundColor: '#F9FAFB', borderRadius: 10, padding: 10 },
   notice: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: '#FFFBEB', borderRadius: 10, padding: 10 },

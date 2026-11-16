@@ -1,4 +1,6 @@
 import { RatingModal, RatingDimensions } from '@/components/ui/rating-modal';
+import { useOfflinePage } from '@/components/offline-gate';
+import { NoInternetState } from '@/components/no-internet-state';
 import type { OffAppAnswer } from '@/components/off-app-question';
 import { TipSheet } from '@/components/tip-sheet';
 import { GuaranteeSheet } from '@/components/guarantee-sheet';
@@ -81,6 +83,8 @@ export default function JobHistoryScreen() {
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const [history, setHistory] = useState<JobHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  // Offline with nothing loaded: the shared page; reloads when back online.
+  const offline = useOfflinePage(history.length > 0, () => { void fetchHistory(); });
   const [loadError, setLoadError] = useState(false);
   const [ratingTarget, setRatingTarget] = useState<{ jobId: string; providerName: string } | null>(null);
   const [tipTarget, setTipTarget] = useState<{ jobId: string; providerName: string } | null>(null);
@@ -316,7 +320,9 @@ export default function JobHistoryScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      {loading ? (
+      {offline ? (
+        <NoInternetState onRetry={() => { void fetchHistory(); }} />
+      ) : loading ? (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color={themeColors.brand} />
         </View>

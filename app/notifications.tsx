@@ -1,4 +1,6 @@
 import { ThemedText } from '@/components/themed-text';
+import { useOfflinePage } from '@/components/offline-gate';
+import { NoInternetState } from '@/components/no-internet-state';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -131,6 +133,8 @@ export default function NotificationsScreen() {
 
   const [items, setItems] = useState<NotifItem[]>([]);
   const [loading, setLoading] = useState(true);
+  // Offline with nothing loaded: the shared page; reloads when back online.
+  const offline = useOfflinePage(items.length > 0, () => { void load(); });
   const [refreshing, setRefreshing] = useState(false);
   const [viewerImage, setViewerImage] = useState<string | null>(null);
 
@@ -280,7 +284,9 @@ export default function NotificationsScreen() {
         </TouchableOpacity>
       </View>
 
-      {loading ? (
+      {offline ? (
+        <NoInternetState onRetry={() => { void load(); }} />
+      ) : loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#FFCE48" />
         </View>

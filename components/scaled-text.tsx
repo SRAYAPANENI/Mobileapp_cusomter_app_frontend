@@ -72,7 +72,15 @@ const PADDING_KEYS = ['padding', 'paddingVertical', 'paddingTop', 'paddingBottom
 
 export function oneLineBoxStyle(style: StyleProp<TextStyle>, multiline?: boolean): StyleProp<TextStyle> {
   const flat = StyleSheet.flatten(style) ?? {};
-  if (multiline || typeof flat.height !== 'number') return style;
+  if (multiline) return style;
+  if (typeof flat.height !== 'number') {
+    // No height of its own (an input inside a row that has one): a
+    // lineHeight still made Android scroll the text up and down inside it.
+    // It has no use on one line — dropped; the size is otherwise unchanged.
+    if (flat.lineHeight == null) return style;
+    const { lineHeight: _dropped, ...rest } = flat;
+    return { textAlignVertical: 'center', ...rest };
+  }
   const centred: TextStyle = { textAlignVertical: 'center', includeFontPadding: false, ...flat };
   if (!PADDING_KEYS.some((k) => flat[k] != null)) centred.paddingVertical = 0;
   delete centred.lineHeight;

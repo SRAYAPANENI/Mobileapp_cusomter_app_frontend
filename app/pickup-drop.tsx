@@ -917,7 +917,8 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
     paddingHorizontal: 12, height: 46, backgroundColor: '#F9FAFB',
   },
-  searchInput: { flex: 1, fontSize: 14, lineHeight: 18, fontFamily: Fonts.poppins, color: '#111827' },
+  // Fills its 46px row (less the border), so it's centred and steady.
+  searchInput: { flex: 1, height: 44, fontSize: 14, fontFamily: Fonts.poppins, color: '#111827' },
   input: {
     borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 12, height: 46,
     fontSize: 14, lineHeight: 18, fontFamily: Fonts.poppins, color: '#111827', backgroundColor: '#F9FAFB',
@@ -927,7 +928,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 12, height: 46, backgroundColor: '#F9FAFB', width: 140,
   },
   dollar: { fontSize: 15, lineHeight: 20, fontFamily: Fonts.poppinsBold, color: '#111827', marginRight: 4 },
-  amountInput: { flex: 1, fontSize: 15, lineHeight: 20, fontFamily: Fonts.poppinsSemiBold, color: '#111827' },
+  amountInput: { flex: 1, height: 44, fontSize: 15, fontFamily: Fonts.poppinsSemiBold, color: '#111827' },
   suggestionsBox: {
     borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
     marginTop: 4, backgroundColor: '#F9FAFB', overflow: 'hidden',

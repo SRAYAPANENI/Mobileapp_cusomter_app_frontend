@@ -21,6 +21,7 @@ import { File, Paths } from 'expo-file-system';
 import type { PersonPickupRules, PickupDetails, PickupSource, ShoppingItem } from '@/services/pickupOptions';
 import { deviceTimeZone } from '@/services/job-shape';
 import { queryClient } from '@/services/query-client';
+import { isOnlineNow } from '@/services/connection';
 import { afterWrite } from '@/services/queries/invalidate';
 
 // ─── CONFIG ─────────────────────────────────────────────────────────────────
@@ -255,7 +256,8 @@ async function timedFetch(url: string, init: RequestInit, ms = REQUEST_TIMEOUT_M
     reportReachable(!tunnelDown && (fromApi || !GATEWAY_DOWN.has(response.status)));
     return response;
   } catch {
-    reportReachable(false);
+    // Offline: the phone's fault, not the server's — the banner says offline.
+    if (isOnlineNow()) reportReachable(false);
     throw {
       success: false,
       error_code: controller.signal.aborted ? 'TIMEOUT' : 'NETWORK_ERROR',

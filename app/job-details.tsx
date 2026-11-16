@@ -1,4 +1,5 @@
 import { useAppAlert } from '@/components/app-alert';
+import { OfflineScreen, useOfflinePage } from '@/components/offline-gate';
 import { CareSheetSummary } from '@/components/care-sheet-summary';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -201,6 +202,10 @@ export default function JobDetailsScreen() {
       alert.show('error', 'Could Not Remove Photo', err?.message ?? 'Please try again.');
     }
   };
+
+  // Offline with nothing loaded: the shared page; reloads when back online.
+  const offline = useOfflinePage(!!job, () => { void loadJob(); });
+  if (offline) return <OfflineScreen onRetry={() => { void loadJob(); }} />;
 
   if (loading) {
     return (

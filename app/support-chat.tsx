@@ -1,4 +1,6 @@
 import { useAppAlert } from '@/components/app-alert';
+import { useOfflinePage } from '@/components/offline-gate';
+import { NoInternetState } from '@/components/no-internet-state';
 import { showDialog } from '@/components/alert-host';
 import { CallOverlay } from '@/components/call-overlay';
 import { ThemedText } from '@/components/themed-text';
@@ -215,6 +217,10 @@ export default function SupportChatScreen() {
     }];
   });
   const [thread, setThread] = useState<Message[]>([]);
+  // An open ticket offline with nothing loaded: the shared page; reloads
+  // when back online. (A new conversation has nothing to load.)
+  const offline = useOfflinePage(!paramTicketId || thread.length > 0,
+    () => { if (paramTicketId) void loadTicket(paramTicketId); });
   const messages = [...intro, ...thread];
 
   const addIntro = (text: string, sender: Message['sender']) =>
@@ -576,7 +582,9 @@ export default function SupportChatScreen() {
         )}
       </View>
 
-      {loading ? (
+      {offline ? (
+        <NoInternetState onRetry={() => { if (paramTicketId) void loadTicket(paramTicketId); }} />
+      ) : loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator color={themeColors.textPrimary} />
         </View>

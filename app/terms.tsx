@@ -1,4 +1,6 @@
 import { useAppAlert } from '@/components/app-alert';
+import { useOfflinePage } from '@/components/offline-gate';
+import { NoInternetState } from '@/components/no-internet-state';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Fonts } from '@/constants/theme';
@@ -26,6 +28,9 @@ export default function TermsScreen() {
   const bottomInset = useBottomInset();
   const { data: config, isLoading } = useAppConfig();
   const queryClient = useQueryClient();
+  // Offline with nothing cached: the shared page (the cache reloads itself).
+  const reloadTerms = () => { void queryClient.invalidateQueries({ queryKey: qk.appConfig }); };
+  const offline = useOfflinePage(!!config, reloadTerms);
   const alert = useAppAlert();
   const [checked, setChecked] = useState(false);
   const [accepting, setAccepting] = useState(false);
@@ -59,7 +64,9 @@ export default function TermsScreen() {
         <ThemedText style={s.headerTitle}>Terms & Conditions</ThemedText>
       </View>
 
-      {isLoading || !config ? (
+      {offline ? (
+        <NoInternetState onRetry={reloadTerms} />
+      ) : isLoading || !config ? (
         <ActivityIndicator style={{ marginTop: 40 }} color="#111827" />
       ) : (
         <>

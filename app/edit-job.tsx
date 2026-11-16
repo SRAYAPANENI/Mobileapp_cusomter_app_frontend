@@ -1,4 +1,5 @@
 import { useAppAlert } from '@/components/app-alert';
+import { OfflineScreen, useOfflinePage } from '@/components/offline-gate';
 import { DatePickerModal } from '@/components/date-picker-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -79,6 +80,10 @@ export default function EditJobScreen() {
   const alert = useAppAlert();
 
   const [loading, setLoading] = useState(true);
+  // Loaded once (then edits are the customer's — never reloaded under them),
+  // and a way to load again after being offline.
+  const [loadedOnce, setLoadedOnce] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [wasExpired, setWasExpired] = useState(false);
@@ -105,6 +110,7 @@ export default function EditJobScreen() {
       return;
     }
     (async () => {
+      setLoadError(false);   // a reload after a failed load starts clean
       try {
         const job: any = await SkoFyApi.jobs.get(jobId);
         // EXPIRED is editable too — the backend's update_job treats editing
@@ -118,6 +124,7 @@ export default function EditJobScreen() {
           return;
         }
         setWasExpired(job.status === 'EXPIRED');
+        setLoadedOnce(true);
         setTitle(job.title ?? '');
         setDescription(job.description ?? '');
         setUrgency(job.urgency === 'EMERGENCY' ? 'HIGH' : (job.urgency ?? 'MEDIUM'));
@@ -139,7 +146,7 @@ export default function EditJobScreen() {
         setLoading(false);
       }
     })();
-  }, [jobId]);
+  }, [jobId, reloadKey]);
 
   useEffect(() => {
     if (loadError) {
@@ -191,6 +198,10 @@ export default function EditJobScreen() {
       setSaving(false);
     }
   };
+
+  // Offline with nothing loaded: the shared page; reloads when back online.
+  const offline = useOfflinePage(loadedOnce, () => setReloadKey((k) => k + 1));
+  if (offline) return <OfflineScreen onRetry={() => setReloadKey((k) => k + 1)} />;
 
   if (loading) {
     return (

@@ -11,7 +11,8 @@ import { SkoFyBottomBar, useBottomBarClearance } from '@/components/skofy-bottom
 import { SkoFyMascot } from '@/components/skofy-mascot';
 import { Colors, Fonts } from '@/constants/theme';
 import { QUICK_NEEDS, QuickNeed } from '@/constants/quick-needs';
-import { useIsOnline } from '@/hooks/use-is-online';
+import { useOfflinePage } from '@/components/offline-gate';
+import { useReloadWhenBackOnline } from '@/services/connection';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { RatingReminder } from '@/components/rating-reminder';
 import { BASE_URL, SkoFyApi } from '@/services/api';
@@ -58,6 +59,7 @@ import {
   Sparkles,
   Star,
   TicketPercent,
+  ShieldAlert,
   User,
   UserRound,
   Users,
@@ -204,9 +206,18 @@ function urgencyRank(j: ActiveJob): number {
   if (j.rawStatus === 'INVOICE_PENDING') return 0;
   if (j.rawStatus === 'IN_PROGRESS') return 1;
   if (j.rawStatus === 'INSPECTING') return 1;
+  if (j.rawStatus === 'DISPUTED') return 1;
   if (j.rawStatus === 'ACCEPTED') return 2;
-  if (j.applicantCount > 0) return 3;
+  if (takingApplicants(j)) return 3;
   return 4;
+}
+
+/** Applicants are waiting for the customer to choose: only while the job is
+ * still open. Once someone is hired (ongoing, disputed, cancelled after
+ * hire) the hired provider's own application still counts in
+ * applicant_count — it isn't someone waiting to be picked. */
+function takingApplicants(j: ActiveJob | null | undefined): boolean {
+  return !!j && j.status === 'Open' && j.applicantCount > 0;
 }
 
 function mapApiJob(j: any): ActiveJob {
@@ -287,7 +298,12 @@ export default function HomeScreen() {
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const insets = useSafeAreaInsets();
   const barClearance = useBottomBarClearance();
-  const isOnline = useIsOnline();
+  // Back online with a location already: catch its dashboard up quietly (it
+  // isn't on the shared cache) — not the permission prompt again. Nothing
+  // loaded yet is useOfflinePage's, below.
+  useReloadWhenBackOnline(() => {
+    if (location) refreshDashboard(location.coords.latitude, location.coords.longitude);
+  });
   const { data: appConfig } = useAppConfig();
   // States
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
@@ -500,7 +516,7 @@ export default function HomeScreen() {
     : [];
 
   const activeJob = activeJobs[0] ?? null;
-  const hasApplicants = (activeJob?.applicantCount ?? 0) > 0;
+  const hasApplicants = takingApplicants(activeJob);
 
   const fabScale = useSharedValue(1);
   const cardGlow = useSharedValue(0.4);
@@ -791,7 +807,7 @@ export default function HomeScreen() {
 
   // Pulse animation for waiting jobs (RN Animated — no Reanimated worklets)
   useEffect(() => {
-    if (activeJob && activeJob.applicantCount === 0) {
+    if (activeJob && activeJob.status === 'Open' && activeJob.applicantCount === 0) {
       RNAnimated.loop(
         RNAnimated.sequence([
           RNAnimated.timing(pulseAnim, { toValue: 1.2, duration: 1000, easing: RNEasing.inOut(RNEasing.ease), useNativeDriver: true }),
@@ -800,14 +816,20 @@ export default function HomeScreen() {
       ).start();
       fabScale.value = withTiming(1, { duration: 250 });
       cardGlow.value = withTiming(0.4, { duration: 300 });
-    } else if (activeJob && activeJob.applicantCount > 0) {
+    } else if (hasApplicants) {
       pulseAnim.stopAnimation();
       pulseAnim.setValue(1);
       // A one-time, smooth grow when applicants arrive (it used to bounce).
       fabScale.value = withTiming(1.1, { duration: 300 });
       cardGlow.value = withTiming(0.8, { duration: 500 });
+    } else {
+      // Hired, disputed, or nothing on top: no waiting pulse, no applicant glow.
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(1);
+      fabScale.value = withTiming(1, { duration: 250 });
+      cardGlow.value = withTiming(0.4, { duration: 300 });
     }
-  }, [activeJob?.applicantCount]);
+  }, [activeJob?.applicantCount, hasApplicants]);
 
 
   // Orb breathing + dot wave animations — both start once on mount
@@ -1015,15 +1037,20 @@ export default function HomeScreen() {
     // Provider" CTA the moment inspection actually starts.
     const isOngoing = ['ACCEPTED', 'INSPECTING', 'INVOICE_PENDING', 'IN_PROGRESS'].includes(job.rawStatus);
     const isCancelledPostHire = job.rawStatus === 'CANCELLED' && job.hasAssignedProvider;
-    const isWaiting = !isOngoing && !isCancelledPostHire && job.applicantCount === 0;
+    // Disputed: someone was hired and support is deciding — not a job taking
+    // applicants. (The hired provider's application still counts as one, so
+    // it used to read "1 Provider Applied · View Applicants".)
+    const isDisputed = job.rawStatus === 'DISPUTED';
+    const isWaiting = !isOngoing && !isCancelledPostHire && !isDisputed && job.applicantCount === 0;
 
     // SkoFy palette: yellow for waiting, indigo for active, red for cancelled, green for applicants
     let accentColor = '#FFCE48';
     if (isOngoing) accentColor = '#6366F1';
+    else if (isDisputed) accentColor = '#DC2626';
     else if (isCancelledPostHire) accentColor = '#EF4444';
     else if (!isWaiting) accentColor = '#22C55E';
 
-    const accentBg = isOngoing ? '#EEF2FF' : isCancelledPostHire ? '#FEF2F2' : isWaiting ? '#FFFBEB' : '#F0FDF4';
+    const accentBg = isOngoing ? '#EEF2FF' : (isCancelledPostHire || isDisputed) ? '#FEF2F2' : isWaiting ? '#FFFBEB' : '#F0FDF4';
 
     let statusLabel = isWaiting ? 'Waiting for providers' : `${job.applicantCount} Provider${job.applicantCount === 1 ? '' : 's'} Applied`;
     if (job.rawStatus === 'INSPECTING') statusLabel = 'Inspecting the job';
@@ -1033,13 +1060,17 @@ export default function HomeScreen() {
     // and "the provider backed out and no one else was available"; the API
     // doesn't currently distinguish who initiated it.
     if (isCancelledPostHire) statusLabel = 'Job Cancelled';
+    if (isDisputed) statusLabel = 'Under review';
 
     const isRemote = job.serviceMode === 'REMOTE';
     let ctaLabel = isWaiting ? 'View Job' : 'View Applicants';
     if (isOngoing) ctaLabel = isRemote ? 'View Job' : 'Track Provider';
+    if (isDisputed) ctaLabel = 'View Job';
 
     const handleCta = () => {
-      if (isOngoing && isRemote) {
+      if (isDisputed) {
+        router.push({ pathname: '/job-details', params: { jobId: job.id } } as any);
+      } else if (isOngoing && isRemote) {
         // A remote job has no physical location to track — there's nothing
         // for the map-based track-provider screen to show.
         router.push({ pathname: '/job-details', params: { jobId: job.id } } as any);
@@ -1070,7 +1101,7 @@ export default function HomeScreen() {
                   <Clock size={20} color={accentColor} />
                 </RNAnimated.View>
               ) : (
-                <Users size={20} color={accentColor} />
+                isDisputed ? <ShieldAlert size={20} color={accentColor} /> : <Users size={20} color={accentColor} />
               )}
             </View>
             <View style={{ flex: 1 }}>
@@ -1152,7 +1183,15 @@ export default function HomeScreen() {
             gap as the other card variants, filled with how many providers
             were actually notified (and how many have responded so far, once
             any have) instead of nothing. */}
-        {!isOngoing && !isCancelledPostHire && !job.directRequestProvider && (
+        {isDisputed && (
+          <View style={styles.notifiedRow}>
+            <ThemedText style={styles.notifiedText} numberOfLines={2}>
+              Our team is reviewing this job — we'll get back to you within 24 hours.
+            </ThemedText>
+          </View>
+        )}
+
+        {!isOngoing && !isCancelledPostHire && !isDisputed && !job.directRequestProvider && (
           <View style={[styles.notifiedRow, { flexDirection: 'row', alignItems: 'center' }]}>
             <ThemedText style={styles.notifiedText} numberOfLines={1}>
               {job.providersNotified > 0
@@ -1525,7 +1564,9 @@ export default function HomeScreen() {
     );
   };
 
-  if (loading && !location && !isOnline) {
+  // Offline before anything loaded: the shared page; reloads when back online.
+  const offline = useOfflinePage(!loading || !!location, () => { void fetchLocationAndRefresh(); });
+  if (offline) {
     return (
       <ThemedView style={{ flex: 1 }}>
         <StatusBar barStyle="dark-content" />

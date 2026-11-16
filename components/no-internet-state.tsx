@@ -1,16 +1,19 @@
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { checkConnection, showingFullPage, useConnection } from '@/services/connection';
+import { useIsFocused } from '@react-navigation/native';
 import { WifiOff } from 'lucide-react-native';
-import React from 'react';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
 
-// Full-page takeover for "nothing to show because there's no connection" —
-// distinct from network-status-banner.tsx's small top toast, which handles
-// the "you're mid-session and briefly dropped offline, but already have
-// content on screen" case. This is only for screens with genuinely nothing
-// loaded yet, matching how apps like LinkedIn only show a full-page state on
-// a fresh load with no cached data.
+// Full page for a screen with nothing to show because there's no
+// connection (opened offline, nothing loaded yet). A screen that already has
+// content keeps it, and the top banner says it's offline instead — the two
+// never show together: this tells services/connection.ts it's on screen and
+// the banner hides. Its screen reloads itself when the connection returns
+// (useReloadWhenBackOnline); Refresh checks again now. The same file is in
+// both apps: keep them identical.
 interface Props {
   onRetry: () => void;
   message?: string;
@@ -19,6 +22,25 @@ interface Props {
 export function NoInternetState({ onRetry, message }: Props) {
   const colorScheme = useColorScheme() ?? 'light';
   const t = Colors[colorScheme];
+  const { online } = useConnection();
+  const [checking, setChecking] = useState(false);
+
+  // Only while its screen is in front: one left underneath (Home under
+  // another screen, a tab not chosen) mustn't hide the banner there.
+  const focused = useIsFocused();
+  useEffect(() => (focused ? showingFullPage() : undefined), [focused]);
+
+  const onRefresh = async () => {
+    setChecking(true);
+    try {
+      const nowOnline = await checkConnection();
+      // Coming back online: the screen's useReloadWhenBackOnline reloads it.
+      // Online all along (a load that failed for another reason): reload now.
+      if (nowOnline && online) onRetry();
+    } finally {
+      setChecking(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -27,10 +49,10 @@ export function NoInternetState({ onRetry, message }: Props) {
       </View>
       <ThemedText style={[styles.title, { color: t.textPrimary }]}>No internet connection</ThemedText>
       <ThemedText style={[styles.subtitle, { color: t.textSecondary }]}>
-        {message || 'Check your connection, then try again.'}
+        {message || "Check your connection — this page reloads by itself when you're back online."}
       </ThemedText>
-      <TouchableOpacity style={styles.retryBtn} onPress={onRetry} activeOpacity={0.85}>
-        <ThemedText style={styles.retryBtnText}>Refresh</ThemedText>
+      <TouchableOpacity style={styles.retryBtn} onPress={onRefresh} activeOpacity={0.85} disabled={checking}>
+        {checking ? <ActivityIndicator color="#111827" /> : <ThemedText style={styles.retryBtnText}>Refresh</ThemedText>}
       </TouchableOpacity>
     </View>
   );
@@ -41,6 +63,6 @@ const styles = StyleSheet.create({
   iconWrap: { width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
   title: { fontSize: 19, lineHeight: 24, fontFamily: Fonts.poppinsBold, textAlign: 'center' },
   subtitle: { fontSize: 14, fontFamily: Fonts.poppins, textAlign: 'center', marginTop: 8, lineHeight: 20 },
-  retryBtn: { marginTop: 24, backgroundColor: '#FFCE48', borderRadius: 14, paddingHorizontal: 28, paddingVertical: 12 },
+  retryBtn: { marginTop: 24, backgroundColor: '#FFCE48', borderRadius: 14, paddingHorizontal: 28, paddingVertical: 12, minWidth: 128, alignItems: 'center' },
   retryBtnText: { fontSize: 14, lineHeight: 18, fontFamily: Fonts.poppinsBold, color: '#111827' },
 });

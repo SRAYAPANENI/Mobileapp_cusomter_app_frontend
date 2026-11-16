@@ -9,7 +9,9 @@ import { clearHomeCache } from '@/services/homeCache';
 import { router } from 'expo-router';
 import { AlertTriangle, Archive, ChevronLeft, Clock, Trash2 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StatusBar, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { TextInput } from '@/components/scaled-text';
+import { isOnlineNow } from '@/services/connection';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
 // Deleting the account (docs/ACCOUNT_DELETION_DESIGN.md): says what goes and
@@ -27,7 +29,8 @@ export default function DeleteAccountScreen() {
   useEffect(() => {
     SkoFyApi.account.deletionStatus()
       .then((s) => { setStatus(s); setReasons(s.blockers); })
-      .catch((err: any) => appAlert.show('error', 'Could not load', err?.message ?? 'Please try again.'));
+      // Offline: the banner already says so — no alert on top of it.
+      .catch((err: any) => { if (isOnlineNow()) appAlert.show('error', 'Could not load', err?.message ?? 'Please try again.'); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
