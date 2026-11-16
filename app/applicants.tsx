@@ -11,6 +11,7 @@ import { kmToMiles } from '@/services/units';
 import { Image } from 'expo-image';
 import { router, useFocusEffect } from 'expo-router';
 import {
+  AlertTriangle,
   Award,
   ChevronLeft,
   MapPin,
@@ -19,8 +20,10 @@ import {
   CheckCircle2,
   XCircle,
   Star,
-  Briefcase
+  Briefcase,
 } from 'lucide-react-native';
+import { VehicleIcon } from '@/components/vehicle-icon';
+import { PriceTag } from '@/components/price-tag';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -118,7 +121,8 @@ function ApplicantCard({
           <ThemedText style={styles.professionText}>{item.profession}</ThemedText>
           {(item as any).price != null && (
             // A trip: the fare — waiting, only if it happens, is said below.
-            <ThemedText style={styles.priceText}>${(item as any).price.toFixed(2)} {(item as any).waitText ? 'fare' : 'total'}</ThemedText>
+            <PriceTag amount={`$${(item as any).price.toFixed(2)}`} unit={(item as any).waitText ? 'fare' : 'total'}
+              style={{ marginTop: 4, marginBottom: 2 }} />
           )}
           {/* How it's made up: "1 week × $250.00 + 3 nights × $40.00". */}
           {!!(item as any).priceText && (
@@ -126,6 +130,22 @@ function ApplicantCard({
           )}
           {!!(item as any).waitText && (
             <ThemedText style={styles.priceBreakdown}>{(item as any).waitText}</ThemedText>
+          )}
+          {/* A car-trunk or van load: the vehicle Dodorez checked that they'd come in. */}
+          {!!(item as any).vehicle && (
+            <View style={styles.vehicleRow}>
+              <VehicleIcon type={(item as any).vehicleType} size={13} color="#047857" />
+              <ThemedText style={styles.vehicleText} numberOfLines={1}>{(item as any).vehicle} · checked</ThemedText>
+            </View>
+          )}
+          {/* No checked vehicle for this load (yet): said here, not by a failed hire. */}
+          {(item as any).vehicleMissing && (
+            <View style={styles.vehicleRow}>
+              <AlertTriangle size={12} color="#B45309" />
+              <ThemedText style={[styles.vehicleText, { color: '#B45309' }]} numberOfLines={2}>
+                No checked vehicle for this size yet — can't be hired until there is
+              </ThemedText>
+            </View>
           )}
           <View style={styles.ratingRow}>
             <Star size={12} color="#F59E0B" fill="#F59E0B" />
@@ -277,6 +297,10 @@ function mapApiApplicant(a: any): Applicant & { applicationId: string; providerI
     priceText: a.price_text ?? null,
     // A trip: their waiting terms at the pickup, held with the fare.
     waitText: a.wait_text ?? null,
+    // A car-trunk or van load: "White Ford Transit · cargo van" (its plate once hired).
+    vehicle: a.vehicle ?? null,
+    vehicleType: a.vehicle_type ?? null,
+    vehicleMissing: !!a.vehicle_missing,
   } as any;
 }
 
@@ -707,12 +731,11 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     lineHeight: 17,
     fontFamily: Fonts.poppinsBold,
   },
-  priceText: {
-    fontSize: 14, lineHeight: 19, fontFamily: Fonts.poppinsBold, color: '#065F46', marginTop: 2,
-  },
   priceBreakdown: {
     fontSize: 11.5, lineHeight: 16, fontFamily: Fonts.poppins, color: '#6B7280',
   },
+  vehicleRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  vehicleText: { flexShrink: 1, fontSize: 11.5, lineHeight: 16, fontFamily: Fonts.poppinsSemiBold, color: '#047857' },
   professionText: {
     fontSize: 14,
     lineHeight: 20,

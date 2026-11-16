@@ -22,8 +22,9 @@ import {
   ShieldCheck,
   Star,
   Trash2,
-  Navigation
+  Navigation,
 } from 'lucide-react-native';
+import { VehicleIcon } from '@/components/vehicle-icon';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Linking, Platform, ScrollView, Share, StatusBar, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
@@ -179,6 +180,16 @@ interface TrackedProvider {
   phone: string;
 }
 
+/** A car-trunk or van load: the vehicle Dodorez checked that's coming
+ * (skofy-backend VehicleService.on_job) — to know it when it pulls up. */
+interface ComingVehicle {
+  description: string;
+  vehicle_type?: string;
+  plate?: string;
+  plate_state?: string;
+  photo_url?: string | null;
+}
+
 const STATUS_LABELS: Record<string, string> = {
   POSTED: 'Waiting for provider',
   DISTRIBUTED: 'Waiting for provider',
@@ -328,6 +339,7 @@ export default function TrackProviderScreen() {
   const [polledLoc, setPolledLoc] = useState<LatLng | null>(null);
   const [routeCoords, setRouteCoords] = useState<LatLng[]>([]);
   const [provider, setProvider] = useState<TrackedProvider | null>(null);
+  const [vehicle, setVehicle] = useState<ComingVehicle | null>(null);
   const [destination, setDestination] = useState<{ latitude: number; longitude: number } | null>(null);
   const [eta, setEta] = useState('—');
   const [distance, setDistance] = useState('—');
@@ -458,6 +470,7 @@ export default function TrackProviderScreen() {
           phone: j.assigned_provider.phone ?? '',
         });
       }
+      setVehicle(j.vehicle ?? null);
       if (j.lat != null && j.lng != null) {
         setDestination({ latitude: j.lat, longitude: j.lng });
       }
@@ -1157,6 +1170,33 @@ export default function TrackProviderScreen() {
             </View>
           </TouchableOpacity>
 
+          {/* The vehicle that's coming — checked by Dodorez. A different one
+              turning up is worth reporting. */}
+          {vehicle && (
+            <View style={styles.vehicleCard}>
+              {vehicle.photo_url
+                ? <Image source={{ uri: vehicle.photo_url }} style={styles.vehiclePhoto} />
+                : <View style={[styles.vehiclePhoto, styles.vehiclePhotoEmpty]}><VehicleIcon type={vehicle.vehicle_type} size={24} color="#6B7280" /></View>}
+              <View style={{ flex: 1, gap: 2 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <VehicleIcon type={vehicle.vehicle_type} size={13} color="#6B7280" />
+                  <ThemedText style={styles.vehicleLabel}>Coming in</ThemedText>
+                </View>
+                <ThemedText style={styles.vehicleName} numberOfLines={2}>{vehicle.description}</ThemedText>
+                {!!vehicle.plate && (
+                  <View style={styles.plate}>
+                    <ThemedText style={styles.plateText}>{vehicle.plate}</ThemedText>
+                    {!!vehicle.plate_state && <ThemedText style={styles.plateState}>{vehicle.plate_state}</ThemedText>}
+                  </View>
+                )}
+              </View>
+              <View style={styles.checkedBadge}>
+                <ShieldCheck size={12} color="#047857" />
+                <ThemedText style={styles.checkedText}>Checked</ThemedText>
+              </View>
+            </View>
+          )}
+
           {/* Actions */}
           <View style={styles.actionRow}>
             <TouchableOpacity style={styles.callButton} onPress={handleCallProvider}>
@@ -1703,6 +1743,25 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     flex: 1,
     marginLeft: 16,
   },
+  vehicleCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12, padding: 12,
+    borderRadius: 16, backgroundColor: t.inputFilled,
+  },
+  vehiclePhoto: { width: 64, height: 52, borderRadius: 10, backgroundColor: '#E5E7EB' },
+  vehiclePhotoEmpty: { alignItems: 'center', justifyContent: 'center' },
+  vehicleLabel: { fontSize: 11.5, lineHeight: 15, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary },
+  vehicleName: { fontSize: 14, lineHeight: 19, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
+  plate: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginTop: 2,
+    paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, borderWidth: 1.5, borderColor: '#111827', backgroundColor: '#FFFFFF',
+  },
+  plateText: { fontSize: 13, lineHeight: 18, fontFamily: Fonts.poppinsBold, color: '#111827', letterSpacing: 1 },
+  plateState: { fontSize: 10, lineHeight: 14, fontFamily: Fonts.poppinsSemiBold, color: '#6B7280' },
+  checkedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 999, backgroundColor: '#ECFDF5', alignSelf: 'flex-start',
+  },
+  checkedText: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppinsSemiBold, color: '#047857' },
   providerName: {
     fontSize: 18,
     lineHeight: 24,

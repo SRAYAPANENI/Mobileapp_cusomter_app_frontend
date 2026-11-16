@@ -56,6 +56,7 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { usePushPreference } from '@/hooks/use-push-preference';
 import { padBottom } from '@/hooks/use-bottom-inset';
 import { usePullRefresh } from '@/hooks/use-pull-refresh';
+import { PriceTag } from '@/components/price-tag';
 
 import { Popup, PopupCard } from '@/components/popup';
 interface JobHistory {
@@ -656,7 +657,9 @@ export default function ProfileScreen() {
         ) : (
           <ThemedText style={[styles.ratingValue, { color: '#9CA3AF' }]}>Not rated yet</ThemedText>
         )}
-        <ThemedText style={styles.priceText}>{item.price}</ThemedText>
+        {item.price.startsWith('$')
+          ? <PriceTag amount={item.price} />
+          : <ThemedText style={styles.priceText}>{item.price}</ThemedText>}
       </View>
 
       {item.receivedRating && (
