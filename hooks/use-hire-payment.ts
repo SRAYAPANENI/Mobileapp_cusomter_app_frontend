@@ -70,10 +70,14 @@ const SKOFY_PAYMENT_SHEET_APPEARANCE = {
  * accepted post-inspection. See payInspectionFee / payInvoice below. */
 export function useHirePayment() {
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
+  const holdLabel = (intent: { hold?: boolean; amount?: number }) =>
+    intent.hold && intent.amount ? `Hold $${intent.amount.toFixed(2)}` : undefined;
 
   // `bankPayment`: the server offered ACH too (a big job) — the sheet must
   // allow a method that clears in days.
-  const runPaymentSheet = async (clientSecret: string, bankPayment = false): Promise<PaymentResult> => {
+  // `buttonLabel`: the sheet's own button — "Hold $12.51" for a hold on the
+  // card (only what's used is taken), so it never reads as paying it all.
+  const runPaymentSheet = async (clientSecret: string, bankPayment = false, buttonLabel?: string): Promise<PaymentResult> => {
     const { ephemeral_key_secret, stripe_customer_id } = await SkoFyApi.payments.createEphemeralKey();
     const { error: initError } = await initPaymentSheet({
       merchantDisplayName: 'Dodorez',
@@ -95,6 +99,7 @@ export function useHirePayment() {
       googlePay: { merchantCountryCode: 'US', testEnv: STRIPE_TEST_MODE },
       applePay: { merchantCountryCode: 'US' },
       appearance: SKOFY_PAYMENT_SHEET_APPEARANCE,
+      ...(buttonLabel ? { primaryButtonLabel: buttonLabel } : {}),
     });
     if (initError) return { status: 'error', message: initError.message };
 
@@ -146,7 +151,7 @@ export function useHirePayment() {
         // for the customer to actually pay.
         return { status: 'success', charged: false, amount: 0 };
       }
-      const sheetResult = await runPaymentSheet(intentResult.client_secret!);
+      const sheetResult = await runPaymentSheet(intentResult.client_secret!, false, holdLabel(intentResult));
       if (sheetResult.status !== 'success') return sheetResult;
 
       for (let attempt = 0; attempt < 5; attempt++) {
@@ -199,14 +204,14 @@ export function useHirePayment() {
   /** A payment made on a job that's already running or done — work added
    * mid-job, or a tip: open it, present the sheet, then confirm it's held. */
   const payAndConfirm = async (
-    open: () => Promise<{ requires_payment: boolean; client_secret: string | null }>,
+    open: () => Promise<{ requires_payment: boolean; client_secret: string | null; hold?: boolean; amount?: number }>,
     confirm: () => Promise<unknown>,
     failMessage: string,
   ): Promise<PaymentResult> => {
     try {
       const intent = await open();
       if (intent.requires_payment) {
-        const sheetResult = await runPaymentSheet(intent.client_secret!);
+        const sheetResult = await runPaymentSheet(intent.client_secret!, false, holdLabel(intent));
         if (sheetResult.status !== 'success') return sheetResult;
       }
       for (let attempt = 0; attempt < 5; attempt++) {
@@ -234,9 +239,9 @@ export function useHirePayment() {
     'Failed to send the tip. Please try again.',
   );
 
-  /** A job priced up front: pay the agreed price to book it. */
-  const payBooking = (jobId: string) => payAndConfirm(
-    () => SkoFyApi.jobs.payBooking(jobId), () => SkoFyApi.jobs.confirmBooking(jobId),
+  /** A job priced up front: pay the agreed price to book it — with an offer code, if one was applied. */
+  const payBooking = (jobId: string, offerCode?: string | null) => payAndConfirm(
+    () => SkoFyApi.jobs.payBooking(jobId, offerCode), () => SkoFyApi.jobs.confirmBooking(jobId),
     'Failed to book. Please try again.',
   );
 

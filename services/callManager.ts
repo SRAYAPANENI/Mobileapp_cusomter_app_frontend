@@ -599,6 +599,8 @@ const JOB_UPDATE_ROUTES: Record<string, JobUpdateRoute> = {
   // Proving the inspection, and the provider at the door (MONEY_RULES_DESIGN §3–4).
   inspection_report: '/track-provider',
   provider_arrived: '/track-provider',
+  // A trip's waiting is now charged — the "It's handed over" button is there.
+  paid_waiting: '/track-provider',
   // A strike from a dispute decision — where to read it and appeal (§5).
   strike: '/account-standing',
   // The provider asks to add work mid-job — approve it there (§11).

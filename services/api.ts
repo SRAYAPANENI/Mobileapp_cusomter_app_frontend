@@ -530,6 +530,8 @@ export interface CheckoutBreakdown {
   /** A Dodorez credit used on this payment. */
   credit: number;
   total: number;
+  /** A booking: what's held on the card now (total is what they pay with no waiting). */
+  hold?: { most: number; wait_hold: number; on_card: boolean };
 }
 
 /** The middle half of accepted quotes for a kind of job nearby (§11). */
@@ -555,6 +557,23 @@ export interface GuaranteeInfo {
 export interface ChargeIntent {
   requires_payment: boolean; client_secret: string | null; payment_intent_id: string | null; amount: number;
   bank_payment?: boolean;
+  /** Held on the card, not charged: only what's used is taken (skofy-backend app/domain/card_hold.py). */
+  hold?: boolean;
+}
+
+/** Booking a job priced up front, in the customer's figures (app/domain/card_hold.py). */
+export interface BookingSummary {
+  price: number; fee: number;
+  /** What they pay if nothing else is used (no waiting). */
+  pay: number;
+  /** The most waiting can add (0 without waiting). */
+  wait_hold: number;
+  /** Everything, if waiting is used up — what's held (or charged) now. */
+  most: number;
+  /** Held on the card — only what's used is taken. */
+  on_card: boolean;
+  /** Their Dodorez credit, already taken off `pay` and `most`. */
+  credit?: number;
 }
 
 /** Work the provider asked to add mid-job (§11). */
@@ -1172,8 +1191,25 @@ export const SkoFyApi = {
     confirmExtraWork: async (jobId: string) => request(`/jobs/${jobId}/extra-work/confirm`, { method: 'POST' }),
     tipInfo: async (jobId: string): Promise<TipInfo> => request(`/jobs/${jobId}/tip`) as any,
     // ── A job priced up front: book and pay; check in; care (§ phase 4) ──
-    payBooking: async (jobId: string): Promise<ChargeIntent> =>
-      request(`/jobs/${jobId}/book/pay`, { method: 'POST' }) as any,
+    /** "It's handed over": stops the waiting clock at the stop the provider is
+     * at (skofy-backend app/domain/trip_wait.py). */
+    stopWaiting: async (jobId: string): Promise<{ stopped_at: string; stop: 'PICKUP' | 'DROPOFF' }> =>
+      request(`/jobs/${jobId}/wait/stop`, { method: 'POST' }) as any,
+
+    payBooking: async (jobId: string, offerCode?: string | null): Promise<ChargeIntent> =>
+      request(`/jobs/${jobId}/book/pay`, {
+        method: 'POST', body: JSON.stringify({ offer_code: offerCode ?? null }),
+      }) as any,
+    /** The offers the customer can use on booking it (on its price). */
+    bookingOffers: async (jobId: string): Promise<CheckoutOffer[]> =>
+      request(`/jobs/${jobId}/book/offers`) as any,
+    /** The bill for booking it, with or without an offer code — `total` is
+     * what they pay with no waiting; `hold` says what's held on the card. */
+    previewBooking: async (jobId: string, offerCode?: string): Promise<CheckoutBreakdown & {
+      offer: { code: string; title: string } | null;
+    }> => request(`/jobs/${jobId}/book/preview`, {
+      method: 'POST', body: JSON.stringify({ offer_code: offerCode ?? null }),
+    }) as any,
     confirmBooking: async (jobId: string) => request(`/jobs/${jobId}/book/confirm`, { method: 'POST' }),
     checkInCode: async (jobId: string): Promise<{ code: string | null; expires_in_seconds: number | null }> =>
       request(`/jobs/${jobId}/check-in/code`) as any,

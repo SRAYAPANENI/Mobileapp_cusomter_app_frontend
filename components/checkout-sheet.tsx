@@ -13,6 +13,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Popup } from '@/components/popup';
 import { useButtonRowFit } from '@/hooks/use-button-row-fit';
+/** Where the sheet's figures come from — the job's invoice unless given. */
+export interface CheckoutSource {
+  offers: () => Promise<CheckoutOffer[]>;
+  preview: (offerCode?: string) => Promise<CheckoutBreakdown & { offer?: { code: string; title: string } | null }>;
+}
+
 interface CheckoutSheetProps {
   visible: boolean;
   jobId: string;
@@ -20,6 +26,18 @@ interface CheckoutSheetProps {
    *  flow finishes — the sheet shows a spinner until then. */
   onPay: (offerCode: string | null) => Promise<void>;
   onClose: () => void;
+  /** Its offers and bill — an invoice's by default; a booking's (booking-checkout.tsx). */
+  source?: CheckoutSource;
+  title?: string;
+  subtitle?: string;
+  /** The first line of the bill ("Job amount"; a booking: "Price"). */
+  amountLabel?: string;
+  /** The last line ("Total"; a booking: "You pay (no waiting)"). */
+  totalLabel?: string;
+  /** The pay button ("Pay $X"; a booking: "Book — $X"). */
+  payLabel?: (b: CheckoutBreakdown) => string;
+  /** A line under the bill — a booking's hold on the card. */
+  note?: (b: CheckoutBreakdown) => string | null;
 }
 
 // Same semantic colours the rest of the app uses for "success / saving"
@@ -38,7 +56,14 @@ const money = (n: number) => `$${n.toFixed(2)}`;
  * All amounts come from the server (the discount is taken out of Dodorez's
  * fee and the provider's share never changes) — nothing is calculated here.
  */
-export function CheckoutSheet({ visible, jobId, onPay, onClose }: CheckoutSheetProps) {
+export function CheckoutSheet({
+  visible, jobId, onPay, onClose, source, title = 'Checkout', subtitle = 'Apply an offer or promo code before you pay',
+  amountLabel = 'Job amount', totalLabel = 'Total', payLabel, note,
+}: CheckoutSheetProps) {
+  const from: CheckoutSource = source ?? {
+    offers: () => SkoFyApi.jobs.invoiceOffers(jobId),
+    preview: (code) => SkoFyApi.jobs.previewInvoicePayment(jobId, code),
+  };
   const errorFit = useButtonRowFit();
   const fit = useButtonRowFit();
   const colorScheme = useColorScheme() ?? 'light';
@@ -64,8 +89,8 @@ export function CheckoutSheet({ visible, jobId, onPay, onClose }: CheckoutSheetP
     setCodeError(null);
     try {
       const [available, preview] = await Promise.all([
-        SkoFyApi.jobs.invoiceOffers(jobId).catch(() => [] as CheckoutOffer[]),
-        SkoFyApi.jobs.previewInvoicePayment(jobId),
+        from.offers().catch(() => [] as CheckoutOffer[]),
+        from.preview(),
       ]);
       setOffers(available);
       setBreakdown(preview);
@@ -74,7 +99,8 @@ export function CheckoutSheet({ visible, jobId, onPay, onClose }: CheckoutSheetP
     } finally {
       setLoading(false);
     }
-  }, [jobId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId, source]);
 
   useEffect(() => { if (visible) load(); }, [visible, load]);
 
@@ -84,7 +110,7 @@ export function CheckoutSheet({ visible, jobId, onPay, onClose }: CheckoutSheetP
     setApplyingCode(trimmed.toUpperCase());
     setCodeError(null);
     try {
-      const preview = await SkoFyApi.jobs.previewInvoicePayment(jobId, trimmed);
+      const preview = await from.preview(trimmed);
       setBreakdown(preview);
       setAppliedCode(preview.offer?.code ?? trimmed.toUpperCase());
       setCodeInput('');
@@ -101,7 +127,7 @@ export function CheckoutSheet({ visible, jobId, onPay, onClose }: CheckoutSheetP
     setAppliedCode(null);
     setCodeError(null);
     try {
-      setBreakdown(await SkoFyApi.jobs.previewInvoicePayment(jobId));
+      setBreakdown(await from.preview());
     } catch { /* keep the last bill — paying re-checks on the server anyway */ }
   };
 
@@ -121,8 +147,8 @@ export function CheckoutSheet({ visible, jobId, onPay, onClose }: CheckoutSheetP
       <KeyboardAvoidingView style={s.overlay} behavior="padding" automaticOffset>
         <View style={[s.container, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12 }]}>
           <View style={s.handle} />
-          <ThemedText style={s.title}>Checkout</ThemedText>
-          <ThemedText style={s.subtitle}>Apply an offer or promo code before you pay</ThemedText>
+          <ThemedText style={s.title}>{title}</ThemedText>
+          <ThemedText style={s.subtitle}>{subtitle}</ThemedText>
 
           {loading ? (
             <View style={{ gap: 12 }} accessibilityLabel="Loading payment details">
@@ -237,7 +263,7 @@ export function CheckoutSheet({ visible, jobId, onPay, onClose }: CheckoutSheetP
                       <BillRow label="Visiting fee you paid" value={`−${money(breakdown.visit_credit)}`} s={s} valueColor={SUCCESS} />
                     </>
                   ) : (
-                    <BillRow label="Job amount" value={money(breakdown.job_amount)} s={s} />
+                    <BillRow label={amountLabel} value={money(breakdown.job_amount)} s={s} />
                   )}
                   {breakdown.discount > 0 && (
                     <BillRow
@@ -257,10 +283,11 @@ export function CheckoutSheet({ visible, jobId, onPay, onClose }: CheckoutSheetP
                     <BillRow label="Dodorez credit" value={`−${money(breakdown.credit)}`} s={s} valueColor={SUCCESS} />
                   )}
                   <View style={s.divider} />
-                  <BillRow label="Total" value={money(breakdown.total)} s={s} total />
+                  <BillRow label={totalLabel} value={money(breakdown.total)} s={s} total />
                   {breakdown.discount > 0 && (
                     <ThemedText style={s.savingNote}>You're saving {money(breakdown.discount)} on this job</ThemedText>
                   )}
+                  {!!note?.(breakdown) && <ThemedText style={s.holdNote}>{note(breakdown)}</ThemedText>}
                 </View>
               </ScrollView>
 
@@ -273,11 +300,13 @@ export function CheckoutSheet({ visible, jobId, onPay, onClose }: CheckoutSheetP
                   onPress={pay}
                   disabled={paying || !!applyingCode}
                   accessibilityRole="button"
-                  accessibilityLabel={`Pay ${money(breakdown.total)}`}
+                  accessibilityLabel={payLabel ? payLabel(breakdown) : `Pay ${money(breakdown.total)}`}
                 >
                   {paying
                     ? <ActivityIndicator color="#111827" />
-                    : <ThemedText onTextLayout={fit.onLabelLayout} style={s.primaryBtnText}>Pay {money(breakdown.total)}</ThemedText>}
+                    : <ThemedText onTextLayout={fit.onLabelLayout} style={s.primaryBtnText}>
+                        {payLabel ? payLabel(breakdown) : `Pay ${money(breakdown.total)}`}
+                      </ThemedText>}
                 </TouchableOpacity>
               </View>
             </>
@@ -350,6 +379,10 @@ function makeStyles(t: typeof Colors.light) {
     billTotalValue: { fontSize: 18, lineHeight: 22, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
     divider: { height: 1, backgroundColor: t.border },
     savingNote: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsSemiBold, color: SUCCESS, textAlign: 'right' },
+    holdNote: {
+      fontSize: 12.5, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: '#065F46',
+      backgroundColor: '#ECFDF5', borderRadius: 10, padding: 10, marginTop: 8,
+    },
 
     // Footer pair — same sizes as cancel-job-modal's Go Back / confirm.
     footer: { flexDirection: 'row', gap: 16, marginTop: 20 },

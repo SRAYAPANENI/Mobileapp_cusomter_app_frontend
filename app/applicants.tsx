@@ -1,4 +1,5 @@
 ﻿import { AppAlert, useAppAlert } from '@/components/app-alert';
+import { BookingCheckout } from '@/components/booking-checkout';
 import { useOfflinePage } from '@/components/offline-gate';
 import { NoInternetState } from '@/components/no-internet-state';
 import { CancelJobModal } from '@/components/cancel-job-modal';
@@ -116,7 +117,8 @@ function ApplicantCard({
           </View>
           <ThemedText style={styles.professionText}>{item.profession}</ThemedText>
           {(item as any).price != null && (
-            <ThemedText style={styles.priceText}>${(item as any).price.toFixed(2)} total</ThemedText>
+            // A trip: the fare — waiting, only if it happens, is said below.
+            <ThemedText style={styles.priceText}>${(item as any).price.toFixed(2)} {(item as any).waitText ? 'fare' : 'total'}</ThemedText>
           )}
           {/* How it's made up: "1 week × $250.00 + 3 nights × $40.00". */}
           {!!(item as any).priceText && (
@@ -296,6 +298,25 @@ export default function ApplicantsScreen() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [lastHiredName, setLastHiredName] = useState('');
   const [feeStatusMessage, setFeeStatusMessage] = useState('');
+  // A job priced up front: after hiring, its checkout (offers, then Book).
+  const [bookingOpen, setBookingOpen] = useState(false);
+  const bookHired = async (offerCode: string | null) => {
+    if (!jobId) return;
+    const booking = await payBooking(jobId, offerCode);
+    setBookingOpen(false);
+    setFeeStatusMessage(
+      booking.status === 'success' ? 'Booked — your payment is held safely until the job is done.'
+      : booking.status === 'cancelled' ? 'Book and pay from the job screen to confirm it.'
+      : booking.message,
+    );
+    setShowSuccessModal(true);
+  };
+  // Closed without booking: hired all the same — booked from the job screen.
+  const skipBooking = () => {
+    setBookingOpen(false);
+    setFeeStatusMessage('Book and pay from the job screen to confirm it.');
+    setShowSuccessModal(true);
+  };
 
   const [loadError, setLoadError] = useState(false);
   // Distinguishes "the job is permanently gone/inaccessible" (404/403 — a
@@ -407,18 +428,11 @@ export default function ApplicantsScreen() {
       // nothing having happened at all.
       // A job priced up front (per night, per hour…): book it — pay the
       // agreed total into escrow — instead of a visiting fee.
-      const hired = applicants.find((a: any) => (a.applicationId ?? a.id) === applicationId) as any;
       if (paysUpfront) {
-        const booking = await payBooking(jobId);
-        setFeeStatusMessage(
-          booking.status === 'success'
-            ? `Booked — ${hired?.price != null ? `$${hired.price.toFixed(2)}` : 'your payment'} is held safely until the job is done.`
-          : booking.status === 'cancelled' ? 'Book and pay from the job screen to confirm it.'
-          : booking.message,
-        );
+        // Book it in the checkout — offers, promo code and the bill first.
         setHiredIds(prev => [...prev, applicationId]);
         setLastHiredName(name);
-        setShowSuccessModal(true);
+        setBookingOpen(true);
         return;
       }
       const feeResult = await payInspectionFee(jobId);
@@ -602,6 +616,7 @@ export default function ApplicantsScreen() {
           }}
         />
       )}
+      {!!jobId && <BookingCheckout visible={bookingOpen} jobId={jobId} onBook={bookHired} onClose={skipBooking} />}
       {appAlert.element}
     </ThemedView>
   );

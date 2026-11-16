@@ -1,7 +1,8 @@
 import { ThemedText } from '@/components/themed-text';
 import { Fonts } from '@/constants/theme';
 import { useHirePayment } from '@/hooks/use-hire-payment';
-import { CareRecord, SkoFyApi } from '@/services/api';
+import { BookingSummary, CareRecord, SkoFyApi } from '@/services/api';
+import { BookingCheckout } from '@/components/booking-checkout';
 import { Image } from 'expo-image';
 import * as Location from 'expo-location';
 import { Camera, DoorOpen, KeyRound, MapPin } from 'lucide-react-native';
@@ -29,6 +30,9 @@ export function CarePanel({ jobId, onMessage }: Props) {
   const [record, setRecord] = useState<CareRecord | null>(null);
   const [paying, setPaying] = useState(false);
   const [reporting, setReporting] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  // Booking opens the checkout: offers, promo code, the bill, then Book.
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
 
   const load = useCallback(async () => {
     const j: any = await SkoFyApi.jobs.get(jobId).catch(() => null);
@@ -63,21 +67,43 @@ export function CarePanel({ jobId, onMessage }: Props) {
   // its cap is paid with the fare, the unused part comes back.
   const wait = job.trip_wait ?? null;
   const clock = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'the free minutes end');
-  const toPay = price ? price.total + (wait?.hold ?? 0) : 0;
+  // The server's figures — the same the payment uses, so they always agree.
+  const booking: BookingSummary | null = job.booking ?? null;
+  const toPay = booking ? booking.pay : price ? price.total + (wait?.hold ?? 0) : 0;
   const paid = job.payment_status === 'HELD' || job.payment_status === 'PAID';
   const atTheirPlace = steps.includes('CHECK_IN_CODE');
   // Pickup & Delivery: nobody meets at the start — the code is the drop-off's.
   const delivery = steps.includes('PICKUP_PROOF');
 
-  const book = async () => {
+  const book = async (offerCode: string | null = null) => {
     setPaying(true);
-    const result = await payBooking(jobId);
+    const result = await payBooking(jobId, offerCode);
     setPaying(false);
+    setCheckoutOpen(false);
     if (result.status === 'success') onMessage('success', 'Booked', 'Your payment is held safely until the job is done.');
     else if (result.status === 'pending') onMessage('info', 'Processing', result.message);
     else if (result.status === 'error') onMessage('error', 'Not booked', result.message);
     load();
   };
+
+  // "It's handed over": waiting stops now — the provider can't run it up after.
+  const stopWaiting = async () => {
+    setStopping(true);
+    try {
+      await SkoFyApi.jobs.stopWaiting(jobId);
+      onMessage('success', 'Waiting stopped', "You won't be charged for any more waiting at this stop.");
+      load();
+    } catch (err: any) {
+      onMessage('error', 'Not stopped', err?.message ?? 'Please try again.');
+    } finally {
+      setStopping(false);
+    }
+  };
+  // How a stop's clock ended early, in words.
+  const stoppedLine = wait?.stopped_at
+    ? `Waiting stopped at ${clock(wait.stopped_at)}${wait.stopped_by === 'LEFT' ? ' — your provider left the stop' : ''}. `
+      + (wait.charge > 0 ? `$${wait.charge.toFixed(2)} for waiting.` : 'No charge for waiting.')
+    : null;
 
   // Nobody to check you in at their place, after the wait: called off, all back.
   const hostLate = atTheirPlace && paid && job.status === 'ACCEPTED' && !!job.scheduled_at
@@ -104,10 +130,32 @@ export function CarePanel({ jobId, onMessage }: Props) {
         <View style={s.card}>
           <ThemedText style={s.title}>Book it</ThemedText>
           <ThemedText style={s.big}>{price.text}</ThemedText>
-          <ThemedText style={s.muted}>You pay now; it's held safely and only paid to your provider when the job is done.</ThemedText>
-          {wait && (
+          {booking ? (
+            <View style={s.bill}>
+              <BillRow label="Price" value={booking.price} />
+              {booking.fee > 0 && <BillRow label="Service fee" value={booking.fee} />}
+              {(booking.credit ?? 0) > 0 && <BillRow label="Dodorez credit" value={-(booking.credit ?? 0)} />}
+              <View style={s.billRule} />
+              <BillRow label={booking.wait_hold > 0 ? 'You pay (no waiting)' : 'You pay'} value={booking.pay} strong />
+              {booking.wait_hold > 0 && wait && (
+                <ThemedText style={s.muted}>
+                  {`Only if they wait: up to $${booking.wait_hold.toFixed(2)} more. ${wait.text}.`}
+                </ThemedText>
+              )}
+            </View>
+          ) : (
+            <ThemedText style={s.muted}>You pay now; it's held safely and only paid to your provider when the job is done.</ThemedText>
+          )}
+          {booking?.on_card && (
+            <ThemedText style={s.holdNote}>
+              {booking.most > booking.pay
+                ? `We hold $${booking.most.toFixed(2)} on your card and take only what's used — the rest is released as soon as it's delivered. Nothing extra is charged.`
+                : `We hold $${booking.most.toFixed(2)} on your card and take it when it's delivered.`}
+            </ThemedText>
+          )}
+          {booking && !booking.on_card && booking.most > booking.pay && (
             <ThemedText style={s.muted}>
-              {`${wait.text}. That $${wait.hold.toFixed(2)} is included and held too — whatever isn't used for waiting comes back to you automatically.`}
+              {`You pay $${booking.most.toFixed(2)} now; whatever isn't used comes back to you automatically.`}
             </ThemedText>
           )}
           {job.pay_by && (
@@ -115,8 +163,9 @@ export function CarePanel({ jobId, onMessage }: Props) {
               Pay by {new Date(job.pay_by).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} to keep this booking — after that your provider is freed for others.
             </ThemedText>
           )}
-          <TouchableOpacity style={s.primary} onPress={book} disabled={paying}>
-            {paying ? <ActivityIndicator color="#111827" /> : <ThemedText style={s.primaryText}>Book and pay ${toPay.toFixed(2)}</ThemedText>}
+          <TouchableOpacity style={s.primary} onPress={() => setCheckoutOpen(true)} disabled={paying}>
+            {paying ? <ActivityIndicator color="#111827" />
+              : <ThemedText style={s.primaryText}>{booking?.on_card ? `Book — $${toPay.toFixed(2)}` : `Book and pay $${(booking?.most ?? toPay).toFixed(2)}`}</ThemedText>}
           </TouchableOpacity>
         </View>
       )}
@@ -128,11 +177,17 @@ export function CarePanel({ jobId, onMessage }: Props) {
           {wait && (
             <ThemedText style={s.muted}>
               {!job.arrived_at
-                ? `${wait.text} — $${wait.hold.toFixed(2)} held; unused comes back.`
-                : wait.minutes > 0
-                  ? `Your provider has waited at the pickup: ${wait.minutes} min, $${wait.charge.toFixed(2)} so far (up to $${wait.hold.toFixed(2)}).`
-                  : `Your provider is at the pickup. Waiting is free until ${clock(wait.free_until)}, then $${wait.per_minute.toFixed(2)} a minute.`}
+                ? `${wait.text} — only held on your card; never charged unless used.`
+                : !wait.counts
+                  ? 'Your provider is at the store. Waiting at a store is free — you only pay their fare.'
+                  : stoppedLine
+                    ?? (wait.minutes > 0
+                      ? `Your provider has waited at the pickup: ${wait.minutes} min, $${wait.charge.toFixed(2)} so far (up to $${wait.hold.toFixed(2)}).`
+                      : `Your provider is at the pickup. Waiting is free until ${clock(wait.free_until)}, then $${wait.per_minute.toFixed(2)} a minute.`)}
             </ThemedText>
+          )}
+          {wait?.can_stop && wait.stage === 'PICKUP' && (
+            <HandedOverButton onPress={stopWaiting} busy={stopping} />
           )}
           {job.scheduled_at && (
             <ThemedText style={s.body}>
@@ -173,12 +228,17 @@ export function CarePanel({ jobId, onMessage }: Props) {
         <View style={s.card}>
           <ThemedText style={s.title}>Waiting</ThemedText>
           <ThemedText style={s.muted}>
-            {wait.stage === 'DROPOFF' && wait.minutes === wait.used_before
+            {wait.stage === 'DROPOFF' && stoppedLine
+              ? stoppedLine
+              : wait.stage === 'DROPOFF' && wait.minutes === wait.used_before
               ? `Your provider is at the drop-off. Waiting there is free until ${clock(wait.free_until)}, then $${wait.per_minute.toFixed(2)} a minute.`
               : wait.charge > 0
-                ? `${wait.minutes} min, $${wait.charge.toFixed(2)} so far. The rest of the $${wait.hold.toFixed(2)} hold comes back to you ${wait.final ? 'when the job is completed' : "once it's delivered"}.`
-                : `No charge so far — the $${wait.hold.toFixed(2)} held for waiting comes back to you ${wait.final ? 'when the job is completed' : "once it's delivered"}.`}
+                ? `${wait.minutes} min, $${wait.charge.toFixed(2)} so far. The rest of the $${wait.hold.toFixed(2)} held for waiting is released ${wait.final ? 'when the job is completed' : "once it's delivered"} — never charged.`
+                : `No charge so far — the $${wait.hold.toFixed(2)} held for waiting is released ${wait.final ? 'when the job is completed' : "once it's delivered"}, never charged.`}
           </ThemedText>
+          {wait.can_stop && wait.stage === 'DROPOFF' && (
+            <HandedOverButton onPress={stopWaiting} busy={stopping} />
+          )}
         </View>
       )}
 
@@ -231,6 +291,29 @@ export function CarePanel({ jobId, onMessage }: Props) {
           )}
         </View>
       )}
+      <BookingCheckout visible={checkoutOpen} jobId={jobId} onBook={book} onClose={() => setCheckoutOpen(false)} />
+    </View>
+  );
+}
+
+// "It's handed over": the customer stops the waiting clock at this stop.
+function HandedOverButton({ onPress, busy }: { onPress: () => void; busy: boolean }) {
+  return (
+    <TouchableOpacity style={s.handedOver} onPress={onPress} disabled={busy} accessibilityRole="button">
+      {busy ? <ActivityIndicator color="#065F46" />
+        : <ThemedText style={s.handedOverText}>It's handed over — stop waiting</ThemedText>}
+    </TouchableOpacity>
+  );
+}
+
+// One line of the booking's bill: a label and its amount.
+function BillRow({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
+  return (
+    <View style={s.billRow}>
+      <ThemedText style={strong ? s.billStrong : s.billLabel}>{label}</ThemedText>
+      <ThemedText style={[strong ? s.billStrong : s.billValue, value < 0 && s.billCredit]}>
+        {value < 0 ? `−$${Math.abs(value).toFixed(2)}` : `$${value.toFixed(2)}`}
+      </ThemedText>
     </View>
   );
 }
@@ -243,6 +326,16 @@ const s = StyleSheet.create({
   big: { fontSize: 18, lineHeight: 24, fontFamily: Fonts.poppinsBold, color: '#065F46' },
   body: { fontSize: 13.5, lineHeight: 19, fontFamily: Fonts.poppins, color: '#111827' },
   muted: { fontSize: 12.5, lineHeight: 18, fontFamily: Fonts.poppins, color: '#6B7280' },
+  bill: { gap: 6, padding: 12, borderRadius: 12, backgroundColor: '#F9FAFB' },
+  billRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  billLabel: { fontSize: 13.5, lineHeight: 19, fontFamily: Fonts.poppins, color: '#4B5563' },
+  billValue: { fontSize: 13.5, lineHeight: 19, fontFamily: Fonts.poppinsSemiBold, color: '#111827' },
+  billStrong: { fontSize: 15, lineHeight: 21, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  billRule: { height: 1, backgroundColor: '#E5E7EB', marginVertical: 2 },
+  billCredit: { color: '#059669' },
+  handedOver: { marginTop: 8, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0' },
+  handedOverText: { fontSize: 14, lineHeight: 19, fontFamily: Fonts.poppinsBold, color: '#065F46' },
+  holdNote: { fontSize: 12.5, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: '#065F46', backgroundColor: '#ECFDF5', borderRadius: 10, padding: 10 },
   warn: { fontSize: 12.5, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: '#92400E' },
   primary: { paddingVertical: 13, borderRadius: 12, alignItems: 'center', backgroundColor: '#FFCE48', marginTop: 4 },
   primaryText: { fontSize: 14.5, lineHeight: 20, fontFamily: Fonts.poppinsBold, color: '#111827' },
