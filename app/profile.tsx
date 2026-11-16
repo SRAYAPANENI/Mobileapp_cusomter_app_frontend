@@ -1,11 +1,9 @@
-import { NAME_PART_MAX, fullName, hasFullName, namePayload } from '@/services/name';
 import { AppAlert } from '@/components/app-alert';
 import { isValidPassword } from '@/services/password';
 import { EmptyJobsState } from '@/components/empty-jobs-state';
 import { NoInternetState } from '@/components/no-internet-state';
 import { Skeleton } from '@/components/skeleton';
 import { SkoFyBottomBar, useBottomBarClearance } from '@/components/skofy-bottom-bar';
-import { AcceptedIdDocuments } from '@/components/accepted-id-documents';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
@@ -13,7 +11,6 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useOfflinePage } from '@/components/offline-gate';
 import { GooglePlacesService, GooglePlaceSuggestion } from '@/services/google-places';
 import { SkoFyApi } from '@/services/api';
-import { isEmail, tidyEmail } from '@/services/email';
 import { clearHomeCache } from '@/services/homeCache';
 import { AppLock } from '@/services/appLock';
 import { signOutDevice } from '@/services/callManager';
@@ -26,7 +23,6 @@ import {
   AlertCircle,
   Bell,
   Camera,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   CreditCard,
@@ -44,8 +40,8 @@ import {
   MapPin,
   MessageSquare,
   Phone,
-  Plus,
   Settings,
+  UserPen,
   ShieldCheck,
   Star,
   Trash2,
@@ -121,7 +117,8 @@ export default function ProfileScreen() {
   // Front/Back/Extra thumbnails are tiny (a 3-up row) — too small to
   // actually read an ID off of; tapping one opens it full-size instead.
   const [viewingDocIdx, setViewingDocIdx] = useState<number | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
+  // Removing a saved address: confirmed first.
+  const [confirmDeleteAddrIdx, setConfirmDeleteAddrIdx] = useState<number | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [isAddAddressOpen, setIsAddAddressOpen] = useState(false);
   const [newAddressType, setNewAddressType] = useState('');
@@ -148,9 +145,6 @@ export default function ProfileScreen() {
     setCustomAlert({ ...customAlert, visible: false });
   };
 
-  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
-  const [emailInput, setEmailInput] = useState('');
-  const [emailSaving, setEmailSaving] = useState(false);
   const [jobHistory, setJobHistory] = useState<JobHistory[]>([]);
   // ID document: up to 3 slots. Display URIs (local or server base64 data URLs).
   const [idDocSlots, setIdDocSlots] = useState<(string | null)[]>([null, null, null]);
@@ -294,7 +288,6 @@ export default function ProfileScreen() {
   };
 
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
-  const [addressHeights, setAddressHeights] = useState<Record<number, number>>({});
   const [newAddressHeight, setNewAddressHeight] = useState(80);
   const [suggestions, setSuggestions] = useState<GooglePlaceSuggestion[]>([]);
   const [activeSearchIndex, setActiveSearchIndex] = useState<number | 'new' | null>(null);
@@ -552,34 +545,6 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleUpdateProfile = async () => {
-    if (!hasFullName(userData.nameParts)) {
-      showAlert('error', 'Name Needed', 'Enter your first and last name.');
-      return;
-    }
-    if (userData.addresses.some(a => !a.address.trim())) {
-      showAlert('error', 'Address Needed', "An address can't be empty — type it in, or delete it.");
-      return;
-    }
-    try {
-      await SkoFyApi.customers.updateProfile({ ...namePayload(userData.nameParts), id_number: userData.idNumber.trim() || undefined });
-      setUserData(prev => ({ ...prev, name: fullName(prev.nameParts) }));
-      // Save text edits on existing addresses
-      const editPromises = userData.addresses
-        .filter(a => a.id && (a.address !== a._origAddress || a.type !== a._origType))
-        .map(a => SkoFyApi.addresses.update(a.id!, { label: a.type, full_address: a.address }));
-      await Promise.all(editPromises);
-      setUserData(prev => ({
-        ...prev,
-        addresses: prev.addresses.map(a => ({ ...a, _origAddress: a.address, _origType: a.type })),
-      }));
-      setIsEditing(false);
-      showAlert('success', 'Saved', 'Profile updated successfully.');
-    } catch (e: any) {
-      showAlert('error', 'Error', e?.message || 'Failed to save profile. Please try again.');
-    }
-  };
-
   const handleAddAddress = async () => {
     if (!newAddressType.trim() || !newAddressValue.trim()) {
       showAlert('error', 'Missing Information', 'Please provide both address label and address.');
@@ -641,6 +606,16 @@ export default function ProfileScreen() {
       setIsSavingPassword(false);
     }
   };
+
+  // Name, email and ID number are changed on their own page.
+  const openEditDetails = () => router.push('/edit-profile' as any);
+
+  // Back from Edit details (or anywhere): what's shown catches up, quietly.
+  const firstFocus = useRef(true);
+  useFocusEffect(useCallback(() => {
+    if (firstFocus.current) { firstFocus.current = false; return; }
+    void loadProfile(true);
+  }, [loadProfile]));
 
   const handleDeleteAddress = async (index: number) => {
     const addr = userData.addresses[index];
@@ -790,7 +765,7 @@ export default function ProfileScreen() {
       </View>
 
       {/* No pull-down while editing: a reload would replace what's being typed. */}
-      <ScrollView refreshControl={isEditing ? undefined : profileRefresh} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={padBottom(styles.scrollContent, barClearance)}>
+      <ScrollView refreshControl={profileRefresh} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={padBottom(styles.scrollContent, barClearance)}>
         {/* Profile Info */}
         <Animated.View entering={FadeInUp.duration(600)} style={styles.profileSection}>
           <View style={styles.avatarContainer}>
@@ -853,7 +828,7 @@ export default function ProfileScreen() {
             <View style={styles.sectionHeader}>
               <ThemedText style={styles.sectionTitle}>Pending Actions</ThemedText>
             </View>
-            <TouchableOpacity style={styles.actionCard} onPress={() => setIsEmailModalOpen(true)}>
+            <TouchableOpacity style={styles.actionCard} onPress={openEditDetails}>
               <View style={styles.actionIconContainer}>
                 <AlertCircle size={20} color="#F59E0B" />
               </View>
@@ -866,11 +841,11 @@ export default function ProfileScreen() {
           </>
         )}
 
-        {/* Contact Information */}
+        {/* Contact Information — shown here; changed on Edit details. */}
         <View style={styles.sectionHeader}>
           <ThemedText style={styles.sectionTitle}>Contact Information</ThemedText>
-          <TouchableOpacity onPress={() => isEditing ? handleUpdateProfile() : setIsEditing(true)}>
-            <ThemedText style={styles.editLink}>{isEditing ? 'Save' : 'Edit'}</ThemedText>
+          <TouchableOpacity onPress={openEditDetails} hitSlop={8}>
+            <ThemedText style={styles.editLink}>Edit</ThemedText>
           </TouchableOpacity>
         </View>
         <View style={styles.infoList}>
@@ -879,24 +854,7 @@ export default function ProfileScreen() {
             <User size={20} color="#6B7280" />
             <View style={styles.infoContent}>
               <ThemedText style={styles.infoLabel}>Full Name</ThemedText>
-              {isEditing ? (
-                <View style={{ gap: 8 }}>
-                  {([['first', 'First name *'], ['middle', 'Middle name (optional)'], ['last', 'Last name *']] as const).map(([part, hint]) => (
-                    <TextInput
-                      key={part}
-                      style={styles.editableInput}
-                      value={userData.nameParts[part]}
-                      onChangeText={text => setUserData(prev => ({ ...prev, nameParts: { ...prev.nameParts, [part]: text } }))}
-                      maxLength={NAME_PART_MAX}
-                      autoCapitalize="words"
-                      placeholder={hint}
-                      placeholderTextColor={themeColors.icon}
-                    />
-                  ))}
-                </View>
-              ) : (
-                <ThemedText style={styles.infoValue}>{userData.name || '—'}</ThemedText>
-              )}
+              <ThemedText style={styles.infoValue}>{userData.name || '—'}</ThemedText>
             </View>
           </View>
 
@@ -917,148 +875,38 @@ export default function ProfileScreen() {
             <Mail size={20} color="#6B7280" />
             <View style={styles.infoContent}>
               <ThemedText style={styles.infoLabel}>Email Address</ThemedText>
-              {isEditing ? (
-                <TouchableOpacity onPress={() => setIsEmailModalOpen(true)}>
-                  <ThemedText style={[styles.infoValue, { color: userData.email ? '#111827' : '#FFCE48' }]}>
-                    {userData.email || 'Tap to add email →'}
-                  </ThemedText>
-                </TouchableOpacity>
-              ) : (
-                <ThemedText style={[styles.infoValue, !userData.email && { color: '#9CA3AF' }]}>
-                  {userData.email || 'Not added'}
-                </ThemedText>
-              )}
+              <ThemedText style={[styles.infoValue, !userData.email && { color: '#9CA3AF' }]}>
+                {userData.email || 'Not added'}
+              </ThemedText>
             </View>
-            {!isEditing && userData.email && (
-              <TouchableOpacity onPress={() => setIsEmailModalOpen(true)}>
-                <ThemedText style={{ fontSize: 12, lineHeight: 18, color: '#FFCE48', fontFamily: Fonts.poppinsBold }}>Change</ThemedText>
-              </TouchableOpacity>
-            )}
           </View>
         </View>
 
-        {/* Saved Addresses */}
+        {/* Saved Addresses — add one, or remove one (confirmed). */}
         <View style={styles.sectionHeader}>
           <ThemedText style={styles.sectionTitle}>Saved Addresses</ThemedText>
+          <TouchableOpacity onPress={() => setIsAddAddressOpen(true)} hitSlop={8}>
+            <ThemedText style={styles.editLink}>Add</ThemedText>
+          </TouchableOpacity>
         </View>
         <View style={styles.infoList}>
           {userData.addresses.map((item, idx) => (
-            <View key={idx} style={[styles.infoItem, idx !== 0 && { marginTop: 16 }]}>
+            <View key={item.id ?? idx} style={[styles.infoItem, idx !== 0 && { marginTop: 16 }]}>
               <MapPin size={20} color="#6B7280" />
               <View style={styles.infoContent}>
                 <ThemedText style={styles.infoLabel}>{item.type} Address</ThemedText>
-                {isEditing ? (
-                  <View style={{ flex: 1 }}>
-                    <TextInput
-                      style={[styles.editableInput, { height: Math.max(50, addressHeights[idx] || 0) }]}
-                      value={item.address}
-                      onChangeText={(text) => {
-                        handleUpdateAddress(idx, text);
-                        handleSearch(text, idx);
-                      }}
-                      onContentSizeChange={(e) => {
-                        const h = e.nativeEvent.contentSize.height;
-                        setAddressHeights(prev => ({ ...prev, [idx]: h }));
-                      }}
-                      multiline
-                      onBlur={() => setTimeout(() => setActiveSearchIndex(null), 200)}
-                    />
-                    {isSearching && activeSearchIndex === idx && (
-                      <View style={styles.inputLoaderInline}>
-                        <ActivityIndicator size="small" color={themeColors.brand} />
-                      </View>
-                    )}
-
-                    {activeSearchIndex === idx && (suggestions.length > 0 || searchError || isSearching) && (
-                      <View style={[styles.inlineSuggestions, isSearching && { minHeight: 60, justifyContent: 'center' }]}>
-                        {isSearching ? (
-                          <View style={styles.searchingContainer}>
-                            <ThemedText style={styles.searchingText}>Searching locations...</ThemedText>
-                          </View>
-                        ) : searchError ? (
-                          <View style={styles.errorContainer}>
-                            <ThemedText style={styles.errorText}>{searchError}</ThemedText>
-                            <TouchableOpacity onPress={() => setActiveSearchIndex(null)}>
-                              <ThemedText style={[styles.manualText, { color: themeColors.brand }]}>Enter manually</ThemedText>
-                            </TouchableOpacity>
-                          </View>
-                        ) : (
-                          <ScrollView
-                            style={{ maxHeight: 200 }}
-                            keyboardShouldPersistTaps="always"
-                            nestedScrollEnabled={true}
-                          >
-                            {suggestions.map((sug) => (
-                              <TouchableOpacity key={sug.place_id} style={styles.suggestionItem} onPress={() => selectSuggestion(sug, idx)}>
-                                <View style={styles.suggestionIconBox}>
-                                  <MapPin size={16} color="#4B5563" fill="#E5E7EB" />
-                                </View>
-                                <View style={{ flex: 1 }}>
-                                  {renderHighlightedText(sug.structured_formatting.main_text, sug.structured_formatting.main_text_matched_substrings || [])}
-                                  <View style={styles.suggestionDetails}>
-                                    {sug.distance && <ThemedText style={styles.suggestionDistance}>{sug.distance}</ThemedText>}
-                                    <ThemedText style={styles.suggestionSecondaryText} numberOfLines={2}>{sug.structured_formatting.secondary_text}</ThemedText>
-                                  </View>
-                                </View>
-                              </TouchableOpacity>
-                            ))}
-                            <TouchableOpacity style={styles.locateOnMapBtn} onPress={() => handleUseCurrentLocation(idx)}>
-                              <Map size={14} color="#4B5563" />
-                              <ThemedText style={styles.locateOnMapText}>Locate on Map</ThemedText>
-                            </TouchableOpacity>
-                          </ScrollView>
-                        )}
-                      </View>
-                    )}
-
-                    {item.address && !activeSearchIndex && (
-                      <Animated.View entering={FadeIn} style={styles.addressPreviewCard}>
-                        <View style={styles.previewHeader}>
-                          <ThemedText style={styles.previewTitle}>Location Verified</ThemedText>
-                          <CheckCircle2 size={12} color="#10B981" />
-                        </View>
-                        <ThemedText style={styles.previewAddress}>{item.address}</ThemedText>
-                      </Animated.View>
-                    )}
-
-                    <TouchableOpacity
-                      style={styles.currentLocationBtn}
-                      onPress={() => handleUseCurrentLocation(idx)}
-                      disabled={isLocating}
-                    >
-                      <Map size={14} color="#FFCE48" />
-                      <ThemedText style={styles.currentLocationText}>
-                        {isLocating ? 'Locating...' : 'Use Current Location'}
-                      </ThemedText>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <ThemedText style={styles.infoValue}>{item.address}</ThemedText>
-                )}
+                <ThemedText style={styles.infoValue}>{item.address}</ThemedText>
               </View>
-              {isEditing && (
-                <TouchableOpacity onPress={() => handleDeleteAddress(idx)}>
-                  <Trash2 size={18} color="#EF4444" />
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity onPress={() => setConfirmDeleteAddrIdx(idx)} hitSlop={10} accessibilityLabel={`Remove ${item.type} address`}>
+                <Trash2 size={18} color="#9CA3AF" />
+              </TouchableOpacity>
             </View>
           ))}
 
-          {userData.addresses.length === 0 && !isEditing && (
-            <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+          {userData.addresses.length === 0 && (
+            <TouchableOpacity style={{ paddingVertical: 20, alignItems: 'center', gap: 4 }} onPress={() => setIsAddAddressOpen(true)}>
               <ThemedText style={{ color: '#9CA3AF', fontFamily: Fonts.poppins, fontSize: 14, lineHeight: 20 }}>No addresses saved yet</ThemedText>
-            </View>
-          )}
-
-          {isEditing && (
-            <TouchableOpacity
-              style={styles.addAddressButton}
-              onPress={() => setIsAddAddressOpen(true)}
-            >
-              <View style={styles.addAddressIconBox}>
-                <Plus size={18} color="#FFCE48" />
-              </View>
-              <ThemedText style={styles.addAddressText}>Add New Address</ThemedText>
+              <ThemedText style={{ color: '#D97706', fontFamily: Fonts.poppinsBold, fontSize: 13, lineHeight: 19 }}>+ Add an address</ThemedText>
             </TouchableOpacity>
           )}
         </View>
@@ -1068,26 +916,14 @@ export default function ProfileScreen() {
           <ThemedText style={styles.sectionTitle}>Identity Verification</ThemedText>
         </View>
         <View style={styles.infoList}>
-          {/* While adding or changing an ID: which documents are accepted. */}
-          {isEditing && <AcceptedIdDocuments />}
-          {/* ID Number */}
+          {/* ID Number — changed on Edit details. */}
           <View style={styles.infoItem}>
             <CreditCard size={20} color="#6B7280" />
             <View style={styles.infoContent}>
               <ThemedText style={styles.infoLabel}>ID number</ThemedText>
-              {isEditing ? (
-                <TextInput
-                  style={styles.editableInput}
-                  value={userData.idNumber}
-                  onChangeText={text => setUserData(prev => ({ ...prev, idNumber: text }))}
-                  placeholder="e.g. driver's license number"
-                  placeholderTextColor={themeColors.icon}
-                />
-              ) : (
-                <ThemedText style={[styles.infoValue, !userData.idNumber && { color: '#9CA3AF' }]}>
-                  {userData.idNumber || 'Not provided'}
-                </ThemedText>
-              )}
+              <ThemedText style={[styles.infoValue, !userData.idNumber && { color: '#9CA3AF' }]}>
+                {userData.idNumber || 'Not provided'}
+              </ThemedText>
             </View>
           </View>
 
@@ -1194,6 +1030,17 @@ export default function ProfileScreen() {
             </View>
 
             <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={styles.settingsList} showsVerticalScrollIndicator={false}>
+              <TouchableOpacity
+                style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}
+                onPress={() => { setIsSettingsOpen(false); openEditDetails(); }}
+              >
+                <View style={styles.settingInfo}>
+                  <UserPen size={20} color="#6B7280" />
+                  <ThemedText style={styles.settingLabel}>Edit details</ThemedText>
+                </View>
+                <ChevronRight size={20} color="#D1D5DB" />
+              </TouchableOpacity>
+
               <View style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}>
                 <View style={styles.settingInfo}>
                   <Bell size={20} color="#6B7280" />
@@ -1595,6 +1442,25 @@ export default function ProfileScreen() {
         </KeyboardAvoidingView>
       </Popup>
 
+      {/* Remove a saved address: confirmed in the shared dialog. */}
+      <AppAlert
+        visible={confirmDeleteAddrIdx !== null}
+        type="warning"
+        title="Remove this address?"
+        message={confirmDeleteAddrIdx !== null && userData.addresses[confirmDeleteAddrIdx]
+          ? `“${userData.addresses[confirmDeleteAddrIdx].type}” — ${userData.addresses[confirmDeleteAddrIdx].address}`
+          : ''}
+        onDismiss={() => setConfirmDeleteAddrIdx(null)}
+        buttons={[
+          { text: 'Keep', variant: 'secondary' },
+          {
+            text: 'Remove',
+            variant: 'destructive',
+            onPress: () => { if (confirmDeleteAddrIdx !== null) void handleDeleteAddress(confirmDeleteAddrIdx); },
+          },
+        ]}
+      />
+
       {/* Remove an ID document photo: confirmed in the shared dialog. */}
       <AppAlert
         visible={confirmRemoveDocIdx !== null}
@@ -1641,68 +1507,6 @@ export default function ProfileScreen() {
             )}
           </View>
         </View>
-      </Popup>
-
-      {/* Update Email Modal */}
-      <Popup closeOn={emailSaving ? 'none' : 'back'} statusBarTranslucent navigationBarTranslucent visible={isEmailModalOpen} transparent animationType="fade" onClose={() => { setIsEmailModalOpen(false); setEmailInput(''); }}>
-        <KeyboardAvoidingView
-          style={[styles.modalOverlay, { justifyContent: 'center', padding: 20 }]}
-          behavior="padding"
-          automaticOffset
-        >
-          <View style={[styles.modalContent, { borderRadius: 24 }, modalBottomPad]}>
-            <ThemedText style={[styles.modalTitle, { marginBottom: 8 }]}>Update Email Address</ThemedText>
-            <ThemedText style={{ color: '#6B7280', fontFamily: Fonts.poppins, fontSize: 13, lineHeight: 19, marginBottom: 20 }}>
-              We'll use this to secure your account and send receipts.
-            </ThemedText>
-            <TextInput
-              placeholder="Enter your email address"
-              placeholderTextColor={themeColors.icon}
-              value={emailInput}
-              onChangeText={setEmailInput}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              style={[styles.editableInput, { marginBottom: 24 }]}
-            />
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <TouchableOpacity
-                style={[styles.closeModalButton, { flex: 1, marginTop: 0 }]}
-                onPress={() => { setIsEmailModalOpen(false); setEmailInput(''); }}
-              >
-                <ThemedText>Cancel</ThemedText>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.closeModalButton, { flex: 1, marginTop: 0, backgroundColor: '#FFCE48' }]}
-                disabled={emailSaving}
-                onPress={async () => {
-                  if (!isEmail(emailInput)) {
-                    showAlert('error', 'Invalid Email', 'Enter a valid email, like name@example.com.');
-                    return;
-                  }
-                  try {
-                    setEmailSaving(true);
-                    await SkoFyApi.customers.updateProfile({ email: tidyEmail(emailInput) });
-                    setUserData(prev => ({ ...prev, email: tidyEmail(emailInput) }));
-                    setIsEmailModalOpen(false);
-                    setEmailInput('');
-                    showAlert('success', 'Email Updated', 'Your email address has been saved.');
-                  } catch (error: any) {
-                    const message = error?.error_code === 'EMAIL_ALREADY_EXISTS'
-                      ? error.message
-                      : 'Could not update email. Please try again.';
-                    showAlert('error', 'Update Failed', message);
-                  } finally {
-                    setEmailSaving(false);
-                  }
-                }}
-              >
-                <ThemedText style={{ fontFamily: Fonts.poppinsBold }}>
-                  {emailSaving ? 'Saving...' : 'Save'}
-                </ThemedText>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
       </Popup>
 
       {/* Profile's own messages, in the shared dialog. */}
