@@ -1,4 +1,5 @@
 import { useStripe } from '@stripe/stripe-react-native';
+import { Alert } from 'react-native';
 
 import { SkoFyApi, STRIPE_PUBLISHABLE_KEY } from '@/services/api';
 
@@ -64,6 +65,27 @@ const SKOFY_PAYMENT_SHEET_APPEARANCE = {
   },
 };
 
+// "pi_123_secret_abc" → "pi_123": the payment's id, as the server knows it.
+const intentIdOf = (clientSecret: string) => clientSecret.split('_secret_')[0];
+
+/** Testing only (Stripe test keys): pay with Stripe's test card in one tap,
+ * or type a card into Stripe's sheet as usual. Never shown with live keys.
+ * The system's own dialog, so it shows above any open sheet. */
+function chooseTestPayment(buttonLabel?: string): Promise<'test-card' | 'card' | 'cancel'> {
+  return new Promise((resolve) => {
+    Alert.alert(
+      'Test mode',
+      `${buttonLabel ? `${buttonLabel}. ` : ''}Payments are in test mode — no real money moves. Pay with Stripe's test card in one tap, or enter a card (use 4242 4242 4242 4242, any future date, any CVC).`,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve('cancel') },
+        { text: 'Enter a card', onPress: () => resolve('card') },
+        { text: 'Use test card', onPress: () => resolve('test-card') },
+      ],
+      { cancelable: true, onDismiss: () => resolve('cancel') },
+    );
+  });
+}
+
 /** Bidding is retired — hiring itself no longer involves any payment (there's
  * no agreed price yet). Both apps' PaymentSheet flows now happen later:
  * the inspection fee right after hire, and the job cost once an invoice is
@@ -78,6 +100,18 @@ export function useHirePayment() {
   // `buttonLabel`: the sheet's own button — "Hold $12.51" for a hold on the
   // card (only what's used is taken), so it never reads as paying it all.
   const runPaymentSheet = async (clientSecret: string, bankPayment = false, buttonLabel?: string): Promise<PaymentResult> => {
+    if (STRIPE_TEST_MODE) {
+      const way = await chooseTestPayment(buttonLabel);
+      if (way === 'cancel') return { status: 'cancelled' };
+      if (way === 'test-card') {
+        try {
+          await SkoFyApi.payments.payWithTestCard(intentIdOf(clientSecret));
+          return { status: 'success' };
+        } catch (err: any) {
+          return { status: 'error', message: err?.message ?? "The test payment didn't go through. Please try again." };
+        }
+      }
+    }
     const { ephemeral_key_secret, stripe_customer_id } = await SkoFyApi.payments.createEphemeralKey();
     const { error: initError } = await initPaymentSheet({
       merchantDisplayName: 'Dodorez',

@@ -79,10 +79,16 @@ export function CarePanel({ jobId, onMessage }: Props) {
     setPaying(true);
     const result = await payBooking(jobId, offerCode);
     setPaying(false);
+    // Backed out of the card sheet, or it failed: the checkout stays open to
+    // try again, as the invoice's does — closing it read as "nothing happened".
+    if (result.status === 'cancelled') return;
+    if (result.status === 'error') {
+      onMessage('error', 'Not booked', result.message);
+      return;
+    }
     setCheckoutOpen(false);
     if (result.status === 'success') onMessage('success', 'Booked', 'Your payment is held safely until the job is done.');
-    else if (result.status === 'pending') onMessage('info', 'Processing', result.message);
-    else if (result.status === 'error') onMessage('error', 'Not booked', result.message);
+    else onMessage('info', 'Processing', result.message);
     load();
   };
 

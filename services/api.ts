@@ -1396,6 +1396,13 @@ export const SkoFyApi = {
     }),
     createEphemeralKey: async (): Promise<{ ephemeral_key_secret: string; stripe_customer_id: string }> =>
       request('/payments/ephemeral-key', { method: 'POST' }),
+    /** Stripe test keys only: pays this open payment with Stripe's test card
+     * — testing without a card. The server refuses it everywhere else. */
+    payWithTestCard: async (paymentIntentId: string): Promise<{ status: string }> =>
+      request('/payments/test-card', {
+        method: 'POST',
+        body: JSON.stringify({ payment_intent_id: paymentIntentId }),
+      }),
     getStatus: async (jobId: string, purpose: 'INSPECTION_FEE' | 'JOB_COST' | 'GOODS_ADVANCE' = 'JOB_COST'): Promise<{
       status: 'PENDING_CAPTURE' | 'HELD' | 'RELEASED' | 'REFUNDED' | 'FAILED';
       /** A bank payment on its way — it takes days to clear. */
