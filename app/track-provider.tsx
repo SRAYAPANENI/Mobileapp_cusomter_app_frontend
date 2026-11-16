@@ -1113,19 +1113,21 @@ export default function TrackProviderScreen() {
       >
       <Animated.View
         entering={SlideInDown.duration(600)}
-        style={[styles.bottomSheet, {
-          // Measured live: read once at start-up (a notification cold-starting
-          // the app), the height could be wrong for the screen as shown.
-          maxHeight: windowHeight * 0.65,
-          paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12,
-        }]}
+        style={styles.bottomSheet}
       >
-        {/* flexShrink lets the panel's height cap hold: without it a tall
-            sheet (the invoice card with its buttons) spilled out below the
-            white panel instead of scrolling. */}
+        {/* The height cap is the scroll's own, and the padding is inside what
+            scrolls. Capped on the panel instead, the scroll had to shrink to
+            fit it, and on Android that left out the panel's bottom padding:
+            a tall card (Book it, the invoice) ran past the white panel and
+            its button couldn't be scrolled to. Measured live: read once at
+            start-up (a notification cold-starting the app), the height
+            could be wrong for the screen as shown. */}
         <ScrollView
           ref={bottomSheetScrollRef}
-          style={styles.bottomSheetScroll}
+          style={[styles.bottomSheetScroll, { maxHeight: windowHeight * 0.65 }]}
+          contentContainerStyle={[styles.bottomSheetContent, {
+            paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12,
+          }]}
           showsVerticalScrollIndicator={false}
           bounces={false}
           keyboardShouldPersistTaps="handled"
@@ -1680,13 +1682,14 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     left: 0,
     right: 0,
   },
-  bottomSheetScroll: { flexGrow: 0, flexShrink: 1 },
+  // Rounded like the panel, so content scrolls under its top corners, not
+  // over them (clipped here, not on the panel: that would cut iOS's shadow).
+  bottomSheetScroll: { borderTopLeftRadius: 32, borderTopRightRadius: 32, overflow: 'hidden' },
+  bottomSheetContent: { padding: 24 },
   bottomSheet: {
     backgroundColor: t.card,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
-    padding: 24,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.1,

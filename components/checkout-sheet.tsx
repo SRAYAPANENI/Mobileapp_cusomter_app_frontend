@@ -341,7 +341,9 @@ function makeStyles(t: typeof Colors.light) {
     handle: { width: 40, height: 4, backgroundColor: t.inputFilled, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
     title: { fontSize: 20, lineHeight: 25, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
     subtitle: { fontSize: 14, lineHeight: 18, fontFamily: Fonts.poppins, color: t.textSecondary, marginTop: 4, marginBottom: 20 },
-    scroll: { flexGrow: 0 },
+    // Shrinks inside the sheet's 90% cap, so many offers scroll instead of
+    // pushing Go Back / Pay below the screen.
+    scroll: { flexGrow: 0, flexShrink: 1 },
     sectionLabel: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary },
 
     // Offer rows use the same item / selected look as cancel-job-modal's reasons.
