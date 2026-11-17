@@ -15,6 +15,8 @@ import {
   ChevronLeft,
   Clock,
   Clock3,
+  Lock,
+  Users,
   Zap,
 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
@@ -65,6 +67,28 @@ function parseScheduledAt(iso?: string | null) {
   };
 }
 
+/** What a job is can't change after it's posted — providers were matched
+ * and price by it (the server takes none of it: UpdateJobRequest). Said
+ * here, per kind of job, instead of leaving the customer to look for it. */
+function fixedParts(job: any): string[] {
+  const shape = job.shape ?? {};
+  const parts: string[] = [];
+  if (job.job_type === 'PICKUP_DROPOFF') {
+    parts.push('The pickup and drop-off addresses', 'What’s carried and how big it is');
+    if (job.pickup_purchase || job.purchase_limit != null) parts.push('What to buy and the spending limit');
+  } else if (shape.venue === 'CUSTOMER_PLACE' || (!shape.venue && job.service_mode !== 'REMOTE')) {
+    parts.push('The address');
+  } else if (shape.venue === 'PROVIDER_PLACE') {
+    parts.push('That it’s at the provider’s place');
+  } else if (shape.venue === 'ONLINE') {
+    parts.push('That it’s online');
+  }
+  if (shape.custody === 'LIVING_BEING') parts.push('The pets and their care details');
+  if (shape.recurrence) parts.push('How it repeats');
+  parts.push('The skills it needs', 'How it’s priced');
+  return parts;
+}
+
 // Only when a time is set; no date picked means today (the time used to be dropped then).
 function computeScheduledAt(timeSet: boolean, dateISO: string | null, hour: string, minute: string, period: string): string | undefined {
   if (!timeSet) return undefined;
@@ -91,8 +115,6 @@ export default function EditJobScreen() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [urgency, setUrgency] = useState<'HIGH' | 'MEDIUM' | 'LOW'>('MEDIUM');
-  const [budgetMin, setBudgetMin] = useState('');
-  const [budgetMax, setBudgetMax] = useState('');
 
   const [dateLabel, setDateLabel] = useState<string | null>(null);
   const [dateISO, setDateISO] = useState<string | null>(null);
@@ -102,6 +124,31 @@ export default function EditJobScreen() {
   const [timePeriod, setTimePeriod] = useState('AM');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  // Sent only once moved: the time shown is sent back otherwise, and a job
+  // whose time has passed couldn't have even its title fixed.
+  const [startTouched, setStartTouched] = useState(false);
+
+  // The end of a window or a stay — only those have one.
+  const [hasEnd, setHasEnd] = useState(false);
+  const [endDateLabel, setEndDateLabel] = useState<string | null>(null);
+  const [endDateISO, setEndDateISO] = useState<string | null>(null);
+  const [endTimeLabel, setEndTimeLabel] = useState<string | null>(null);
+  const [endHour, setEndHour] = useState('09');
+  const [endMinute, setEndMinute] = useState('00');
+  const [endPeriod, setEndPeriod] = useState('AM');
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+  const [showEndTimePicker, setShowEndTimePicker] = useState(false);
+  const [endTouched, setEndTouched] = useState(false);
+
+  // What kind of job this is decides what can change.
+  const [job, setJob] = useState<any>(null);
+  const [notes, setNotes] = useState('');
+  const [dropoffNotes, setDropoffNotes] = useState('');
+  const upfront = !!job && (job.steps ?? []).includes('PAY_UPFRONT');
+  const isDelivery = job?.job_type === 'PICKUP_DROPOFF';
+  const applicants: number = job?.applicant_count ?? 0;
+  // Providers priced these dates: moving them would make their prices wrong.
+  const datesLocked = upfront && applicants > 0;
 
   useEffect(() => {
     if (!jobId) {
@@ -124,12 +171,23 @@ export default function EditJobScreen() {
           return;
         }
         setWasExpired(job.status === 'EXPIRED');
+        setJob(job);
+        setNotes(job.notes ?? '');
+        setDropoffNotes(job.dropoff_notes ?? '');
+        const end = parseScheduledAt(job.shape?.ends_at);
+        setHasEnd(!!end);
+        if (end) {
+          setEndDateLabel(end.dateLabel);
+          setEndDateISO(end.dateISO);
+          setEndTimeLabel(end.timeLabel);
+          setEndHour(end.timeHour);
+          setEndMinute(end.timeMinute);
+          setEndPeriod(end.timePeriod);
+        }
         setLoadedOnce(true);
         setTitle(job.title ?? '');
         setDescription(job.description ?? '');
         setUrgency(job.urgency === 'EMERGENCY' ? 'HIGH' : (job.urgency ?? 'MEDIUM'));
-        setBudgetMin(job.budget_min != null ? String(job.budget_min) : '');
-        setBudgetMax(job.budget_max != null ? String(job.budget_max) : '');
 
         const parsed = parseScheduledAt(job.scheduled_at);
         if (parsed) {
@@ -161,7 +219,20 @@ export default function EditJobScreen() {
 
   const handleSave = async () => {
     if (!jobId || saving || !title.trim()) return;
-    const scheduledAt = computeScheduledAt(!!timeLabel, dateISO, timeHour, timeMinute, timePeriod);
+    const scheduledAt = startTouched || wasExpired
+      ? computeScheduledAt(!!timeLabel, dateISO, timeHour, timeMinute, timePeriod)
+      : undefined;
+    const endsAt = hasEnd && endTouched
+      ? computeScheduledAt(!!endTimeLabel, endDateISO, endHour, endMinute, endPeriod)
+      : undefined;
+    if (hasEnd && (startTouched || endTouched)) {
+      const start = computeScheduledAt(!!timeLabel, dateISO, timeHour, timeMinute, timePeriod);
+      const end = computeScheduledAt(!!endTimeLabel, endDateISO, endHour, endMinute, endPeriod);
+      if (start && end && new Date(end).getTime() <= new Date(start).getTime()) {
+        alert.show('error', 'Check the times', 'It has to end after it starts.');
+        return;
+      }
+    }
     if (scheduledAt && !wasExpired && hasPassed(new Date(scheduledAt), new Date())) {
       alert.show('error', 'Pick a New Time', 'This job’s time has passed — pick a later one.');
       return;
@@ -182,9 +253,11 @@ export default function EditJobScreen() {
         title: title.trim(),
         description: description.trim() || undefined,
         urgency,
-        budget_min: budgetMin ? parseFloat(budgetMin) : undefined,
-        budget_max: budgetMax ? parseFloat(budgetMax) : undefined,
         scheduled_at: scheduledAt,
+        ends_at: endsAt,
+        // Sent once changed (empty clears them).
+        notes: notes.trim() !== (job?.notes ?? '') ? notes.trim() : undefined,
+        dropoff_notes: isDelivery && dropoffNotes.trim() !== (job?.dropoff_notes ?? '') ? dropoffNotes.trim() : undefined,
       });
       alert.show(
         'success',
@@ -246,11 +319,24 @@ export default function EditJobScreen() {
             </View>
           )}
 
+          {applicants > 0 && (!wasExpired || datesLocked) && (
+            <View style={styles.notice}>
+              <Users size={16} color="#1D4ED8" />
+              <ThemedText style={styles.noticeText}>
+                {applicants} provider{applicants === 1 ? ' has' : 's have'} applied.
+                {datesLocked
+                  ? ' They priced these dates, so the dates can’t move — cancel and post again to change them.'
+                  : ' If you change the time, they’re told so they can check it still works for them.'}
+              </ThemedText>
+            </View>
+          )}
+
           <ThemedText style={styles.label}>Title</ThemedText>
           <TextInput
             style={styles.input}
             value={title}
             onChangeText={setTitle}
+            maxLength={200}
             placeholder="Job title"
             placeholderTextColor={themeColors.textMuted}
           />
@@ -282,9 +368,9 @@ export default function EditJobScreen() {
           </View>
 
           <ThemedText style={styles.label}>
-            {urgency === 'HIGH' ? 'Deadline' : 'Schedule'}
+            {hasEnd ? 'Starts' : urgency === 'HIGH' ? 'Deadline' : 'Schedule'}
           </ThemedText>
-          <View style={styles.scheduleRow}>
+          <View style={[styles.scheduleRow, datesLocked && styles.locked]}>
             <TouchableOpacity style={styles.schedulePicker} onPress={() => setShowDatePicker(true)}>
               <CalendarIcon size={18} color={themeColors.brand} />
               <ThemedText style={styles.scheduleText}>{dateLabel ?? 'Date'}</ThemedText>
@@ -297,25 +383,66 @@ export default function EditJobScreen() {
             </TouchableOpacity>
           </View>
 
-          <ThemedText style={styles.label}>Budget Range ($)</ThemedText>
-          <View style={styles.budgetRow}>
-            <TextInput
-              style={[styles.input, { flex: 1 }]}
-              value={budgetMin}
-              onChangeText={setBudgetMin}
-              placeholder="Min"
-              placeholderTextColor={themeColors.textMuted}
-              keyboardType="numeric"
-            />
-            <TextInput
-              style={[styles.input, { flex: 1 }]}
-              value={budgetMax}
-              onChangeText={setBudgetMax}
-              placeholder="Max"
-              placeholderTextColor={themeColors.textMuted}
-              keyboardType="numeric"
-            />
-          </View>
+          {hasEnd && (
+            <>
+              <ThemedText style={styles.label}>Ends</ThemedText>
+              <View style={[styles.scheduleRow, datesLocked && styles.locked]}>
+                <TouchableOpacity style={styles.schedulePicker} onPress={() => setShowEndDatePicker(true)}>
+                  <CalendarIcon size={18} color={themeColors.brand} />
+                  <ThemedText style={styles.scheduleText}>{endDateLabel ?? 'Date'}</ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.schedulePicker} onPress={() => setShowEndTimePicker(true)}>
+                  <Clock size={18} color={themeColors.brand} />
+                  <ThemedText style={styles.scheduleText}>
+                    {endTimeLabel ? endTimeLabel.split(' - ')[0] : 'Time'}
+                  </ThemedText>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+
+          <ThemedText style={styles.label}>Anything else providers should know</ThemedText>
+          <ThemedText style={styles.hint}>Every provider it reaches sees this — keep codes and keys for the one you hire, in chat.</ThemedText>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            value={notes}
+            onChangeText={setNotes}
+            placeholder="Parking, what to bring, anything to know…"
+            placeholderTextColor={themeColors.textMuted}
+            maxLength={10000}
+            multiline
+          />
+
+          {isDelivery && (
+            <>
+              <ThemedText style={styles.label}>At the drop-off</ThemedText>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                value={dropoffNotes}
+                onChangeText={setDropoffNotes}
+                placeholder="Leave it with the front desk, call on arrival…"
+                placeholderTextColor={themeColors.textMuted}
+                maxLength={500}
+                multiline
+              />
+            </>
+          )}
+
+          {/* What can't change, and why — not left for the customer to find. */}
+          {!!job && (
+            <View style={styles.fixedCard}>
+              <View style={styles.fixedHead}>
+                <Lock size={15} color={themeColors.textSecondary} />
+                <ThemedText style={styles.fixedTitle}>Can’t be changed after posting</ThemedText>
+              </View>
+              {fixedParts(job).map((part) => (
+                <ThemedText key={part} style={styles.fixedItem}>• {part}</ThemedText>
+              ))}
+              <ThemedText style={styles.fixedHint}>
+                Providers were matched{upfront ? ' and priced it' : ''} by these. To change one, cancel this job and post it again.
+              </ThemedText>
+            </View>
+          )}
 
           <View style={{ height: 20 }} />
         </ScrollView>
@@ -340,6 +467,7 @@ export default function EditJobScreen() {
         onSelect={(label, iso) => {
           setDateLabel(label);
           setDateISO(iso);
+          setStartTouched(true);
           // A time the new date leaves behind now is cleared, not kept.
           if (timeLabel && !isPickable(fromParts(iso, { hour: timeHour, minute: timeMinute, period: timePeriod as 'AM' | 'PM' }), new Date())) {
             setTimeLabel(null);
@@ -365,7 +493,41 @@ export default function EditJobScreen() {
           // The sheet can move the day (Today / Tomorrow / "Tomorrow 9 AM").
           setDateLabel(day.label);
           setDateISO(day.iso);
+          setStartTouched(true);
           setShowTimePicker(false);
+        }}
+      />
+
+      <DatePickerModal
+        visible={showEndDatePicker}
+        onClose={() => setShowEndDatePicker(false)}
+        selectedDateLabel={endDateLabel}
+        onSelect={(label, iso) => {
+          setEndDateLabel(label);
+          setEndDateISO(iso);
+          setEndTouched(true);
+          setShowEndDatePicker(false);
+        }}
+      />
+
+      <TimePickerModal
+        visible={showEndTimePicker}
+        onClose={() => setShowEndTimePicker(false)}
+        title="When it ends"
+        initialHour={endHour}
+        initialMinute={endMinute}
+        initialPeriod={endPeriod}
+        initialSet={!!endTimeLabel}
+        selectedDateISO={endDateISO}
+        onConfirm={(label, hour, minute, period, day) => {
+          setEndTimeLabel(label);
+          setEndHour(hour);
+          setEndMinute(minute);
+          setEndPeriod(period);
+          setEndDateLabel(day.label);
+          setEndDateISO(day.iso);
+          setEndTouched(true);
+          setShowEndTimePicker(false);
         }}
       />
 
@@ -461,10 +623,22 @@ function makeStyles(t: typeof Colors.light) {
       fontFamily: Fonts.poppinsSemiBold,
       color: t.textPrimary,
     },
-    budgetRow: {
-      flexDirection: 'row',
-      gap: 12,
+    notice: {
+      flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+      backgroundColor: '#EFF6FF', borderRadius: 10, padding: 10, marginBottom: 4,
     },
+    noticeText: { fontSize: 12, lineHeight: 18, color: '#1E3A8A', flex: 1, fontFamily: Fonts.poppinsSemiBold },
+    // Dates providers priced: shown, but not tappable.
+    locked: { opacity: 0.45, pointerEvents: 'none' },
+    hint: { fontSize: 11, lineHeight: 16, fontFamily: Fonts.poppins, color: t.textMuted, marginTop: -4, marginBottom: 8 },
+    fixedCard: {
+      marginTop: 24, borderRadius: 14, padding: 14, gap: 4,
+      backgroundColor: t.card, borderWidth: 1, borderColor: t.border,
+    },
+    fixedHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+    fixedTitle: { fontSize: 13, lineHeight: 18, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
+    fixedItem: { fontSize: 13, lineHeight: 19, fontFamily: Fonts.poppins, color: t.textSecondary },
+    fixedHint: { fontSize: 12, lineHeight: 17, fontFamily: Fonts.poppins, color: t.textMuted, marginTop: 6 },
     footer: {
       padding: 20,
       backgroundColor: t.card,

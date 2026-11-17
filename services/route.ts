@@ -4,8 +4,11 @@
 //
 //   - asking Google for the road: the Routes API first (the one Google offers
 //     today), then the older Directions API. Only one needs to be allowed on
-//     the key. A key refused for both stops being asked for this session —
-//     every move used to ask again, and fail again.
+//     the key. A key refused for both isn't asked again for a couple of
+//     minutes — every move used to ask again, and fail again. Not for the
+//     rest of the session: an app left open while the API was switched on
+//     (or still being switched on — Google takes a few minutes) never drew
+//     a road until it was restarted.
 //   - what's left of the trip at each location: along the road when there's
 //     a road route; without one, the straight line × 1.3 (roads aren't
 //     straight — the server's own estimate, app/domain/trip_fare.py
@@ -29,7 +32,9 @@ export const ROAD_FACTOR = 1.3;
 export const AVG_SPEED_KMH = 40;
 const KM_PER_MILE = 1.609344;
 
-let refused = false;   // Google said no to this key: don't keep asking this session
+/** Google said no to this key: not asked again until then. */
+const REFUSED_PAUSE_MS = 2 * 60_000;
+let refusedUntil = 0;
 
 export function haversineKm(a: LatLng, b: LatLng): number {
   const R = 6371;
@@ -122,15 +127,15 @@ async function viaDirectionsApi(origin: LatLng, dest: LatLng, key: string): Prom
 /** The road from `origin` to `dest`, or the straight-line estimate when
  * there's no road route to be had (no key, refused, offline). */
 export async function fetchRoute(origin: LatLng, dest: LatLng, key: string): Promise<Route> {
-  if (key && !refused) {
+  if (key && Date.now() >= refusedUntil) {
     try {
       const routes = await viaRoutesApi(origin, dest, key);
       if (routes) return routes;
       const directions = await viaDirectionsApi(origin, dest, key);
       if (directions === 'refused') {
-        refused = true;
+        refusedUntil = Date.now() + REFUSED_PAUSE_MS;
         console.warn('[route] Google refused this key for the Routes and Directions APIs — enable the Routes API on it '
-          + '(Google Cloud Console → APIs & Services) for road routes. Showing a straight-line estimate.');
+          + '(Google Cloud Console → APIs & Services) for road routes. Showing an estimate; asking again in 2 minutes.');
       } else if (directions) {
         return directions;
       }

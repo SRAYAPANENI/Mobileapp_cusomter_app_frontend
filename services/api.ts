@@ -1087,7 +1087,11 @@ export const SkoFyApi = {
       budget_min?: number;
       budget_max?: number;
       scheduled_at?: string;
+      /** The end of a window or a stay. */
+      ends_at?: string;
       notes?: string;
+      /** Pickup & Delivery only. */
+      dropoff_notes?: string;
       skill_ids?: string[];
       images?: string[];
     }) => request(`/jobs/${jobId}`, { method: 'PATCH', body: JSON.stringify(payload) }),
