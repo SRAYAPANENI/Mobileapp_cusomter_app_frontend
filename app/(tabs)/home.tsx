@@ -1,4 +1,5 @@
 import notifee from '@notifee/react-native';
+import { useNotificationNudge } from '@/hooks/use-notification-nudge';
 import { AppAlert } from '@/components/app-alert';
 import AnimatedBrandMark from '@/components/animated-brand-mark';
 import { Skeleton } from '@/components/skeleton';
@@ -345,7 +346,8 @@ export default function HomeScreen() {
   const [locationUnavailable, setLocationUnavailable] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
   const [savedAddresses, setSavedAddresses] = useState<Array<{ id: string; label: string; full_address: string; lat?: number; lng?: number }>>([]);
-  const [showNotifNudge, setShowNotifNudge] = useState(false);
+  // Only while notifications are really off (hooks/use-notification-nudge.ts).
+  const notifNudge = useNotificationNudge();
   const [showViewLocationSheet, setShowViewLocationSheet] = useState(false);
 
   const lastBackPressTime = useRef<number>(0);
@@ -653,11 +655,6 @@ export default function HomeScreen() {
     setIsRefreshing(false);
   };
 
-  useEffect(() => {
-    notifee.getNotificationSettings()
-      .then(s => { if (s.authorizationStatus < 1) setShowNotifNudge(true); })
-      .catch(() => {});
-  }, []);
 
   // Set the instant any of this mount's live fetches (profile, unread
   // count, saved addresses) actually lands — guards the cache-priming
@@ -1626,7 +1623,7 @@ export default function HomeScreen() {
         }
       >
         {/* Notification nudge */}
-        {showNotifNudge && (
+        {notifNudge.show && (
           <View style={[styles.notifNudge, { marginTop: Platform.OS === 'ios' ? insets.top + 8 : 44 }]}>
             <View style={styles.notifNudgeIconWrap}>
               <Bell size={18} color="#FFCE48" />
@@ -1635,10 +1632,10 @@ export default function HomeScreen() {
               <ThemedText style={styles.notifNudgeTitle}>Turn on notifications</ThemedText>
               <ThemedText style={styles.notifNudgeText}>Get instant alerts when providers apply to your jobs.</ThemedText>
             </View>
-            <TouchableOpacity style={styles.notifNudgeBtn} onPress={() => { setShowNotifNudge(false); notifee.openNotificationSettings(); }}>
+            <TouchableOpacity style={styles.notifNudgeBtn} onPress={() => { notifNudge.dismiss(); notifee.openNotificationSettings(); }}>
               <ThemedText style={styles.notifNudgeBtnText}>Enable</ThemedText>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.notifNudgeDismiss} onPress={() => setShowNotifNudge(false)}>
+            <TouchableOpacity style={styles.notifNudgeDismiss} onPress={notifNudge.dismiss}>
               <XIcon size={16} color="#6B7280" />
             </TouchableOpacity>
           </View>

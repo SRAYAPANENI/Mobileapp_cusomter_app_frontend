@@ -1,3 +1,4 @@
+import { askNotificationPermission } from '@/services/notification-permission';
 import notifee, { AndroidForegroundServiceType, AndroidImportance, AndroidStyle, AndroidVisibility, EventType } from '@notifee/react-native';
 import { showDialog } from '@/components/alert-host';
 import messaging from '@react-native-firebase/messaging';
@@ -1695,7 +1696,8 @@ export function initCallManager() {
   // Android 13+ blocks all notifications by default until the app explicitly
   // requests this at runtime — declaring POST_NOTIFICATIONS in the manifest
   // alone isn't enough. Without this, displayNotification() silently no-ops.
-  notifee.requestPermission().catch((err) => console.error('Failed to request notification permission:', err));
+  // Through the one place that asks, so the home screen's nudge waits for the answer.
+  askNotificationPermission();
 
   messaging().onMessage(async (remoteMessage) => {
     if (!(await hasSession())) return;
