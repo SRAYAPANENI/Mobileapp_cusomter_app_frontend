@@ -1,7 +1,7 @@
 import { useAppAlert } from '@/components/app-alert';
 import { useOfflinePage } from '@/components/offline-gate';
 import { NoInternetState } from '@/components/no-internet-state';
-import { showDialog } from '@/components/alert-host';
+import { usePhotoPicker } from '@/components/photo-picker';
 import { CallOverlay } from '@/components/call-overlay';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
@@ -10,7 +10,6 @@ import { SkoFyApi } from '@/services/api';
 import { useOpenScreen } from '@/services/openScreens';
 import { useSupportCall } from '@/services/call/supportCall';
 import { Image } from 'expo-image';
-import * as ImagePicker from 'expo-image-picker';
 import * as WebBrowser from 'expo-web-browser';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
@@ -22,7 +21,7 @@ import {
   Send
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActionSheetIOS, ActivityIndicator, FlatList, Keyboard, Platform, Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, Keyboard, Platform, Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 // The keyboard-controller version: works with KeyboardProvider (app/_layout.tsx)
 // on Android — React Native's own one shifted the layout as the keyboard
@@ -160,6 +159,8 @@ export default function SupportChatScreen() {
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const alert = useAppAlert();
+  // Camera or gallery, in the app's own popup (components/photo-picker.tsx).
+  const photoPicker = usePhotoPicker();
   const { ticketId: paramTicketId, jobId } = useLocalSearchParams<{ ticketId?: string; jobId?: string }>();
 
   const [inputText, setInputText] = useState('');
@@ -354,33 +355,12 @@ export default function SupportChatScreen() {
   const handleAttach = () => {
     if (sending || creatingTicket) return;
     Keyboard.dismiss();
-    // The phone's own chooser: the bottom sheet on iPhone, the system dialog on Android.
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { title: 'Send a photo', options: ['Take Photo', 'Choose from Library', 'Cancel'], cancelButtonIndex: 2 },
-        (index) => { if (index === 0) sendPhoto(true); else if (index === 1) sendPhoto(false); },
-      );
-      return;
-    }
-    showDialog('Send a photo', 'Take a new one with your camera, or choose one from your gallery.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Gallery', onPress: () => { sendPhoto(false); } },
-      { text: 'Camera', onPress: () => { sendPhoto(true); } },
-    ], { cancelable: true });
+    void sendPhoto();
   };
 
-  const sendPhoto = async (useCamera: boolean) => {
-    const permission = useCamera
-      ? await ImagePicker.requestCameraPermissionsAsync()
-      : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      alert.show('error', 'Permission Needed', `Allow ${useCamera ? 'camera' : 'photo'} access to send a photo.`, undefined, 3000);
-      return;
-    }
-    const result = useCamera
-      ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7 })
-      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
-    const asset = !result.canceled ? result.assets[0] : null;
+  // Camera or gallery, asked in the app's own popup; shrunk to send quickly.
+  const sendPhoto = async () => {
+    const [asset] = await photoPicker.pickPhotos({ title: 'Send a Photo' });
     if (!asset) return;
     const caption = inputText.trim();
     setSending(true);
@@ -687,6 +667,7 @@ export default function SupportChatScreen() {
         </Pressable>
       </Popup>
       {alert.element}
+      {photoPicker.element}
     </KeyboardAvoidingView>
   );
 }

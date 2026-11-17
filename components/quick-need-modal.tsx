@@ -3,7 +3,7 @@ import { Colors, Fonts } from '@/constants/theme';
 import { QuickNeed } from '@/constants/quick-needs';
 import { SkoFyApi } from '@/services/api';
 import { Image } from 'expo-image';
-import * as ImagePicker from 'expo-image-picker';
+import { usePhotoPicker } from '@/components/photo-picker';
 import { Camera, CheckCircle2, MapPin, X } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
@@ -31,6 +31,9 @@ type Phase = 'confirm' | 'posting' | 'success';
 export function QuickNeedModal({ visible, need, lat, lng, address, onClose, onPosted }: Props) {
   const insets = useSafeAreaInsets();
   const appAlert = useAppAlert();
+  // Camera or gallery, in the app's own popup — drawn inside this one so it
+  // opens over it (components/photo-picker.tsx).
+  const photoPicker = usePhotoPicker();
 
   const [phase, setPhase] = useState<Phase>('confirm');
   const [notes, setNotes] = useState('');
@@ -66,10 +69,8 @@ export function QuickNeedModal({ visible, need, lat, lng, address, onClose, onPo
 
   const pickPhoto = async () => {
     if (photos.length >= 3) return;
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
-    if (!result.canceled && result.assets[0]) {
-      setPhotos(prev => [...prev, result.assets[0].uri]);
-    }
+    const picked = await photoPicker.pickPhotos({ title: 'Add a Photo', multiple: 3 - photos.length });
+    if (picked.length) setPhotos(prev => [...prev, ...picked.map((p) => p.uri)].slice(0, 3));
   };
 
   const handlePost = async () => {
@@ -188,6 +189,9 @@ export function QuickNeedModal({ visible, need, lat, lng, address, onClose, onPo
           )}
         </View>
       </KeyboardAvoidingView>
+      {/* Its messages ("Could not post") were shown into nothing: never drawn. */}
+      {appAlert.element}
+      {photoPicker.element}
     </Popup>
   );
 }

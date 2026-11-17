@@ -1058,6 +1058,11 @@ export const SkoFyApi = {
     get: async (jobId: string) =>
       request(`/jobs/${jobId}`),
 
+    /** A fingerprint of the job, one cheap query (server: JobService.job_stamp)
+     * — an open job screen polls this and reloads the job only when it changes. */
+    stamp: async (jobId: string): Promise<{ stamp: string }> =>
+      request(`/jobs/${jobId}/stamp`),
+
     /** Before posting a Pickup & Delivery job: its miles and what nearby
      * providers charge (each one's exact fare shows on their application). */
     pickupEstimate: async (from: { lat: number; lng: number }, to: { lat: number; lng: number }, size = 'SMALL',

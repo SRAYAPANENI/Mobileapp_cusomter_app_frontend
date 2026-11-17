@@ -8,7 +8,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SkoFyApi } from '@/services/api';
 import { kmToMiles } from '@/services/units';
 import { Image } from 'expo-image';
-import * as ImagePicker from 'expo-image-picker';
+import { usePhotoPicker } from '@/components/photo-picker';
 import * as Location from 'expo-location';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
@@ -77,6 +77,8 @@ export default function JobDetailsScreen() {
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const alert = useAppAlert();
+  // Camera or gallery, in the app's own popup (components/photo-picker.tsx).
+  const photoPicker = usePhotoPicker();
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -162,22 +164,19 @@ export default function JobDetailsScreen() {
 
   const handleAddPhoto = async () => {
     if (!jobId || uploadingPhoto) return;
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images', 'videos'],
-      allowsMultipleSelection: true,
-      quality: 0.8,
-    });
-    if (result.canceled || result.assets.length === 0) return;
+    // Photos are shrunk to send quickly; videos go as they are.
+    const picked = await photoPicker.pickPhotos({ title: 'Add Photos', videos: true, multiple: true });
+    if (picked.length === 0) return;
 
     setUploadingPhoto(true);
     try {
-      const files = result.assets.map(asset => {
-        const isVideo = asset.type === 'video' || !!asset.duration;
-        const ext = asset.uri.split('.').pop()?.toLowerCase();
+      const files = picked.map(item => {
+        const isVideo = item.kind === 'video';
+        const ext = item.uri.split('.').pop()?.toLowerCase();
         const mime = isVideo
           ? (ext === 'mov' ? 'video/quicktime' : 'video/mp4')
           : 'image/jpeg';
-        return { uri: asset.uri, type: mime, name: asset.uri.split('/').pop() || `media.${ext || (isVideo ? 'mp4' : 'jpg')}` };
+        return { uri: item.uri, type: mime, name: item.uri.split('/').pop() || `media.${ext || (isVideo ? 'mp4' : 'jpg')}` };
       });
       const uploadedUrls = await SkoFyApi.jobs.uploadMedia(files);
       const nextImages = [...(job.images || []), ...uploadedUrls];
@@ -460,6 +459,7 @@ export default function JobDetailsScreen() {
       )}
 
       {alert.element}
+      {photoPicker.element}
     </ThemedView>
   );
 }

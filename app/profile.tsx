@@ -16,7 +16,7 @@ import { AppLock } from '@/services/appLock';
 import { signOutDevice } from '@/services/callManager';
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Image } from 'expo-image';
-import * as ImagePicker from 'expo-image-picker';
+import { usePhotoPicker } from '@/components/photo-picker';
 import * as Location from 'expo-location';
 import { router, useFocusEffect } from 'expo-router';
 import {
@@ -30,7 +30,6 @@ import {
   EyeOff,
   FileText,
   Fingerprint,
-  Image as ImageIcon,
   Lock,
   Gift,
   Repeat,
@@ -109,7 +108,8 @@ export default function ProfileScreen() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSavingPassword, setIsSavingPassword] = useState(false);
-  const [isPhotoSheetOpen, setIsPhotoSheetOpen] = useState(false);
+  // Camera or gallery, in the app's own popup (components/photo-picker.tsx).
+  const photoPicker = usePhotoPicker();
   // Which ID document slot (0/1/2) is pending a remove confirmation, or
   // null when none is. Previously the X button removed immediately with no
   // confirmation — a single mis-tap deleted a document with no way back.
@@ -431,28 +431,14 @@ export default function ProfileScreen() {
     setUserData({ ...userData, addresses: newAddresses });
   };
 
-  const handleImagePickerTrigger = () => {
-    setIsPhotoSheetOpen(true);
-  };
-
-  const handleImagePicker = async (useCamera: boolean) => {
-    setIsPhotoSheetOpen(false);
-
-    const permissionResult = useCamera
-      ? await ImagePicker.requestCameraPermissionsAsync()
-      : await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-    if (permissionResult.granted === false) {
-      showAlert('error', 'Permission Denied', `You need to allow ${useCamera ? 'camera' : 'gallery'} access to update your photo.`);
-      return;
-    }
-
-    const result = useCamera
-      ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.5, base64: true })
-      : await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.5, base64: true });
-
-    if (!result.canceled && result.assets[0]) {
-      const asset = result.assets[0];
+  // Camera or gallery — or remove the photo there is — in the app's shared
+  // photo popup (components/photo-picker.tsx); square, shrunk for upload.
+  const handleImagePickerTrigger = async () => {
+    const [asset] = await photoPicker.pickPhotos({
+      title: 'Profile Photo', size: 'avatar', crop: [1, 1], base64: true,
+      extra: userData.profileImage ? { label: 'Remove Photo', kind: 'remove', onPress: () => { void removeImage(); } } : undefined,
+    });
+    if (asset?.base64) {
       const dataUrl = `data:image/jpeg;base64,${asset.base64}`;
       const prevImage = userData.profileImage;
       setUserData(prev => ({ ...prev, profileImage: asset.uri }));
@@ -467,20 +453,13 @@ export default function ProfileScreen() {
     }
   };
 
-  const handlePickDocSlot = async (slotIdx: number, useCamera: boolean) => {
-    const perm = useCamera
-      ? await ImagePicker.requestCameraPermissionsAsync()
-      : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      showAlert('error', 'Permission Denied', `Please allow ${useCamera ? 'camera' : 'gallery'} access.`);
-      return;
-    }
-    const result = useCamera
-      ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [3, 2], quality: 0.75, base64: true })
-      : await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [3, 2], quality: 0.75, base64: true });
-
-    if (!result.canceled && result.assets[0]) {
-      const asset = result.assets[0];
+  // A side of the ID: camera or gallery, in the shared photo popup. Kept
+  // sharp enough for a person to read it ('document').
+  const handlePickDocSlot = async (slotIdx: number) => {
+    const [asset] = await photoPicker.pickPhotos({
+      title: `ID Document — ${['Front', 'Back', 'Extra'][slotIdx] ?? 'Photo'}`, size: 'document', crop: [3, 2], base64: true,
+    });
+    if (asset?.base64) {
       const dataUrl = `data:image/jpeg;base64,${asset.base64}`;
 
       const newSlots = [...idDocSlots] as (string | null)[];
@@ -530,7 +509,6 @@ export default function ProfileScreen() {
   };
 
   const removeImage = async () => {
-    setIsPhotoSheetOpen(false);
     const prevImage = userData.profileImage;
     setUserData(prev => ({ ...prev, profileImage: null }));
     try {
@@ -960,7 +938,7 @@ export default function ProfileScreen() {
                         {/* Retake */}
                         <TouchableOpacity
                           style={{ position: 'absolute', bottom: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 8, padding: 4 }}
-                          onPress={() => handlePickDocSlot(idx, true)}
+                          onPress={() => handlePickDocSlot(idx)}
                         >
                           <Camera size={13} color="#fff" />
                         </TouchableOpacity>
@@ -968,11 +946,10 @@ export default function ProfileScreen() {
                     ) : (
                       <TouchableOpacity
                         style={{ width: '100%', aspectRatio: 3 / 2, borderWidth: 1.5, borderColor: '#D1D5DB', borderStyle: 'dashed', borderRadius: 10, alignItems: 'center', justifyContent: 'center', gap: 4, backgroundColor: '#FAFAFA' }}
-                        onPress={() => handlePickDocSlot(idx, false)}
-                        onLongPress={() => handlePickDocSlot(idx, true)}
+                        onPress={() => handlePickDocSlot(idx)}
                       >
                         <Camera size={18} color="#9CA3AF" />
-                        <ThemedText style={{ fontSize: 10, lineHeight: 16, fontFamily: Fonts.poppins, color: '#9CA3AF' }}>Tap / Hold</ThemedText>
+                        <ThemedText style={{ fontSize: 10, lineHeight: 16, fontFamily: Fonts.poppins, color: '#9CA3AF' }}>Add</ThemedText>
                       </TouchableOpacity>
                     )}
                     <ThemedText style={{ fontSize: 11, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: '#6B7280' }}>{label}</ThemedText>
@@ -981,7 +958,7 @@ export default function ProfileScreen() {
               })}
             </View>
             <ThemedText style={{ fontSize: 10, lineHeight: 16, fontFamily: Fonts.poppins, color: '#C4C9D4', marginTop: 8, textAlign: 'center' }}>
-              Tap to pick from gallery · Long-press to take photo
+              Tap to take a photo or choose one from your gallery
             </ThemedText>
           </View>
         </View>
@@ -1286,42 +1263,6 @@ export default function ProfileScreen() {
         </KeyboardAvoidingView>
       </Popup>
 
-      {/* Photo Options Modal */}
-      <Popup closeOn="outside" visible={isPhotoSheetOpen} transparent animationType="fade" onClose={() => setIsPhotoSheetOpen(false)}>
-        <View style={styles.modalOverlay}>
-          {/* Lifted above the navigation bar, whichever kind the phone uses. */}
-          <PopupCard style={[styles.photoSheet, { marginBottom: 24 + insets.bottom }]}>
-            <View style={styles.photoSheetHeader}>
-              <ThemedText style={styles.photoSheetTitle}>Profile Photo</ThemedText>
-            </View>
-
-            <TouchableOpacity style={styles.photoOption} onPress={() => handleImagePicker(true)}>
-              <View style={[styles.optionIconBox, { backgroundColor: '#E0F2FE' }]}>
-                <Camera size={20} color="#0EA5E9" />
-              </View>
-              <ThemedText style={styles.photoOptionText}>Take Photo</ThemedText>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.photoOption} onPress={() => handleImagePicker(false)}>
-              <View style={[styles.optionIconBox, { backgroundColor: '#F0F9FF' }]}>
-                <ImageIcon size={20} color="#0369A1" />
-              </View>
-              <ThemedText style={styles.photoOptionText}>Choose from Gallery</ThemedText>
-            </TouchableOpacity>
-
-            {/* Only when there's a photo to remove. */}
-            {!!userData.profileImage && (
-              <TouchableOpacity style={[styles.photoOption, { borderBottomWidth: 0 }]} onPress={removeImage}>
-                <View style={[styles.optionIconBox, { backgroundColor: '#FEF2F2' }]}>
-                  <Trash2 size={20} color="#EF4444" />
-                </View>
-                <ThemedText style={[styles.photoOptionText, { color: '#EF4444' }]}>Remove Photo</ThemedText>
-              </TouchableOpacity>
-            )}
-          </PopupCard>
-        </View>
-      </Popup>
-
       {/* Add Address Modal */}
       <Popup closeOn="back"
         visible={isAddAddressOpen}
@@ -1520,6 +1461,7 @@ export default function ProfileScreen() {
         message={customAlert.message}
         onDismiss={hideAlert}
       />
+      {photoPicker.element}
 
       {/* ── Fixed Bottom Navigation Dock ── */}
       <SkoFyBottomBar activeTab="profile" />

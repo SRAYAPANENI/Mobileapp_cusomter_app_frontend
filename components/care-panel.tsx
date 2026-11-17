@@ -1,64 +1,44 @@
 import { ThemedText } from '@/components/themed-text';
-import { Fonts } from '@/constants/theme';
+import { Disclosure, DetailRow } from '@/components/tracking/disclosure';
+import { Colors, Fonts } from '@/constants/theme';
 import { useHirePayment } from '@/hooks/use-hire-payment';
-import { BookingSummary, CareRecord, SkoFyApi } from '@/services/api';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import type { CareJob } from '@/hooks/use-care-job';
+import { BookingSummary, SkoFyApi } from '@/services/api';
 import { BookingCheckout } from '@/components/booking-checkout';
 import { Image } from 'expo-image';
 import * as Location from 'expo-location';
-import { Camera, DoorOpen, KeyRound, MapPin } from 'lucide-react-native';
-import React, { useCallback, useEffect, useState } from 'react';
+import { Camera, Clock, DoorOpen, KeyRound, MapPin, Timer } from 'lucide-react-native';
+import React, { useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
-const POLL_MS = 5000;
 const HOST_WAIT_MINUTES = 15; // settings.HOST_WAIT_MINUTES
+
+const when = (iso: string) => new Date(iso).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+const clock = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'the free minutes end');
+const money = (n: number) => `$${n.toFixed(2)}`;
 
 interface Props {
   jobId: string;
+  care: CareJob;
   onMessage: (kind: 'success' | 'error' | 'info', title: string, message: string) => void;
 }
 
-const when = (iso: string) => new Date(iso).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-
 // A job priced up front, or with something left in the provider's care
-// (docs/JOB_SHAPE_DESIGN.md phase 4), step by step for the customer: book
-// and pay the agreed price → where to bring it → the check-in code → the
-// hand-over photos and updates → the hand-back code.
-export function CarePanel({ jobId, onMessage }: Props) {
+// (docs/JOB_SHAPE_DESIGN.md phase 4), for the customer — only what needs
+// them now: book and pay, where and when to bring it, the code to read out,
+// the waiting clock while it runs, the hand-back. The tracking screen's
+// headline says where things are; the fare and its rules are in
+// CareTripDetails, one tap away.
+export function CarePanel({ jobId, care, onMessage }: Props) {
+  const t = Colors[useColorScheme() ?? 'light'];
   const { payBooking } = useHirePayment();
-  const [job, setJob] = useState<any>(null);
-  const [code, setCode] = useState<string | null>(null);
-  const [record, setRecord] = useState<CareRecord | null>(null);
+  const { job, code, record, reload } = care;
   const [paying, setPaying] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [stopping, setStopping] = useState(false);
   // Booking opens the checkout: offers, promo code, the bill, then Book.
   const [checkoutOpen, setCheckoutOpen] = useState(false);
-
-  const load = useCallback(async () => {
-    const j: any = await SkoFyApi.jobs.get(jobId).catch(() => null);
-    if (!j) return;
-    setJob(j);
-    const steps: string[] = j.steps ?? [];
-    if (j.status === 'ACCEPTED' && j.payment_status === 'HELD' && (steps.includes('CHECK_IN_CODE') || steps.includes('ARRIVAL_CODE'))) {
-      setCode((await SkoFyApi.jobs.checkInCode(jobId).catch(() => null))?.code ?? null);
-    } else if (j.status === 'IN_PROGRESS' && steps.includes('HANDBACK_CODE') && !j.delivered_at
-      // A delivery's drop-off code is the tracking screen's (it can be sent
-      // on to whoever receives it); shown here too, it showed twice.
-      && !steps.includes('PICKUP_PROOF')) {
-      setCode((await SkoFyApi.jobs.getDeliveryCode(jobId).catch(() => null))?.code ?? null);
-    } else {
-      setCode(null);
-    }
-    if (steps.includes('HANDOVER_PHOTOS') && j.handover_at) {
-      setRecord(await SkoFyApi.jobs.careRecord(jobId).catch(() => null));
-    }
-  }, [jobId]);
-
-  useEffect(() => {
-    load();
-    const id = setInterval(load, POLL_MS);
-    return () => clearInterval(id);
-  }, [load]);
 
   if (!job) return null;
   const steps: string[] = job.steps ?? [];
@@ -66,7 +46,6 @@ export function CarePanel({ jobId, onMessage }: Props) {
   // A trip's waiting at the pickup and drop-off (skofy-backend app/domain/trip_wait.py):
   // its cap is paid with the fare, the unused part comes back.
   const wait = job.trip_wait ?? null;
-  const clock = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'the free minutes end');
   // The server's figures — the same the payment uses, so they always agree.
   const booking: BookingSummary | null = job.booking ?? null;
   const toPay = booking ? booking.pay : price ? price.total + (wait?.hold ?? 0) : 0;
@@ -89,7 +68,7 @@ export function CarePanel({ jobId, onMessage }: Props) {
     setCheckoutOpen(false);
     if (result.status === 'success') onMessage('success', 'Booked', 'Your payment is held safely until the job is done.');
     else onMessage('info', 'Processing', result.message);
-    load();
+    reload();
   };
 
   // "It's handed over": waiting stops now — the provider can't run it up after.
@@ -98,18 +77,13 @@ export function CarePanel({ jobId, onMessage }: Props) {
     try {
       await SkoFyApi.jobs.stopWaiting(jobId);
       onMessage('success', 'Waiting stopped', "You won't be charged for any more waiting at this stop.");
-      load();
+      reload();
     } catch (err: any) {
       onMessage('error', 'Not stopped', err?.message ?? 'Please try again.');
     } finally {
       setStopping(false);
     }
   };
-  // How a stop's clock ended early, in words.
-  const stoppedLine = wait?.stopped_at
-    ? `Waiting stopped at ${clock(wait.stopped_at)}${wait.stopped_by === 'LEFT' ? ' — your provider left the stop' : ''}. `
-      + (wait.charge > 0 ? `$${wait.charge.toFixed(2)} for waiting.` : 'No charge for waiting.')
-    : null;
 
   // Nobody to check you in at their place, after the wait: called off, all back.
   const hostLate = atTheirPlace && paid && job.status === 'ACCEPTED' && !!job.scheduled_at
@@ -122,7 +96,7 @@ export function CarePanel({ jobId, onMessage }: Props) {
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const result = await SkoFyApi.jobs.reportProviderAbsent(jobId, loc.coords.latitude, loc.coords.longitude);
       onMessage('success', 'Booking cancelled', result.terms ?? result.message);
-      load();
+      reload();
     } catch (err: any) {
       onMessage('error', 'Not sent', err?.message ?? 'Please try again.');
     } finally {
@@ -130,166 +104,124 @@ export function CarePanel({ jobId, onMessage }: Props) {
     }
   };
 
+  const waiting = waitLine(job, wait);
+  const handBack = job.status === 'IN_PROGRESS' && steps.includes('HANDBACK_CODE') && (!delivery || !!job.delivered_at);
+
   return (
     <View style={s.wrap}>
+      {/* Not booked: what it costs, and the button. The breakdown on request. */}
       {job.status === 'ACCEPTED' && price && !paid && (
-        <View style={s.card}>
-          <ThemedText style={s.title}>Book it</ThemedText>
-          <ThemedText style={s.big}>{price.text}</ThemedText>
-          {booking ? (
-            <View style={s.bill}>
-              <BillRow label="Price" value={booking.price} />
-              {booking.fee > 0 && <BillRow label="Service fee" value={booking.fee} />}
-              {(booking.credit ?? 0) > 0 && <BillRow label="Dodorez credit" value={-(booking.credit ?? 0)} />}
-              <View style={s.billRule} />
-              <BillRow label={booking.wait_hold > 0 ? 'You pay (no waiting)' : 'You pay'} value={booking.pay} strong />
-              {booking.wait_hold > 0 && wait && (
-                <ThemedText style={s.muted}>
-                  {`Only if they wait: up to $${booking.wait_hold.toFixed(2)} more. ${wait.text}.`}
-                </ThemedText>
-              )}
+        <View style={[s.card, { backgroundColor: t.card, borderColor: t.border }]}>
+          <View style={s.totalRow}>
+            <View style={{ flex: 1 }}>
+              <ThemedText style={[s.muted, { color: t.textSecondary }]}>{price.text}</ThemedText>
+              <ThemedText style={[s.total, { color: t.textPrimary }]}>{money(booking?.on_card ? toPay : (booking?.most ?? toPay))}</ThemedText>
             </View>
-          ) : (
-            <ThemedText style={s.muted}>You pay now; it's held safely and only paid to your provider when the job is done.</ThemedText>
-          )}
-          {booking?.on_card && (
-            <ThemedText style={s.holdNote}>
-              {booking.most > booking.pay
-                ? `We hold $${booking.most.toFixed(2)} on your card and take only what's used — the rest is released as soon as it's delivered. Nothing extra is charged.`
-                : `We hold $${booking.most.toFixed(2)} on your card and take it when it's delivered.`}
-            </ThemedText>
-          )}
-          {booking && !booking.on_card && booking.most > booking.pay && (
-            <ThemedText style={s.muted}>
-              {`You pay $${booking.most.toFixed(2)} now; whatever isn't used comes back to you automatically.`}
-            </ThemedText>
-          )}
+          </View>
           {job.pay_by && (
-            <ThemedText style={s.warn}>
-              Pay by {new Date(job.pay_by).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} to keep this booking — after that your provider is freed for others.
-            </ThemedText>
+            <View style={s.warnRow}>
+              <Clock size={14} color="#92400E" />
+              <ThemedText style={s.warn}>
+                Book by {clock(job.pay_by)} to keep your provider.
+              </ThemedText>
+            </View>
           )}
-          <TouchableOpacity style={s.primary} onPress={() => setCheckoutOpen(true)} disabled={paying}>
+          <TouchableOpacity style={s.primary} onPress={() => setCheckoutOpen(true)} disabled={paying} accessibilityRole="button">
             {paying ? <ActivityIndicator color="#111827" />
-              : <ThemedText style={s.primaryText}>{booking?.on_card ? `Book — $${toPay.toFixed(2)}` : `Book and pay $${(booking?.most ?? toPay).toFixed(2)}`}</ThemedText>}
+              : <ThemedText style={s.primaryText}>{booking?.on_card ? `Book — ${money(toPay)}` : `Book and pay ${money(booking?.most ?? toPay)}`}</ThemedText>}
           </TouchableOpacity>
-        </View>
-      )}
-
-      {job.status === 'ACCEPTED' && paid && (
-        <View style={s.card}>
-          <ThemedText style={s.title}>Booked ✓</ThemedText>
-          {price && <ThemedText style={s.body}>{price.text}</ThemedText>}
-          {wait && (
-            <ThemedText style={s.muted}>
-              {!job.arrived_at
-                ? `${wait.text} — only held on your card; never charged unless used.`
-                : !wait.counts
-                  ? 'Your provider is at the store. Waiting at a store is free — you only pay their fare.'
-                  : stoppedLine
-                    ?? (wait.minutes > 0
-                      ? `Your provider has waited at the pickup: ${wait.minutes} min, $${wait.charge.toFixed(2)} so far (up to $${wait.hold.toFixed(2)}).`
-                      : `Your provider is at the pickup. Waiting is free until ${clock(wait.free_until)}, then $${wait.per_minute.toFixed(2)} a minute.`)}
-            </ThemedText>
-          )}
-          {wait?.can_stop && wait.stage === 'PICKUP' && (
-            <HandedOverButton onPress={stopWaiting} busy={stopping} />
-          )}
-          {job.scheduled_at && (
-            <ThemedText style={s.body}>
-              {atTheirPlace ? 'Drop-off' : 'Starts'}: {when(job.scheduled_at)}
-              {job.shape?.ends_at ? `  ·  ${atTheirPlace ? 'Pick-up' : 'Ends'}: ${when(job.shape.ends_at)}` : ''}
-            </ThemedText>
-          )}
-          {atTheirPlace && job.host_address && (
-            <View style={s.row}>
-              <MapPin size={15} color="#111827" />
-              <ThemedText style={[s.body, { flex: 1 }]}>Bring it to: {job.host_address}</ThemedText>
-            </View>
-          )}
-          {code ? (
-            <View style={s.codeBox}>
-              <KeyRound size={16} color="#111827" />
-              <ThemedText style={s.codeLabel}>Give your provider this code</ThemedText>
-              <ThemedText style={s.code}>{code}</ThemedText>
-            </View>
-          ) : (
-            <ThemedText style={s.muted}>
-              {delivery ? "Your provider is heading to the pickup. When they bring it to you, they'll ask for a code — it'll show here."
-                : atTheirPlace ? "When you arrive, your provider asks for a code — it'll show here."
-                : "When your provider arrives, they'll ask for a code — it'll show here."}
-            </ThemedText>
-          )}
-          {hostLate && (
-            <TouchableOpacity style={s.absent} onPress={reportNobodyHere} disabled={reporting}>
-              {reporting ? <ActivityIndicator color="#B91C1C" /> : <DoorOpen size={16} color="#B91C1C" />}
-              <ThemedText style={s.absentText}>I'm here and nobody's answering</ThemedText>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
-
-      {/* Under way: waiting so far, the drop-off's clock, and what comes back. */}
-      {job.status === 'IN_PROGRESS' && wait && (
-        <View style={s.card}>
-          <ThemedText style={s.title}>Waiting</ThemedText>
-          <ThemedText style={s.muted}>
-            {wait.stage === 'DROPOFF' && stoppedLine
-              ? stoppedLine
-              : wait.stage === 'DROPOFF' && wait.minutes === wait.used_before
-              ? `Your provider is at the drop-off. Waiting there is free until ${clock(wait.free_until)}, then $${wait.per_minute.toFixed(2)} a minute.`
-              : wait.charge > 0
-                ? `${wait.minutes} min, $${wait.charge.toFixed(2)} so far. The rest of the $${wait.hold.toFixed(2)} held for waiting is released ${wait.final ? 'when the job is completed' : "once it's delivered"} — never charged.`
-                : `No charge so far — the $${wait.hold.toFixed(2)} held for waiting is released ${wait.final ? 'when the job is completed' : "once it's delivered"}, never charged.`}
-          </ThemedText>
-          {wait.can_stop && wait.stage === 'DROPOFF' && (
-            <HandedOverButton onPress={stopWaiting} busy={stopping} />
-          )}
-        </View>
-      )}
-
-      {/* A delivery's drop-off code is on the tracking screen; here only once it's handed over. */}
-      {job.status === 'IN_PROGRESS' && steps.includes('HANDBACK_CODE') && (!delivery || !!job.delivered_at) && (
-        <View style={s.card}>
-          <ThemedText style={s.title}>{job.delivered_at ? (delivery ? 'Delivered ✓' : 'Handed back ✓') : atTheirPlace ? 'Picking up' : 'Hand-back'}</ThemedText>
-          {job.delivered_at ? (
-            <>
-              {/* The provider's photo of the order at the drop-off. */}
-              {delivery && !!job.dropoff_photo_url && (
-                <Image source={{ uri: job.dropoff_photo_url }} style={s.dropoffPhoto} contentFit="cover" />
+          {booking && (
+            <Disclosure label="Price breakdown">
+              <DetailRow label="Price" value={money(booking.price)} />
+              {booking.fee > 0 && <DetailRow label="Service fee" value={money(booking.fee)} />}
+              {(booking.credit ?? 0) > 0 && <DetailRow label="Dodorez credit" value={`−${money(booking.credit ?? 0)}`} />}
+              <DetailRow label={booking.wait_hold > 0 ? 'You pay (no waiting)' : 'You pay'} value={money(booking.pay)} />
+              {booking.wait_hold > 0 && wait && (
+                <DetailRow label="Waiting, only if used" value={`up to ${money(booking.wait_hold)}`} note={wait.text} />
               )}
-              <ThemedText style={s.muted}>All good? Mark the job as completed below, then rate your provider.</ThemedText>
-            </>
-          ) : code ? (
-            <View style={s.codeBox}>
-              <KeyRound size={16} color="#111827" />
-              <ThemedText style={s.codeLabel}>Give your provider this code when you get it back</ThemedText>
-              <ThemedText style={s.code}>{code}</ThemedText>
-            </View>
-          ) : (
-            <ThemedText style={s.muted}>When it's handed back, your provider asks for a code — it'll show here.</ThemedText>
+              <ThemedText style={[s.muted, { color: t.textSecondary }]}>
+                {booking.on_card
+                  ? (booking.most > booking.pay
+                    ? `We hold ${money(booking.most)} on your card and take only what's used when it's done.`
+                    : `We hold ${money(booking.most)} on your card and take it when it's done.`)
+                  : booking.most > booking.pay
+                    ? `You pay ${money(booking.most)} now; whatever isn't used comes back automatically.`
+                    : "It's held safely and only paid to your provider when the job is done."}
+              </ThemedText>
+            </Disclosure>
           )}
         </View>
+      )}
+
+      {/* Bring it to them: where and when — what this booking needs from the customer. */}
+      {job.status === 'ACCEPTED' && paid && atTheirPlace && (job.host_address || job.scheduled_at) && (
+        <View style={[s.card, { backgroundColor: t.card, borderColor: t.border }]}>
+          {!!job.host_address && <InfoRow icon={<MapPin size={16} color={t.textPrimary} />} text={job.host_address} />}
+          {!!job.scheduled_at && (
+            <InfoRow
+              icon={<Clock size={16} color={t.textPrimary} />}
+              text={`Drop-off ${when(job.scheduled_at)}${job.shape?.ends_at ? `  ·  Pick-up ${when(job.shape.ends_at)}` : ''}`}
+            />
+          )}
+        </View>
+      )}
+
+      {/* The code to read out — big, nothing else around it. */}
+      {code && (job.status === 'ACCEPTED' ? paid : !job.delivered_at) && (
+        <View style={[s.codeBox, { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }]}>
+          <View style={s.codeHead}>
+            <KeyRound size={15} color="#92400E" />
+            <ThemedText style={s.codeLabel}>
+              {job.status === 'IN_PROGRESS' ? 'Give this code when you get it back' : 'Give your provider this code'}
+            </ThemedText>
+          </View>
+          <ThemedText style={s.code} accessibilityLabel={`Code ${code.split('').join(' ')}`}>{code}</ThemedText>
+        </View>
+      )}
+
+      {/* The waiting clock, only while it matters — one line, and the way to stop it. */}
+      {paid && waiting && (
+        <View style={[s.waitCard, { backgroundColor: t.inputFilled }]}>
+          <View style={s.warnRow}>
+            <Timer size={15} color={t.textPrimary} />
+            <ThemedText style={[s.waitText, { color: t.textPrimary }]}>{waiting}</ThemedText>
+          </View>
+          {wait?.can_stop && (wait.stage === 'PICKUP' || wait.stage === 'DROPOFF') && (
+            <HandedOverButton onPress={stopWaiting} busy={stopping} />
+          )}
+        </View>
+      )}
+
+      {hostLate && (
+        <TouchableOpacity style={s.absent} onPress={reportNobodyHere} disabled={reporting} accessibilityRole="button">
+          {reporting ? <ActivityIndicator color="#B91C1C" /> : <DoorOpen size={16} color="#B91C1C" />}
+          <ThemedText style={s.absentText}>I'm here and nobody's answering</ThemedText>
+        </TouchableOpacity>
+      )}
+
+      {/* Handed back / delivered: the provider's photo of it, when there is one. */}
+      {handBack && !!job.delivered_at && delivery && !!job.dropoff_photo_url && (
+        <Image source={{ uri: job.dropoff_photo_url }} style={s.dropoffPhoto} contentFit="cover" />
       )}
 
       {record && (record.handover_photos.length > 0 || record.updates.length > 0) && (
-        <View style={s.card}>
-          <View style={s.row}>
-            <Camera size={15} color="#111827" />
-            <ThemedText style={s.title}>Photos and updates</ThemedText>
+        <View style={[s.card, { backgroundColor: t.card, borderColor: t.border }]}>
+          <View style={s.warnRow}>
+            <Camera size={15} color={t.textPrimary} />
+            <ThemedText style={[s.title, { color: t.textPrimary }]}>Photos and updates</ThemedText>
           </View>
           {record.updates.map((u) => (
-            <View key={u.id} style={s.update}>
-              <ThemedText style={s.when}>{when(u.created_at)}</ThemedText>
-              {u.note ? <ThemedText style={s.body}>{u.note}</ThemedText> : null}
+            <View key={u.id} style={[s.update, { borderTopColor: t.borderSubtle }]}>
+              <ThemedText style={[s.when, { color: t.textSecondary }]}>{when(u.created_at)}</ThemedText>
+              {u.note ? <ThemedText style={[s.body, { color: t.textPrimary }]}>{u.note}</ThemedText> : null}
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 {u.photo_urls.map((url) => <Image key={url} source={{ uri: url }} style={s.photo} contentFit="cover" />)}
               </ScrollView>
             </View>
           ))}
           {record.handover_photos.length > 0 && (
-            <View style={s.update}>
-              <ThemedText style={s.when}>Handed over {record.handover_at ? when(record.handover_at) : ''}</ThemedText>
+            <View style={[s.update, { borderTopColor: t.borderSubtle }]}>
+              <ThemedText style={[s.when, { color: t.textSecondary }]}>Handed over {record.handover_at ? when(record.handover_at) : ''}</ThemedText>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 {record.handover_photos.map((p) => <Image key={p.url} source={{ uri: p.url }} style={s.photo} contentFit="cover" />)}
               </ScrollView>
@@ -298,6 +230,69 @@ export function CarePanel({ jobId, onMessage }: Props) {
         </View>
       )}
       <BookingCheckout visible={checkoutOpen} jobId={jobId} onBook={book} onClose={() => setCheckoutOpen(false)} />
+    </View>
+  );
+}
+
+/** The fare and its rules — the tracking screen's "Trip details", one tap away. */
+export function CareTripDetails({ care }: { care: CareJob }) {
+  const job = care.job;
+  if (!job) return null;
+  const price = job.upfront_price;
+  const wait = job.trip_wait ?? null;
+  const paid = job.payment_status === 'HELD' || job.payment_status === 'PAID';
+  const atTheirPlace = (job.steps ?? []).includes('CHECK_IN_CODE');
+  if (!price && !wait && !job.scheduled_at) return null;
+  return (
+    <>
+      {price && <DetailRow label={paid ? 'Booked' : 'Price'} value={price.text} />}
+      {!!job.scheduled_at && !atTheirPlace && (
+        <DetailRow label="When" value={when(job.scheduled_at)} note={job.shape?.ends_at ? `Ends ${when(job.shape.ends_at)}` : null} />
+      )}
+      {wait && (
+        <DetailRow
+          label="Waiting"
+          value={wait.charge > 0 ? `${money(wait.charge)} so far` : 'No charge so far'}
+          note={`${wait.text}. Up to ${money(wait.hold)} is held for it; whatever isn't used comes back.`}
+        />
+      )}
+    </>
+  );
+}
+
+// The waiting clock in one line — only once the provider is at a stop, or
+// it has cost something (the rules themselves are in the trip details).
+function waitLine(job: any, wait: any): string | null {
+  if (!wait) return null;
+  const stopped = wait.stopped_at
+    ? `Waiting stopped at ${clock(wait.stopped_at)}${wait.stopped_by === 'LEFT' ? ' (your provider left)' : ''} · ${wait.charge > 0 ? money(wait.charge) : 'no charge'}`
+    : null;
+  if (job.status === 'ACCEPTED') {
+    if (!job.arrived_at) return null;
+    if (!wait.counts) return 'At the store — waiting there is free.';
+    if (stopped) return stopped;
+    return wait.minutes > 0
+      ? `Waiting at the pickup · ${wait.minutes} min · ${money(wait.charge)}`
+      : `At the pickup · waiting free until ${clock(wait.free_until)}`;
+  }
+  if (job.status === 'IN_PROGRESS') {
+    if (wait.stage === 'DROPOFF') {
+      if (stopped) return stopped;
+      return wait.minutes === wait.used_before
+        ? `At the drop-off · waiting free until ${clock(wait.free_until)}`
+        : `Waiting · ${wait.minutes} min · ${money(wait.charge)} so far`;
+    }
+    if (wait.charge > 0) return `Waiting so far · ${wait.minutes} min · ${money(wait.charge)}`;
+  }
+  return null;
+}
+
+function InfoRow({ icon, text }: { icon: React.ReactNode; text: string }) {
+  const t = Colors[useColorScheme() ?? 'light'];
+  return (
+    <View style={s.warnRow}>
+      {icon}
+      <ThemedText style={[s.body, { color: t.textPrimary, flex: 1 }]}>{text}</ThemedText>
     </View>
   );
 }
@@ -312,46 +307,30 @@ function HandedOverButton({ onPress, busy }: { onPress: () => void; busy: boolea
   );
 }
 
-// One line of the booking's bill: a label and its amount.
-function BillRow({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
-  return (
-    <View style={s.billRow}>
-      <ThemedText style={strong ? s.billStrong : s.billLabel}>{label}</ThemedText>
-      <ThemedText style={[strong ? s.billStrong : s.billValue, value < 0 && s.billCredit]}>
-        {value < 0 ? `−$${Math.abs(value).toFixed(2)}` : `$${value.toFixed(2)}`}
-      </ThemedText>
-    </View>
-  );
-}
-
 const s = StyleSheet.create({
-  wrap: { gap: 12, marginTop: 12 },
-  card: { padding: 16, borderRadius: 16, backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB', gap: 8 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  title: { fontSize: 15, lineHeight: 21, fontFamily: Fonts.poppinsBold, color: '#111827' },
-  big: { fontSize: 18, lineHeight: 24, fontFamily: Fonts.poppinsBold, color: '#065F46' },
-  body: { fontSize: 13.5, lineHeight: 19, fontFamily: Fonts.poppins, color: '#111827' },
-  muted: { fontSize: 12.5, lineHeight: 18, fontFamily: Fonts.poppins, color: '#6B7280' },
-  bill: { gap: 6, padding: 12, borderRadius: 12, backgroundColor: '#F9FAFB' },
-  billRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  billLabel: { fontSize: 13.5, lineHeight: 19, fontFamily: Fonts.poppins, color: '#4B5563' },
-  billValue: { fontSize: 13.5, lineHeight: 19, fontFamily: Fonts.poppinsSemiBold, color: '#111827' },
-  billStrong: { fontSize: 15, lineHeight: 21, fontFamily: Fonts.poppinsBold, color: '#111827' },
-  billRule: { height: 1, backgroundColor: '#E5E7EB', marginVertical: 2 },
-  billCredit: { color: '#059669' },
-  handedOver: { marginTop: 8, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0' },
+  wrap: { gap: 12 },
+  card: { padding: 16, borderRadius: 16, borderWidth: 1, gap: 10 },
+  title: { fontSize: 15, lineHeight: 21, fontFamily: Fonts.poppinsBold },
+  body: { fontSize: 13.5, lineHeight: 19, fontFamily: Fonts.poppins },
+  muted: { fontSize: 12.5, lineHeight: 18, fontFamily: Fonts.poppins },
+  totalRow: { flexDirection: 'row', alignItems: 'flex-end' },
+  total: { fontSize: 26, lineHeight: 34, fontFamily: Fonts.poppinsBold },
+  warnRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  warn: { flex: 1, fontSize: 12.5, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: '#92400E' },
+  primary: { height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFCE48' },
+  primaryText: { fontSize: 15, lineHeight: 21, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  codeBox: { alignItems: 'center', gap: 6, paddingVertical: 16, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1 },
+  codeHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  codeLabel: { fontSize: 13, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: '#92400E' },
+  code: { fontSize: 34, lineHeight: 42, letterSpacing: 10, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  waitCard: { padding: 14, borderRadius: 14, gap: 10 },
+  waitText: { flex: 1, fontSize: 13.5, lineHeight: 19, fontFamily: Fonts.poppinsSemiBold },
+  handedOver: { height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0' },
   handedOverText: { fontSize: 14, lineHeight: 19, fontFamily: Fonts.poppinsBold, color: '#065F46' },
-  holdNote: { fontSize: 12.5, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: '#065F46', backgroundColor: '#ECFDF5', borderRadius: 10, padding: 10 },
-  warn: { fontSize: 12.5, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: '#92400E' },
-  primary: { paddingVertical: 13, borderRadius: 12, alignItems: 'center', backgroundColor: '#FFCE48', marginTop: 4 },
-  primaryText: { fontSize: 14.5, lineHeight: 20, fontFamily: Fonts.poppinsBold, color: '#111827' },
-  codeBox: { alignItems: 'center', gap: 4, padding: 12, borderRadius: 12, backgroundColor: '#FFFBEB' },
-  codeLabel: { fontSize: 12.5, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: '#92400E' },
-  code: { fontSize: 30, lineHeight: 38, letterSpacing: 8, fontFamily: Fonts.poppinsBold, color: '#111827' },
-  update: { gap: 6, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
-  when: { fontSize: 11.5, lineHeight: 15, fontFamily: Fonts.poppinsSemiBold, color: '#6B7280' },
-  absent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: '#FECACA', backgroundColor: '#FEF2F2' },
+  update: { gap: 6, paddingTop: 8, borderTopWidth: 1 },
+  when: { fontSize: 11.5, lineHeight: 15, fontFamily: Fonts.poppinsSemiBold },
+  absent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: '#FECACA', backgroundColor: '#FEF2F2' },
   absentText: { fontSize: 13.5, lineHeight: 18, fontFamily: Fonts.poppinsBold, color: '#B91C1C' },
   photo: { width: 96, height: 96, borderRadius: 10, marginRight: 8, backgroundColor: '#F3F4F6' },
-  dropoffPhoto: { width: '100%', height: 180, borderRadius: 12, marginBottom: 8, backgroundColor: '#F3F4F6' },
+  dropoffPhoto: { width: '100%', height: 180, borderRadius: 14, backgroundColor: '#F3F4F6' },
 });

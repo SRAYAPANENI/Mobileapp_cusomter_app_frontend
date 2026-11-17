@@ -2,7 +2,7 @@ import { Text, TextInput } from '@/components/scaled-text';
 import { Fonts } from '@/constants/theme';
 import { PhotoFile, SkoFyApi } from '@/services/api';
 import { Image } from 'expo-image';
-import * as ImagePicker from 'expo-image-picker';
+import { usePhotoPicker } from '@/components/photo-picker';
 import { Camera, CheckCircle2, ClipboardCheck, ShieldAlert, X } from 'lucide-react-native';
 import React, { useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
@@ -52,12 +52,13 @@ export function InspectionReportCard({ jobId, jobStatus, report, confirmed, disp
     }
   };
 
+  // Camera or gallery, in the app's own popup — drawn inside the report
+  // popup so it opens over it (components/photo-picker.tsx).
+  const photoPicker = usePhotoPicker();
   const addPhoto = async () => {
     if (photos.length >= 3) return;
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
-    if (!result.canceled && result.assets[0]) {
-      setPhotos((prev) => [...prev, { uri: result.assets[0].uri, mimeType: result.assets[0].mimeType || 'image/jpeg' }]);
-    }
+    const picked = await photoPicker.pickPhotos({ title: 'Add a Photo', multiple: 3 - photos.length });
+    if (picked.length) setPhotos((prev) => [...prev, ...picked].slice(0, 3));
   };
 
   const sendReport = async () => {
@@ -163,6 +164,7 @@ export function InspectionReportCard({ jobId, jobStatus, report, confirmed, disp
             </View>
           </View>
         </KeyboardAvoidingView>
+        {photoPicker.element}
       </Popup>
     </View>
   );

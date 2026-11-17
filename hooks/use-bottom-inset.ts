@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Keyboard, Platform, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { useKeyboardVisible } from '@/hooks/use-keyboard-visible';
+import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Android draws the app behind its navigation bar (edge-to-edge). With the
@@ -12,13 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
  * leave a gap between the keyboard and a reply box. */
 export function useBottomInset(): number {
   const { bottom } = useSafeAreaInsets();
-  const [keyboardUp, setKeyboardUp] = useState(false);
-  useEffect(() => {
-    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setKeyboardUp(true));
-    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardUp(false));
-    return () => { show.remove(); hide.remove(); };
-  }, []);
-  return keyboardUp ? 0 : bottom;
+  return useKeyboardVisible() ? 0 : bottom;
 }
 
 function numeric(...values: unknown[]): number {

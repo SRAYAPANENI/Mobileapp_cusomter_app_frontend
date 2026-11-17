@@ -16,7 +16,7 @@ import { PASSWORD_RULE, isValidPassword } from '@/services/password';
 import { registerFcmToken } from '@/services/callManager';
 import { GooglePlacesService, GooglePlaceSuggestion } from '@/services/google-places';
 import { Image } from 'expo-image';
-import * as ImagePicker from 'expo-image-picker';
+import { usePhotoPicker } from '@/components/photo-picker';
 import * as ExpoLocation from 'expo-location';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
@@ -64,6 +64,8 @@ export default function RegisterScreen() {
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const appAlert = useAppAlert();
+  // Camera or gallery, in the app's own popup (components/photo-picker.tsx).
+  const photoPicker = usePhotoPicker();
 
   // Set by login.tsx when it redirects here after finding no Customer
   // profile for a number (is_new_role) — see that screen's own comment.
@@ -315,19 +317,24 @@ export default function RegisterScreen() {
   };
 
 
-  const pickImage = async (type: 'profile' | 'document', docSlot?: number, useCamera = false) => {
-    const result = useCamera
-      ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: type === 'profile' ? [1, 1] : [3, 2], quality: 0.8, base64: true })
-      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: type === 'profile' ? [1, 1] : [3, 2], quality: 0.8, base64: true });
+  // Camera or gallery, asked in the shared photo popup. A profile photo is
+  // small; an ID is kept sharp enough for a person to read ('document').
+  const pickImage = async (type: 'profile' | 'document', docSlot?: number) => {
+    const [photo] = await photoPicker.pickPhotos({
+      title: type === 'profile' ? 'Profile Photo' : `ID Document — ${['Front', 'Back', 'Extra'][docSlot ?? 0] ?? 'Photo'}`,
+      size: type === 'profile' ? 'avatar' : 'document',
+      crop: type === 'profile' ? [1, 1] : [3, 2],
+      base64: true,
+    });
 
-    if (!result.canceled && result.assets[0]) {
-      const dataUrl = result.assets[0].base64 ? `data:image/jpeg;base64,${result.assets[0].base64}` : null;
+    if (photo) {
+      const dataUrl = photo.base64 ? `data:image/jpeg;base64,${photo.base64}` : null;
       if (type === 'profile') {
-        setProfileImage(result.assets[0].uri);
+        setProfileImage(photo.uri);
         setProfileImageDataUrl(dataUrl);
       } else if (docSlot !== undefined) {
         const updated = [...idDocumentImages] as (string | null)[];
-        updated[docSlot] = result.assets[0].uri;
+        updated[docSlot] = photo.uri;
         setIdDocumentImages(updated);
         const updatedData = [...idDocumentDataUrls] as (string | null)[];
         updatedData[docSlot] = dataUrl;
@@ -995,7 +1002,7 @@ export default function RegisterScreen() {
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={{ position: 'absolute', bottom: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 8, padding: 4 }}
-                            onPress={() => pickImage('document', idx, true)}
+                            onPress={() => pickImage('document', idx)}
                           >
                             <Camera size={13} color="#fff" />
                           </TouchableOpacity>
@@ -1003,11 +1010,10 @@ export default function RegisterScreen() {
                       ) : (
                         <TouchableOpacity
                           style={{ width: '100%', aspectRatio: 3 / 2, borderWidth: 1.5, borderColor: themeColors.brand + '60', borderStyle: 'dashed', borderRadius: 10, alignItems: 'center', justifyContent: 'center', gap: 4, backgroundColor: themeColors.brand + '08' }}
-                          onPress={() => pickImage('document', idx, false)}
-                          onLongPress={() => pickImage('document', idx, true)}
+                          onPress={() => pickImage('document', idx)}
                         >
                           <Camera size={18} color={themeColors.brand} />
-                          <ThemedText style={{ fontSize: 10, lineHeight: 16, fontFamily: Fonts.poppins, color: themeColors.brand }}>Tap / Hold</ThemedText>
+                          <ThemedText style={{ fontSize: 10, lineHeight: 16, fontFamily: Fonts.poppins, color: themeColors.brand }}>Add</ThemedText>
                         </TouchableOpacity>
                       )}
                       <ThemedText style={{ fontSize: 11, lineHeight: 17, fontFamily: Fonts.poppinsBold, color: themeColors.text, opacity: 0.6 }}>{label}</ThemedText>
@@ -1016,7 +1022,7 @@ export default function RegisterScreen() {
                 })}
               </View>
               <ThemedText style={[styles.sectionSubLabel, { textAlign: 'center', marginTop: 8 }]}>
-                Tap for gallery · Long-press for camera
+                Tap to take a photo or choose one from your gallery
               </ThemedText>
             </View>
 
@@ -1189,6 +1195,7 @@ export default function RegisterScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
       {appAlert.element}
+      {photoPicker.element}
     </ThemedView>
   );
 }

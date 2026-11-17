@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated as RNAnimated, Easing as RNEasing, Image, Linking, ScrollView, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Text, TextInput } from '@/components/scaled-text';
+import { useAppAlert } from '@/components/app-alert';
 import * as Speech from 'expo-speech';
 import * as SecureStore from 'expo-secure-store';
 import * as Location from 'expo-location';
 import { Audio } from 'expo-av';
 import * as ImagePicker from 'expo-image-picker';
+import { shrinkPhoto } from '@/services/photo';
 import Svg, { Circle, Defs, RadialGradient, Stop, G, Ellipse } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckCircle, TriangleAlert as AlertTriangle, X, Mic, Square, Camera, ImageIcon, Play, Languages } from 'lucide-react-native';
@@ -198,6 +200,8 @@ export function VoicePostModal({
   const insets = useSafeAreaInsets();
 
   const [phase, setPhase] = useState<Phase>('idle');
+  // Messages about adding photos, drawn inside this full-screen popup.
+  const photoAlert = useAppAlert();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [jobData, setJobData] = useState<JobData | null>(null);
   // The time the assistant heard may already be behind us (the server refuses past times).
@@ -934,14 +938,32 @@ export function VoicePostModal({
   // to send the assistant.
   const pickPhoto = async (source: 'camera' | 'gallery'): Promise<boolean> => {
     try {
+      // The camera is asked first: without it the camera refused to open, the
+      // error was swallowed below, and the button did nothing on a fresh
+      // install. The gallery is the phone's own photo picker — no permission.
+      const camera = source === 'camera' ? await ImagePicker.requestCameraPermissionsAsync() : null;
+      if (camera && !camera.granted) {
+        photoAlert.show('warning', 'Camera Access Needed', camera.canAskAgain === false
+          ? 'Camera access is turned off for this app. Turn it on in Settings to take a photo.'
+          : 'Allow camera access to take a photo.',
+          camera.canAskAgain === false
+            ? [{ text: 'Not now', cancel: true }, { text: 'Open Settings', variant: 'primary', onPress: () => { void Linking.openSettings(); } }]
+            : undefined);
+        return false;
+      }
+      // Full quality in, photos shrunk once after (services/photo.ts); videos as they are.
       const result = source === 'camera'
-        ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images', 'videos'], quality: 0.8 })
-        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images', 'videos'], quality: 0.8, allowsMultipleSelection: true });
+        ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images', 'videos'], quality: 1 })
+        : await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images', 'videos'], quality: 1, allowsMultipleSelection: true,
+            preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
+          });
       if (!result.canceled) {
-        const picked = result.assets.map(a => ({
-          uri: a.uri,
-          type: (a.type === 'video' ? 'video' : 'image') as 'image' | 'video',
-        }));
+        const picked: { uri: string; type: 'image' | 'video' }[] = [];
+        for (const a of result.assets) {
+          if (a.type === 'video') picked.push({ uri: a.uri, type: 'video' });
+          else picked.push({ uri: (await shrinkPhoto(a)).uri, type: 'image' });
+        }
         setPhotos(prev => [...prev, ...picked].slice(0, 5));
         return true;
       }
@@ -1517,6 +1539,7 @@ export function VoicePostModal({
         )}
 
       </View>
+      {photoAlert.element}
     </Popup>
   );
 }

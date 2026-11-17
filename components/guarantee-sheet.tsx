@@ -2,7 +2,7 @@ import { TextInput } from '@/components/scaled-text';
 import { ThemedText } from '@/components/themed-text';
 import { Fonts } from '@/constants/theme';
 import { GuaranteeInfo, PhotoFile, SkoFyApi } from '@/services/api';
-import * as ImagePicker from 'expo-image-picker';
+import { usePhotoPicker } from '@/components/photo-picker';
 import { ShieldCheck } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
@@ -39,12 +39,13 @@ export function GuaranteeSheet({ jobId, onClose, onMessage }: Props) {
   const load = () => { if (jobId) SkoFyApi.guarantee.get(jobId).then(setInfo).catch(() => onClose()); };
   useEffect(() => { setInfo(null); setDescription(''); setPhotos([]); load(); }, [jobId]);
 
+  // Camera or gallery, in the app's own popup — drawn inside this sheet so it
+  // opens over it (components/photo-picker.tsx). Shrunk to send quickly.
+  const photoPicker = usePhotoPicker();
   const addPhoto = async () => {
     if (photos.length >= MAX_PHOTOS) return;
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
-    if (!result.canceled && result.assets[0]) {
-      setPhotos((prev) => [...prev, { uri: result.assets[0].uri, mimeType: result.assets[0].mimeType || 'image/jpeg' }]);
-    }
+    const picked = await photoPicker.pickPhotos({ title: 'Add a Photo', multiple: MAX_PHOTOS - photos.length });
+    if (picked.length) setPhotos((prev) => [...prev, ...picked].slice(0, MAX_PHOTOS));
   };
 
   const run = async (action: () => Promise<{ message: string }>, title: string) => {
@@ -120,6 +121,7 @@ export function GuaranteeSheet({ jobId, onClose, onMessage }: Props) {
           </TouchableOpacity>
         </PopupCard>
       </KeyboardAvoidingView>
+      {photoPicker.element}
     </Popup>
   );
 }

@@ -9,6 +9,7 @@ import { Image } from 'expo-image';
 import { File } from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
+import { usePhotoPicker } from '@/components/photo-picker';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
   ArrowLeft,
@@ -42,6 +43,8 @@ export default function DescribeProblemScreen() {
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const appAlert = useAppAlert();
+  // Camera or gallery for photos, in the app's own popup (components/photo-picker.tsx).
+  const photoPicker = usePhotoPicker();
   const { data, updateData } = usePostRequirement();
   const params = useLocalSearchParams<{ selectedAddress?: string; lat?: string; lng?: string; profession?: string }>();
 
@@ -64,6 +67,15 @@ export default function DescribeProblemScreen() {
   }, []);
 
   const pickMedia = async (type: 'image' | 'video' | 'record') => {
+    // Photos: taken now or from the gallery, shrunk to send quickly.
+    if (type === 'image') {
+      const picked = await photoPicker.pickPhotos({ title: 'Add Photos', multiple: true });
+      if (picked.length) {
+        updateData({ media: [...data.media, ...picked.map((p) => ({ uri: p.uri, type: 'image' as const }))], problemSummary: '' });
+        setAiResult(null); // Reset AI result when new media added
+      }
+      return;
+    }
     let result;
     if (type === 'record') {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -74,7 +86,7 @@ export default function DescribeProblemScreen() {
       result = await ImagePicker.launchCameraAsync({ mediaTypes: ['videos'], quality: 0.8 });
     } else {
       result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: type === 'image' ? ['images'] : ['videos'],
+        mediaTypes: ['videos'],
         allowsMultipleSelection: true,
         quality: 0.8,
       });
@@ -348,6 +360,7 @@ export default function DescribeProblemScreen() {
         </View>
       </KeyboardAvoidingView>
       {appAlert.element}
+      {photoPicker.element}
 
     </ThemedView>
   );

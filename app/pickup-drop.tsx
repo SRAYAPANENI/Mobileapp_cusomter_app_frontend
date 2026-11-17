@@ -5,15 +5,18 @@ import { GooglePlacesService, GooglePlaceSuggestion } from '@/services/google-pl
 import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import * as Location from 'expo-location';
-import * as ImagePicker from 'expo-image-picker';
+import { usePhotoPicker } from '@/components/photo-picker';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { ArrowDownToLine, ArrowUpFromLine, Bookmark, Camera, ChevronLeft, ClipboardPaste, CheckCircle2, Home, IdCard, MapPin, ShieldAlert, Square, SquareCheck, Store, Video as VideoIcon, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Keyboard, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Text, TextInput } from '@/components/scaled-text';
 import { ThemedView } from '@/components/themed-view';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
+import { useKeyboardVisible } from '@/hooks/use-keyboard-visible';
+import { PriceEstimateInfo, estimateMiles, hasEstimateNote } from '@/components/price-estimate-info';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { PickupOptions } from '@/components/pickup-options';
 import {
   DEFAULT_PERSON_PICKUP_RULES, PersonPickupRules, PickupDetails, declarationFor, storeDeclarationError, PickupDirection, PickupPurchase, PickupSource, PickupTiming,
@@ -71,7 +74,13 @@ const ITEM_SIZES: { key: ItemSize; label: string; hint: string }[] = [
 
 export default function PickupDropScreen() {
   const bottomInset = useBottomInset();
+  // While typing, the price and Post step aside (the keyboard carried them up
+  // over the field being filled in); they're back the moment it closes.
+  const typing = useKeyboardVisible();
+  const [priceInfoOpen, setPriceInfoOpen] = useState(false);
   const appAlert = useAppAlert();
+  // Camera or gallery, in the app's own popup (components/photo-picker.tsx).
+  const photoPicker = usePhotoPicker();
   const params = useLocalSearchParams<{ dropoffAddress?: string; dropoffLat?: string; dropoffLng?: string }>();
   const dropoffAddress = params.dropoffAddress ?? '';
   const dropoffLat = params.dropoffLat ? Number(params.dropoffLat) : null;
@@ -366,20 +375,13 @@ export default function PickupDropScreen() {
   // A missing ID is in formError; if the profile couldn't be read, the server still checks it.
   const ready = hasValidPickup && !formError && !!skillId && !resolvingSkill && dropoffLat != null && dropoffLng != null;
 
-  // Both images and videos in one picker — same mediaTypes list step1.tsx
-  // uses for its own "gallery" pick path, just without the separate
-  // record-video/camera entry point that flow has (this is a lightweight
-  // single-step page, not a full wizard).
+  // A photo of the item: taken now or from the gallery (videos too, from
+  // the gallery), in the app's own popup. Photos are shrunk to send quickly.
   const pickMedia = async () => {
     if (media.length >= 3) return;
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images', 'videos'],
-      quality: 0.8,
-    });
-    if (!result.canceled && result.assets[0]) {
-      const asset = result.assets[0];
-      const type: MediaItem['type'] = (asset.type === 'video' || asset.duration) ? 'video' : 'image';
-      setMedia(prev => [...prev, { uri: asset.uri, type }]);
+    const picked = await photoPicker.pickPhotos({ title: 'Add a Photo', videos: true, multiple: 3 - media.length });
+    if (picked.length) {
+      setMedia(prev => [...prev, ...picked.map((p) => ({ uri: p.uri, type: (p.kind === 'video' ? 'video' : 'image') as MediaItem['type'] }))].slice(0, 3));
     }
   };
 
@@ -482,6 +484,8 @@ export default function PickupDropScreen() {
   // What it should cost, as soon as both ends are known: priced up front by
   // the trip, like a delivery app (skofy-backend app/domain/trip_fare.py).
   const [estimate, setEstimate] = useState<{ text: string; detail?: string; typical: boolean; note: string | null; buyNote?: string } | null>(null);
+  // No estimate (the addresses changed): its details close, and don't pop back up with the next one.
+  useEffect(() => { if (!estimate) setPriceInfoOpen(false); }, [estimate]);
   // Buy it for me reaches only providers who buy for customers this much:
   // the estimate says how many nearby do.
   const buyLimit = !fromPerson && purchase === 'BUY_FOR_ME' ? parseLimit(limitText) : null;
@@ -519,7 +523,15 @@ export default function PickupDropScreen() {
       </View>
 
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Scrolling the form puts the keyboard away (dragged down with it on
+            iPhone) — the way back to the price and Post, which step aside
+            while it's up. */}
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          contentContainerStyle={s.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
           {/* Where from: a store, or a person at any address */}
           <View style={s.sourceRow}>
             {([['STORE', 'From a store', Store], ['PERSON', 'From a person', Home]] as const).map(([key, label, Icon]) => {
@@ -825,7 +837,18 @@ export default function PickupDropScreen() {
           </View>
         </ScrollView>
 
-        <View style={padBottom(s.footer, bottomInset)}>
+        {/* iPhone's number, phone and multi-line keyboards have no key that
+            closes them: a slim Done bar takes the footer's place while typing.
+            (Android's have one, and Back closes them too.) */}
+        {typing && phase === 'confirm' && Platform.OS === 'ios' && (
+          <View style={s.doneBar}>
+            <TouchableOpacity onPress={() => Keyboard.dismiss()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Done typing">
+              <Text style={s.doneText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {!(typing && phase === 'confirm') && (
+        <Animated.View entering={FadeIn.duration(180)} style={padBottom(s.footer, bottomInset)}>
           {skillResolveError && (
             <TouchableOpacity onPress={resolveSkill} style={s.retryRow}>
               <Text style={s.retryText}>Couldn't connect — tap to retry</Text>
@@ -835,27 +858,36 @@ export default function PickupDropScreen() {
           {phase === 'confirm' && hasValidPickup && formError && (
             <Text style={s.fieldError}>{formError}</Text>
           )}
-          {phase === 'confirm' && estimate && (
-            <View style={s.estimate}>
-              {/* A starting price, not the price: each provider sets their own fare. */}
-              <Text style={s.estimateText}>{estimate.text}</Text>
-              {!!estimate.detail && <Text style={s.estimateDetail}>{estimate.detail}</Text>}
-              {!!estimate.note && <Text style={s.estimateHint}>{estimate.note}</Text>}
-              {!!estimate.buyNote && <Text style={s.buyNote}>{estimate.buyNote}</Text>}
-              <Text style={s.estimateHint}>
-                The final price depends on the provider you choose — you’ll see each one’s exact fare before you hire.
-                No visiting fee, no invoice: you pay when you book.
-              </Text>
-            </View>
-          )}
+          {/* One row: the price (a starting price, not the price — each
+              provider sets their own fare) and Post. What it's based on, and
+              any note worth reading, open from the price. */}
           {phase === 'confirm' && (
-            <TouchableOpacity
-              style={[s.postButton, !ready && s.postButtonDisabled]}
-              onPress={handlePost}
-              disabled={!ready}
-            >
-              <Text style={s.postButtonText}>Post Now</Text>
-            </TouchableOpacity>
+            <View style={s.footerRow}>
+              {estimate && (
+                <TouchableOpacity
+                  style={s.priceBlock}
+                  onPress={() => setPriceInfoOpen(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${estimate.text}. ${hasEstimateNote(estimate) ? 'Read the note' : 'About this price'}`}
+                >
+                  <Text style={s.priceText} numberOfLines={1}>{estimate.text}</Text>
+                  <View style={s.priceSubRow}>
+                    {!!estimateMiles(estimate) && <Text style={s.priceSub} numberOfLines={1}>{estimateMiles(estimate)} · </Text>}
+                    <Text style={[s.priceLink, hasEstimateNote(estimate) && s.priceLinkWarn]}>
+                      {hasEstimateNote(estimate) ? 'Read note' : 'Details'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[s.postButton, s.postButtonGrow, !ready && s.postButtonDisabled]}
+                onPress={handlePost}
+                disabled={!ready}
+                accessibilityRole="button"
+              >
+                <Text style={s.postButtonText}>Post Now</Text>
+              </TouchableOpacity>
+            </View>
           )}
 
           {phase === 'posting' && (
@@ -875,8 +907,13 @@ export default function PickupDropScreen() {
               </Text>
             </View>
           )}
-        </View>
+        </Animated.View>
+        )}
       </KeyboardAvoidingView>
+      <PriceEstimateInfo estimate={estimate} visible={priceInfoOpen} onClose={() => setPriceInfoOpen(false)} />
+      {/* Its messages ("Could not post") were shown into nothing: never drawn. */}
+      {appAlert.element}
+      {photoPicker.element}
     </ThemedView>
   );
 }
@@ -993,11 +1030,20 @@ const s = StyleSheet.create({
   retryRow: { alignItems: 'center', paddingVertical: 2 },
   retryText: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: '#EF4444' },
 
-  estimate: { marginBottom: 10, padding: 12, borderRadius: 14, backgroundColor: '#F0F9FF', borderWidth: 1, borderColor: '#BAE6FD', gap: 4 },
-  estimateText: { fontSize: 15, lineHeight: 21, fontFamily: Fonts.poppinsBold, color: '#0C4A6E' },
-  estimateDetail: { fontSize: 13, lineHeight: 18, fontFamily: Fonts.poppins, color: '#0C4A6E' },
-  estimateHint: { fontSize: 12, lineHeight: 17, fontFamily: Fonts.poppins, color: '#075985' },
-  buyNote: { fontSize: 12, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: '#92400E', backgroundColor: '#FFFBEB', borderRadius: 8, padding: 8 },
+  // The footer's one row: the price on the left, Post on the right.
+  footerRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  priceBlock: { flexShrink: 1, maxWidth: '50%', paddingVertical: 2 },
+  priceText: { fontSize: 18, lineHeight: 24, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  priceSubRow: { flexDirection: 'row', alignItems: 'center' },
+  priceSub: { flexShrink: 1, fontSize: 12, lineHeight: 17, fontFamily: Fonts.poppins, color: '#6B7280' },
+  priceLink: { fontSize: 12, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: '#0369A1', textDecorationLine: 'underline' },
+  priceLinkWarn: { color: '#B45309' },
+  postButtonGrow: { flex: 1 },
+  doneBar: {
+    flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 16, paddingVertical: 10,
+    backgroundColor: '#F9FAFB', borderTopWidth: 1, borderTopColor: '#E5E7EB',
+  },
+  doneText: { fontSize: 15, lineHeight: 20, fontFamily: Fonts.poppinsBold, color: '#0369A1' },
   footer: {
     padding: 16,
     backgroundColor: Colors.light.card,

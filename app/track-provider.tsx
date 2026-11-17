@@ -1,11 +1,17 @@
 import { useAppAlert } from '@/components/app-alert';
-import { CarePanel } from '@/components/care-panel';
+import { CarePanel, CareTripDetails } from '@/components/care-panel';
+import { Disclosure } from '@/components/tracking/disclosure';
+import { JobMenu, type JobMenuAction } from '@/components/tracking/job-menu';
+import { ProviderStrip } from '@/components/tracking/provider-strip';
+import { TripProgress } from '@/components/tracking/trip-progress';
+import { useCareJob } from '@/hooks/use-care-job';
+import { trackingStage } from '@/services/tracking-stage';
 import { CancelJobModal } from '@/components/cancel-job-modal';
 import { DisputeModal } from '@/components/dispute-modal';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { SkoFyApi, BASE_URL, TokenStore, getFreshAccessToken } from '@/services/api';
+import { SkoFyApi, BASE_URL, getFreshAccessToken } from '@/services/api';
 import { InspectionReport, InspectionReportCard } from '@/components/inspection-report-card';
 import { kmToMiles } from '@/services/units';
 import { GOOGLE_PLACES_API_KEY } from '@/services/google-places';
@@ -15,18 +21,15 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { useOpenScreen } from '@/services/openScreens';
 import {
+  CheckCircle2,
   ChevronLeft,
   LocateFixed,
-  MessageCircle,
-  Phone,
+  Receipt,
   ShieldCheck,
-  Star,
-  Trash2,
-  Navigation,
 } from 'lucide-react-native';
 import { VehicleIcon } from '@/components/vehicle-icon';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Linking, Platform, ScrollView, Share, StatusBar, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { PanResponder, Platform, ScrollView, Share, StatusBar, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { SlideInDown } from 'react-native-reanimated';
@@ -190,22 +193,13 @@ interface ComingVehicle {
   photo_url?: string | null;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  POSTED: 'Waiting for provider',
-  DISTRIBUTED: 'Waiting for provider',
-  ACCEPTED: 'On the way',
-  INSPECTING: 'Inspecting the job',
-  INVOICE_PENDING: 'Invoice ready',
-  IN_PROGRESS: 'Working',
-  COMPLETED: 'Completed',
-  CANCELLED: 'Cancelled',
-  DISPUTED: 'Disputed',
-};
-
 // A one-time code the customer reads out to the provider: the arrival code on
 // in-person jobs, the drop-off code on deliveries.
-function CodeCard({ title, code, body, styles, action }: {
-  title: string; code: string; body: string; styles: ReturnType<typeof makeStyles>;
+function CodeCard({ title, code, body, validUntil, styles, action }: {
+  title: string; code: string; body?: string;
+  /** When it stops working (ms) — "Valid until 3:42 PM" under the digits. */
+  validUntil?: number | null;
+  styles: ReturnType<typeof makeStyles>;
   /** e.g. sending the code on to whoever receives the delivery. */
   action?: { label: string; onPress: () => void };
 }) {
@@ -224,7 +218,12 @@ function CodeCard({ title, code, body, styles, action }: {
           </View>
         ))}
       </View>
-      <ThemedText style={styles.inspectionCardBody}>{body}</ThemedText>
+      {!!body && <ThemedText style={styles.inspectionCardBody}>{body}</ThemedText>}
+      {!!validUntil && (
+        <ThemedText style={[styles.inspectionCardBody, { textAlign: 'center' }]}>
+          Valid until {clockTime(validUntil)} · your provider can send a new one after that
+        </ThemedText>
+      )}
       {action && (
         <TouchableOpacity style={[styles.completeJobBtn, { marginTop: 10 }]} onPress={action.onPress}>
           <ThemedText style={styles.completeJobBtnText}>{action.label}</ThemedText>
@@ -233,6 +232,37 @@ function CodeCard({ title, code, body, styles, action }: {
     </View>
   );
 }
+
+// A done step with the provider's photo of it: a small thumbnail beside a
+// line of text — tap it to see the photo full width, tap again to shrink it.
+function PhotoNote({ uri, title, body, styles }: {
+  uri: string | null; title: string; body: string; styles: ReturnType<typeof makeStyles>;
+}) {
+  const [big, setBig] = useState(false);
+  return (
+    <TouchableOpacity
+      style={styles.photoNote}
+      activeOpacity={0.85}
+      disabled={!uri}
+      onPress={() => setBig((b) => !b)}
+      accessibilityRole={uri ? 'button' : undefined}
+      accessibilityLabel={uri ? `${title}. ${big ? 'Show the photo smaller' : 'Show the photo larger'}` : title}
+    >
+      <View style={styles.photoNoteRow}>
+        {uri && !big
+          ? <Image source={{ uri }} style={styles.photoThumb} contentFit="cover" />
+          : <CheckCircle2 size={22} color="#10B981" />}
+        <View style={{ flex: 1 }}>
+          <ThemedText style={styles.photoNoteTitle}>{title}</ThemedText>
+          <ThemedText style={styles.inspectionCardBody}>{body}</ThemedText>
+        </View>
+      </View>
+      {uri && big && <Image source={{ uri }} style={styles.pickupPhoto} contentFit="cover" />}
+    </TouchableOpacity>
+  );
+}
+
+const clockTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
 type GlideRefs = {
   from: React.MutableRefObject<LatLng | null>;
@@ -352,6 +382,16 @@ export default function TrackProviderScreen() {
   const [inspectionOtp, setInspectionOtp] = useState<{ otp: string | null; expires_in_seconds: number | null }>({ otp: null, expires_in_seconds: null });
   // Pickup & Drop: the code the customer gives the provider at the drop-off.
   const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
+  // When the code shown stops working (Date.now() ms) — shown under it, and
+  // in the message that sends it on to whoever receives the order.
+  const [deliveryCodeUntil, setDeliveryCodeUntil] = useState<number | null>(null);
+  const [arrivalCodeUntil, setArrivalCodeUntil] = useState<number | null>(null);
+  // The detail poll, run now: the server says a code was just issued
+  // ("handover_code" on the job's socket), so it shows at once, not on the
+  // next tick.
+  const pollNowRef = useRef<(() => void) | null>(null);
+  // The same for a booking's check-in / hand-back code (useCareJob).
+  const careReloadRef = useRef<(() => void) | null>(null);
   // Set once the drop-off code is used — it's delivered, waiting to be completed.
   const [delivered, setDelivered] = useState(false);
   // Pickup & Drop — the customer isn't physically at the pickup point (it's
@@ -403,13 +443,27 @@ export default function TrackProviderScreen() {
   // placeholder data (jobStatus stays 'ACCEPTED', provider stays null)
   // forever, with no indication anything is wrong.
   const [jobGone, setJobGone] = useState(false);
+  // Until the job, and whether its fee or booking is paid, have been read,
+  // the screen doesn't guess: guessing showed "Pay the visiting fee" (or
+  // "Book it") for a moment on every open, paid or not.
+  const [jobLoaded, setJobLoaded] = useState(false);
+  const [feeChecked, setFeeChecked] = useState(false);
+  // The detail poll's first round is in (codes, delivered, the invoice…).
+  const [detailChecked, setDetailChecked] = useState(false);
   // Whether the provider travels to the customer — not for work at their own
   // place or online (unknown until the job loads: assume they do).
   const travels = steps.length === 0 || steps.includes('TRACK_EN_ROUTE');
-  const status = jobStatus === 'ACCEPTED' && !travels ? 'Booked' : STATUS_LABELS[jobStatus] ?? jobStatus;
   const orderCollected = jobKind === 'PICKUP_DROPOFF' && !!pickupConfirmedAt;
 
   useEffect(() => { jobStatusRef.current = jobStatus; }, [jobStatus]);
+  // For the poll and the ETA clock (set up once): a delivery under way is
+  // still travelling — to the drop-off — until it's handed over.
+  const jobKindRef = useRef(jobKind);
+  const deliveredRef = useRef(delivered);
+  useEffect(() => { jobKindRef.current = jobKind; }, [jobKind]);
+  useEffect(() => { deliveredRef.current = delivered; }, [delivered]);
+  const stillTravelling = (status: string) =>
+    status === 'ACCEPTED' || (status === 'IN_PROGRESS' && jobKindRef.current === 'PICKUP_DROPOFF' && !deliveredRef.current);
 
   // A notification for this job, tapped while this screen is open, mustn't
   // stack a second copy of it (services/openScreens.ts).
@@ -420,8 +474,7 @@ export default function TrackProviderScreen() {
   // Count ETA down every second so it never freezes between poll/Directions updates
   useEffect(() => {
     const id = setInterval(() => {
-      const status = jobStatusRef.current;
-      if (status === 'IN_PROGRESS' || status === 'COMPLETED' || etaBaseRef.current == null) return;
+      if (!stillTravelling(jobStatusRef.current) || etaBaseRef.current == null) return;
       const elapsedMins = (Date.now() - etaSetAtRef.current) / 60000;
       const remaining = Math.max(0, Math.round(etaBaseRef.current - elapsedMins));
       setEta(`${remaining} min${remaining === 1 ? '' : 's'}`);
@@ -434,7 +487,7 @@ export default function TrackProviderScreen() {
   const applyLocation = useCallback((raw: LatLng, speed?: number, heading?: number) => {
     const smoothed = emaSmooth(emaLocRef.current, raw);
     emaLocRef.current = smoothed;
-    const shouldSnap = jobStatusRef.current === 'ACCEPTED' && fullRouteCoordsRef.current.length >= 2;
+    const shouldSnap = stillTravelling(jobStatusRef.current) && fullRouteCoordsRef.current.length >= 2;
     const final = shouldSnap ? snapToRoute(smoothed, fullRouteCoordsRef.current) : smoothed;
     if (speed != null && speed >= 0) speedRef.current = speed;
     if (heading != null && heading >= 0) headingRef.current = heading;
@@ -478,6 +531,7 @@ export default function TrackProviderScreen() {
       setJobKind(j.job_type === 'PICKUP_DROPOFF' ? 'PICKUP_DROPOFF' : 'STANDARD');
       setSteps((j as any).steps ?? []);
       applyPickupFields(j);
+      setJobLoaded(true);
     }).catch((err) => {
       console.error('Failed to fetch job/provider details for tracking:', err);
       if (err?.error_code === 'NOT_FOUND' || err?.error_code === 'FORBIDDEN') {
@@ -513,7 +567,10 @@ export default function TrackProviderScreen() {
       ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
-          if (msg.type === 'location' && msg.lat != null && msg.lng != null) {
+          if (msg.type === 'handover_code') {
+            pollNowRef.current?.();
+            careReloadRef.current?.();
+          } else if (msg.type === 'location' && msg.lat != null && msg.lng != null) {
             lastWsLocRef.current = Date.now();
             applyLocation(
               { latitude: msg.lat, longitude: msg.lng },
@@ -562,7 +619,15 @@ export default function TrackProviderScreen() {
             (wsRef.current?.readyState !== WebSocket.OPEN || wsStale)) {
           applyLocation({ latitude: t.provider_lat, longitude: t.provider_lng }, undefined, t.heading ?? undefined);
         }
-        if (t.job_status === 'IN_PROGRESS' || t.job_status === 'COMPLETED') {
+        // Where the provider is heading, as the server has it: a delivery's
+        // pickup until it's collected, then its drop-off. Taken from the job
+        // once at the start, the map kept pointing at the pickup for the
+        // whole drive to the customer.
+        if (t.destination_lat != null && t.destination_lng != null) {
+          setDestination((d) => (d && d.latitude === t.destination_lat && d.longitude === t.destination_lng
+            ? d : { latitude: t.destination_lat as number, longitude: t.destination_lng as number }));
+        }
+        if (!stillTravelling(t.job_status)) {
           setDistance('0 mi');
           setEta(t.job_status === 'COMPLETED' ? 'Completed' : 'Arrived');
           etaBaseRef.current = null;
@@ -650,21 +715,55 @@ export default function TrackProviderScreen() {
     if (!['ACCEPTED', 'INSPECTING', 'INVOICE_PENDING'].includes(jobStatus) && !deliveryOnItsWay) return;
     let cancelled = false;
 
+    // The job, only when it changed: its stamp (one small query) every 3 s,
+    // the whole job (about ten queries) when the stamp moves, and every 30 s
+    // anyway. Null when unchanged — what's shown is still current. Nothing
+    // read here is a running meter, so the stamp covers it all (server:
+    // JobRepository.change_stamp). Unreadable stamp: the whole job, as before.
+    let lastStamp = '';
+    let lastFullAt = 0;
+    let deliveredSeen = false;
+    // Buy it for me, as of the last whole job: its shopping-money hold is
+    // asked about every time, changed or not — that ask is what brings a
+    // hold Stripe has taken into the database (PaymentService._reconciled,
+    // webhooks aside), so waiting for the stamp to move first would wait
+    // for itself.
+    let buyForMe = false;
+    const jobIfChanged = async (): Promise<any | null> => {
+      const stamp = await SkoFyApi.jobs.stamp(jobId).then((r) => r?.stamp ?? null).catch(() => null);
+      if (stamp !== null && stamp === lastStamp && Date.now() - lastFullAt < 30_000) return null;
+      const job: any = await SkoFyApi.jobs.get(jobId).catch(() => null);
+      if (job) {
+        if (stamp !== null) lastStamp = stamp;
+        lastFullAt = Date.now();
+        if (job.delivered_at) deliveredSeen = true;
+        buyForMe = job.pickup_purchase === 'BUY_FOR_ME';
+      }
+      return job;
+    };
+
+    // One at a time: on a weak signal the 3-second ticks used to pile up,
+    // each slowing the next — and the code with them.
+    let inFlight = false;
+    const until = (seconds: number | null | undefined) => (seconds ? Date.now() + seconds * 1000 : null);
     const poll = async () => {
+      if (inFlight) return;
+      inFlight = true;
       try {
         if (jobStatus === 'ACCEPTED') {
           // A trip has no visiting fee: its fare is booked (bookingPaid).
           if (!paysUpfront) {
             const feeStatus = await SkoFyApi.payments.getStatus(jobId, 'INSPECTION_FEE').catch(() => null);
             if (!cancelled && feeStatus) setInspectionFeeStatus(feeStatus.status as any);
+            if (!cancelled) setFeeChecked(true);
           }
           if (jobKind === 'PICKUP_DROPOFF') {
             // No OTP for this job kind (the customer isn't at the pickup
             // point) — poll the job itself for the pickup-confirmation photo.
-            const job = await SkoFyApi.jobs.get(jobId).catch(() => null);
+            const job = await jobIfChanged();
             if (!cancelled && job) applyPickupFields(job);
             if (!cancelled && job) setBookingPaid(['HELD', 'PAID'].includes((job as any).payment_status));
-            if (!cancelled && (job as any)?.pickup_purchase === 'BUY_FOR_ME') {
+            if (!cancelled && buyForMe) {
               const goods = await SkoFyApi.payments.getStatus(jobId, 'GOODS_ADVANCE').catch(() => null);
               if (!cancelled) setGoodsHoldStatus(goods?.status ?? null);
             }
@@ -675,11 +774,14 @@ export default function TrackProviderScreen() {
             // only once status reaches INSPECTING (the old code) was asking
             // for something already gone, so the customer never saw it.
             const otpResult = await SkoFyApi.jobs.getInspectionOtp(jobId).catch(() => null);
-            if (!cancelled && otpResult) setInspectionOtp(otpResult);
+            if (!cancelled && otpResult) {
+              setInspectionOtp(otpResult);
+              setArrivalCodeUntil(until(otpResult.expires_in_seconds));
+            }
           }
         }
         if (jobStatus === 'INSPECTING' || jobStatus === 'INVOICE_PENDING') {
-          const job: any = await SkoFyApi.jobs.get(jobId).catch(() => null);
+          const job: any = await jobIfChanged();
           if (!cancelled && job) {
             setInvoice(job.invoice ?? null);
             setInspection({
@@ -693,24 +795,33 @@ export default function TrackProviderScreen() {
         // Every delivery's drop-off code is shown here — with a recipient's
         // name and the button to send it to them (CarePanel leaves it to this).
         if (deliveryOnItsWay) {
-          const job: any = await SkoFyApi.jobs.get(jobId).catch(() => null);
+          // The code first — it's what the provider is standing at the door
+          // for — and alongside the job, not after it.
+          const [result, job] = await Promise.all([
+            deliveredSeen ? Promise.resolve(null) : SkoFyApi.jobs.getDeliveryCode(jobId).catch(() => null),
+            jobIfChanged(),
+          ]);
+          if (!cancelled && result) {
+            setDeliveryCode(result.code);
+            setDeliveryCodeUntil(until(result.expires_in_seconds));
+          }
           if (!cancelled && job) {
             setDelivered(!!job.delivered_at);
             setDropoffPhotoUrl(job.dropoff_photo_url ?? null);
           }
-          if (!job?.delivered_at) {
-            const result = await SkoFyApi.jobs.getDeliveryCode(jobId).catch(() => null);
-            if (!cancelled && result) setDeliveryCode(result.code);
-          }
         }
       } catch {
         // transient — keep showing last known values
+      } finally {
+        inFlight = false;
+        if (!cancelled) setDetailChecked(true);
       }
     };
 
+    pollNowRef.current = () => { void poll(); };
     poll();
     const interval = setInterval(poll, 3000);
-    return () => { cancelled = true; clearInterval(interval); };
+    return () => { cancelled = true; clearInterval(interval); pollNowRef.current = null; };
   }, [jobId, jobStatus, jobKind, inspectionTick, paysUpfront]);
 
   const handlePayInspectionFee = async () => {
@@ -817,8 +928,16 @@ export default function TrackProviderScreen() {
   // Each poll: trim the route so the blue line always starts at the provider's
   // current position (Google Maps style), and re-fetch the full route only
   // when the provider moves significantly.
+  // A new destination (a delivery's drop-off, once collected): the old route is the wrong road.
   useEffect(() => {
-    if (!polledLoc || !destination || jobStatus === 'IN_PROGRESS' || jobStatus === 'COMPLETED') return;
+    fullRouteCoordsRef.current = [];
+    lastRouteFetchLocRef.current = null;
+    setRouteCoords([]);
+  }, [destination?.latitude, destination?.longitude]);
+
+  useEffect(() => {
+    const deliveryLeg = jobStatus === 'IN_PROGRESS' && jobKind === 'PICKUP_DROPOFF' && !delivered;
+    if (!polledLoc || !destination || (jobStatus !== 'ACCEPTED' && !deliveryLeg)) return;
 
     // Trim existing route: find nearest point to provider, slice from there
     const full = fullRouteCoordsRef.current;
@@ -850,7 +969,7 @@ export default function TrackProviderScreen() {
       // Road distance from API is more accurate than haversine sum — use it
       if (distanceMi != null) setDistance(`${distanceMi.toFixed(1)} mi`);
     });
-  }, [polledLoc, destination, jobStatus]);
+  }, [polledLoc, destination, jobStatus, jobKind, delivered]);
 
   // Auto-follow the provider — keep both the provider and destination visible
   useEffect(() => {
@@ -976,6 +1095,252 @@ export default function TrackProviderScreen() {
     });
   };
 
+  // ── The sheet: what's happening, who's coming, the one thing to do ──
+  // A booking priced up front, followed once for its card and its trip details.
+  const care = useCareJob(jobId, paysUpfront);
+  careReloadRef.current = paysUpfront ? care.reload : null;
+  const careJob = care.job;
+  const upfrontPaid = careJob ? careJob.payment_status === 'HELD' || careJob.payment_status === 'PAID' : bookingPaid;
+  const isDelivery = jobKind === 'PICKUP_DROPOFF';
+  // The detail poll runs for these (its effect, above): until its first round
+  // is in, what it brings — the fee, a code, delivered, the price — isn't known.
+  const detailPolled = !(paysUpfront && !isDelivery)
+    && (['ACCEPTED', 'INSPECTING', 'INVOICE_PENDING'].includes(jobStatus) || (jobStatus === 'IN_PROGRESS' && isDelivery));
+  const ready = jobLoaded && (!paysUpfront || !!careJob) && (!detailPolled || detailChecked);
+  const stageNow = trackingStage({
+    jobStatus,
+    isCompleted,
+    delivery: isDelivery,
+    travels,
+    paysUpfront,
+    upfrontPaid,
+    feeHeld: inspectionFeeStatus === 'HELD',
+    needsGoodsHold: isDelivery && purchaseLimit != null && goodsHoldStatus !== 'HELD' && !pickupConfirmedAt,
+    pickupFromStore: isDelivery && !pickupFromPerson,
+    collected: !!pickupConfirmedAt,
+    delivered: delivered || !!careJob?.delivered_at,
+    hasCode: isDelivery ? !!deliveryCode && !delivered : paysUpfront ? !!care.code : !!inspectionOtp.otp,
+    inspectionDone: inspection.completed,
+    inspectionConfirmed: inspection.confirmed,
+    invoiceStatus: invoice?.status ?? null,
+    recipientName,
+    hostedAtTheirPlace: steps.includes('CHECK_IN_CODE'),
+  });
+  const stage: typeof stageNow = ready ? stageNow
+    : { ...stageNow, key: 'on_the_way', title: 'Getting the latest…', subtitle: '', needsAction: false, moving: false };
+  // "12 mins" → a big "12" over "min"; "Arrived" stays a word.
+  const etaMatch = /^(\d+) mins?$/.exec(eta);
+  const etaNumber = etaMatch ? etaMatch[1] : eta;
+  const etaUnit = etaMatch ? 'min' : '';
+  const showEta = travels && stage.moving && eta !== '—';
+  const pickupClock = pickupConfirmedAt ? new Date(pickupConfirmedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : null;
+  // Cancelling isn't offered once the order is with the provider (the server
+  // refuses — it would be left with them) or once the work is under way.
+  const canCancel = !isCompleted && !orderCollected && ['ACCEPTED', 'INSPECTING', 'INVOICE_PENDING'].includes(jobStatus);
+  // A dispute is taken once it's under way or done, or once a delivery order
+  // is collected (can_dispute in app/domain/pickup.py).
+  const canReport = jobStatus === 'IN_PROGRESS' || isCompleted
+    || (orderCollected && (jobStatus === 'ACCEPTED' || jobStatus === 'INVOICE_PENDING'));
+  const hasTripDetails = (paysUpfront && !!careJob) || !!vehicle || (isDelivery && pickupFromPerson && !pickupConfirmedAt);
+
+  // The "more" menu, and the sheet folded down to its headline to see the map.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [minimized, setMinimized] = useState(false);
+  // Something to do appears: the sheet opens to show it.
+  useEffect(() => { if (stage.needsAction) setMinimized(false); }, [stage.key, stage.needsAction]);
+  const sheetPan = React.useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 8 && Math.abs(g.dy) > Math.abs(g.dx),
+    onPanResponderRelease: (_, g) => {
+      if (g.dy > 30) setMinimized(true);
+      else if (g.dy < -30) setMinimized(false);
+    },
+  }), []);
+
+  const openProfile = () => provider && router.push({
+    pathname: '/provider-details' as any,
+    params: { id: provider.id, providerId: provider.id, jobId: jobId ?? '', viewOnly: 'true' },
+  });
+  const openChat = () => provider && router.push({
+    pathname: '/chat',
+    params: { jobId: jobId ?? '', id: provider.id, name: provider.name, profileImage: provider.image ?? '', profession: provider.role },
+  });
+  // After the menu has closed: on iPhone a popup can't open while another is still closing.
+  const pickMenu = (action: JobMenuAction) => {
+    setMenuOpen(false);
+    setTimeout(() => {
+      if (action === 'profile') openProfile();
+      else if (action === 'help') router.push({ pathname: '/support-chat', params: { jobId: jobId ?? '' } } as any);
+      else if (action === 'report') setIsDisputeModalVisible(true);
+      else if (action === 'cancel') handleCancelHire();
+    }, Platform.OS === 'ios' ? 450 : 60);
+  };
+
+  // The provider's price: accept and pay, counter once, or reject.
+  const renderInvoice = () => (
+    <View style={styles.inspectionCard}>
+      {/* Where it stands is the sheet's headline; this card is the price itself. */}
+      <ThemedText style={styles.inspectionCardBody}>
+        {invoice.status === 'COUNTERED' ? 'Your offer' : 'Their price'}
+      </ThemedText>
+      <ThemedText style={styles.invoiceAmount}>
+        {/* final_amount is the one authoritative settled number once
+            resolved — whether that's the original invoice.amount or
+            a counter-offer the provider accepted. Falls back to
+            counter_amount/amount only while still unresolved. */}
+        $ {Number(
+          invoice.final_amount ?? (invoice.status === 'COUNTERED' ? invoice.counter_amount : invoice.amount)
+        ).toFixed(2)}
+      </ThemedText>
+      {invoice.materials?.length > 0 && (
+        <View style={{ marginBottom: 8 }}>
+          {invoice.materials.map((m: any, idx: number) => (
+            <ThemedText key={idx} style={styles.inspectionCardBody}>
+              • {m.name} × {m.quantity} (${m.unit_cost}/ea)
+            </ThemedText>
+          ))}
+        </View>
+      )}
+      {invoice.notes && <ThemedText style={styles.inspectionCardBody}>{invoice.notes}</ThemedText>}
+      {invoice.status === 'PENDING' && jobId && <QuoteGuide jobId={jobId} />}
+      {invoice.visit_credit > 0 && (
+        <ThemedText style={[styles.inspectionCardBody, { marginTop: 6 }]}>
+          The ${Number(invoice.visit_credit).toFixed(2)} visiting fee you paid counts toward this price.
+        </ThemedText>
+      )}
+      {invoice.deposit_percent > 0 && (
+        <ThemedText style={[styles.inspectionCardBody, { marginTop: 6 }]}>
+          {invoice.deposit_percent}% goes to your provider when work starts, for parts and materials; the rest when the
+          job is done. You pay it all now, and it's held safely until then.
+        </ThemedText>
+      )}
+
+      {invoice.status === 'PENDING' && !showCounterInput && (
+        // Primary action gets its own full-width row; Counter/Reject
+        // as compact secondary text buttons below. The previous
+        // 3-across row squeezed "Reject" into cancelButton — a fixed
+        // 56x56 circular icon button designed for a trash icon, not
+        // a text label — clipping/wrapping the word inside it.
+        <View style={{ marginTop: 8, gap: 8 }}>
+          <TouchableOpacity
+            style={[styles.completeJobBtn, { marginTop: 0 }]}
+            onPress={() => handleRespondToInvoice('ACCEPT')}
+            disabled={respondingToInvoice}
+          >
+            <ThemedText style={styles.completeJobBtnText}>Accept & Pay</ThemedText>
+          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity
+              style={styles.invoiceSecondaryBtn}
+              onPress={() => setShowCounterInput(true)}
+              disabled={respondingToInvoice}
+            >
+              <ThemedText style={styles.invoiceSecondaryBtnText}>Counter</ThemedText>
+            </TouchableOpacity>
+            {/* Rejecting cancels the job — not once the provider has the order. */}
+            {!orderCollected && (
+              <TouchableOpacity
+                style={[styles.invoiceSecondaryBtn, { backgroundColor: '#FEF2F2', borderColor: '#FEE2E2' }]}
+                onPress={() => handleRespondToInvoice('REJECT')}
+                disabled={respondingToInvoice}
+              >
+                <ThemedText style={[styles.invoiceSecondaryBtnText, { color: '#EF4444' }]}>Reject</ThemedText>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      )}
+
+      {invoice.status === 'COUNTER_REJECTED' && (
+        // The provider declined the one counter-offer — the original
+        // amount (already what's shown above, since it's not
+        // 'COUNTERED') is back on the table. No Counter option here:
+        // the one-round cap was already spent on the earlier attempt.
+        <View style={{ marginTop: 8, gap: 8 }}>
+          <ThemedText style={styles.inspectionCardBody}>
+            {orderCollected
+              ? 'Your provider declined your offer. Pay the original price to get your order, or report an issue below.'
+              : 'Your provider declined your offer. Pay the original price to proceed, or cancel.'}
+          </ThemedText>
+          <TouchableOpacity
+            style={[styles.completeJobBtn, { marginTop: 0 }]}
+            onPress={() => handleRespondToInvoice('ACCEPT')}
+            disabled={respondingToInvoice}
+          >
+            <ThemedText style={styles.completeJobBtnText}>Accept & Pay</ThemedText>
+          </TouchableOpacity>
+          {!orderCollected && (
+            <TouchableOpacity
+              style={[styles.invoiceSecondaryBtn, { backgroundColor: '#FEF2F2', borderColor: '#FEE2E2' }]}
+              onPress={() => handleRespondToInvoice('REJECT')}
+              disabled={respondingToInvoice}
+            >
+              <ThemedText style={[styles.invoiceSecondaryBtnText, { color: '#EF4444' }]}>Reject & Cancel Job</ThemedText>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {invoice.status === 'PENDING' && showCounterInput && (
+        <View style={{ marginTop: 8 }}>
+          <TextInput
+            style={[styles.counterInput, { fontWeight: '700', fontSize: 17 }]}
+            placeholder="Your offer ($)"
+            placeholderTextColor="#9CA3AF"
+            keyboardType="numeric"
+            value={counterAmountInput}
+            onChangeText={setCounterAmountInput}
+            onFocus={scrollToFocusedInput}
+          />
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+            {/* completeJobBtn is 48px tall with its own marginTop:16;
+                callButton is 56px with none — mismatched heights and
+                an offset only one of them had was why these two never
+                actually lined up in the same row. Both now share one
+                explicit height/margin regardless of their base styles. */}
+            <TouchableOpacity
+              style={[styles.completeJobBtn, { flex: 1, height: 52, marginTop: 0 }]}
+              onPress={() => handleRespondToInvoice('COUNTER')}
+              disabled={respondingToInvoice}
+            >
+              <ThemedText style={styles.completeJobBtnText}>Send Offer</ThemedText>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.callButton, { flex: 1, height: 52 }]}
+              onPress={() => setShowCounterInput(false)}
+            >
+              <ThemedText style={styles.actionBtnText}>Cancel</ThemedText>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {invoice.status === 'COUNTERED' && (
+        <ThemedText style={styles.inspectionCardBody}>
+          You offered ${invoice.counter_amount} — waiting for the provider to respond.
+        </ThemedText>
+      )}
+
+      {invoice.status === 'ACCEPTED' && (
+        <>
+          <ThemedText style={styles.inspectionCardBody}>
+            {invoice.counter_amount != null
+              ? 'Your provider accepted your counter-offer — pay now to start the job.'
+              : 'Pay now to start the job.'}
+          </ThemedText>
+          <TouchableOpacity
+            style={[styles.completeJobBtn, { marginTop: 8 }]}
+            onPress={handlePayAcceptedInvoice}
+            disabled={respondingToInvoice}
+          >
+            <ThemedText style={styles.completeJobBtnText}>
+              {respondingToInvoice ? 'Processing…' : 'Pay Now'}
+            </ThemedText>
+          </TouchableOpacity>
+        </>
+      )}
+    </View>
+  );
+
   const renderMap = () => {
     if (mapError || !MapView) {
       return (
@@ -1078,506 +1443,226 @@ export default function TrackProviderScreen() {
 
       {renderMap()}
 
-      {/* Locate / Follow Button */}
-      <View style={styles.locateMeContainer}>
-        <TouchableOpacity
-          style={[styles.locateMeButton, isFollowing && styles.locateMeButtonActive]}
-          onPress={handleLocateMe}
-        >
-          <LocateFixed size={22} color={isFollowing ? '#fff' : '#000'} />
+      {/* Over the map: back, and follow the provider. The status is the sheet's headline. */}
+      <View style={[styles.topBar, { top: insets.top + 8 }]} pointerEvents="box-none">
+        <TouchableOpacity style={styles.roundMapButton} onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Back">
+          <ChevronLeft size={24} color="#111827" />
         </TouchableOpacity>
+        {travels && (
+          <TouchableOpacity
+            style={[styles.roundMapButton, isFollowing && styles.locateMeButtonActive]}
+            onPress={handleLocateMe}
+            accessibilityRole="button"
+            accessibilityLabel="Follow your provider on the map"
+          >
+            <LocateFixed size={22} color={isFollowing ? '#fff' : '#111827'} />
+          </TouchableOpacity>
+        )}
       </View>
 
-      {/* Header Overlay */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <ChevronLeft size={24} color="#000" />
-        </TouchableOpacity>
-        <View style={styles.statusPill}>
-          <ThemedText style={styles.statusText}>{status}</ThemedText>
+      {/* The sheet: where things are (headline, steps), who's coming, the one
+          thing to do now — and the fine print behind "Trip details". Swipe
+          the handle down to see more of the map; up to bring it back.
+          KeyboardAvoidingView: the counter-offer input sits deep in here,
+          and Android's resize doesn't lift an absolutely placed sheet. */}
+      <KeyboardAvoidingView style={styles.bottomSheetKeyboardWrapper} behavior="padding">
+      <Animated.View entering={SlideInDown.duration(500)} style={styles.bottomSheet}>
+        <View style={styles.handleArea} {...sheetPan.panHandlers}>
+          <TouchableOpacity
+            onPress={() => setMinimized((m) => !m)}
+            hitSlop={12}
+            style={styles.handleHit}
+            accessibilityRole="button"
+            accessibilityLabel={minimized ? 'Show the details' : 'Show more of the map'}
+          >
+            <View style={styles.handle} />
+          </TouchableOpacity>
         </View>
-        <View style={{ width: 40 }} />
-      </View>
 
-      {/* Bottom Sheet Info */}
-      {/* bottomSheet is position:'absolute' pinned to the screen bottom —
-          Android's default keyboard resize doesn't reliably push an
-          absolutely-positioned element like this above the keyboard, which
-          is why the counter-offer input (deep in this sheet) was getting
-          covered. KeyboardAvoidingView's 'position' behavior (iOS) / 'height'
-          (Android) explicitly translates/resizes this wrapper by the
-          keyboard's height instead of relying on that. */}
-      <KeyboardAvoidingView
-        style={styles.bottomSheetKeyboardWrapper}
-        behavior="padding"
-      >
-      <Animated.View
-        entering={SlideInDown.duration(600)}
-        style={styles.bottomSheet}
-      >
-        {/* The height cap is the scroll's own, and the padding is inside what
-            scrolls. Capped on the panel instead, the scroll had to shrink to
-            fit it, and on Android that left out the panel's bottom padding:
-            a tall card (Book it, the invoice) ran past the white panel and
-            its button couldn't be scrolled to. Measured live: read once at
-            start-up (a notification cold-starting the app), the height
-            could be wrong for the screen as shown. */}
         <ScrollView
           ref={bottomSheetScrollRef}
-          style={[styles.bottomSheetScroll, { maxHeight: windowHeight * 0.65 }]}
+          style={[styles.bottomSheetScroll, { maxHeight: windowHeight * 0.62 }]}
           contentContainerStyle={[styles.bottomSheetContent, {
-            paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12,
+            paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 28 : 16) + 12,
           }]}
           showsVerticalScrollIndicator={false}
           bounces={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Arrival Time */}
-          {travels && <View style={styles.arrivalRow}>
-            <View>
-              <ThemedText style={styles.arrivingLabel}>Arriving in</ThemedText>
-              <ThemedText style={styles.etaText}>{eta}</ThemedText>
+          {/* Headline: where things are, and how long until they're here. */}
+          <View style={styles.stageRow}>
+            <View style={{ flex: 1 }}>
+              <ThemedText style={styles.stageTitle} accessibilityRole="header">{stage.title}</ThemedText>
+              {!!stage.subtitle && <ThemedText style={styles.stageSubtitle}>{stage.subtitle}</ThemedText>}
             </View>
-            <View style={styles.distanceBadge}>
-              <ThemedText style={styles.distanceText}>{distance}</ThemedText>
-            </View>
-          </View>}
-
-          {travels && <View style={styles.divider} />}
-
-          {/* Provider Profile — tap to view their full profile (work proof,
-              reviews) read-only; hiring isn't offered here since they're
-              already hired for this job. */}
-          <TouchableOpacity
-            style={styles.providerRow}
-            activeOpacity={0.7}
-            disabled={!provider}
-            onPress={() => provider && router.push({
-              pathname: '/provider-details' as any,
-              params: { id: provider.id, providerId: provider.id, jobId: jobId ?? '', viewOnly: 'true' },
-            })}
-          >
-            <Image source={provider?.image ? { uri: provider.image } : require('@/assets/images/icon-mark.png')} style={styles.avatar} />
-            <View style={styles.providerInfo}>
-              <ThemedText style={styles.providerName}>{provider?.name ?? 'Provider'}</ThemedText>
-              <View style={styles.ratingRow}>
-                <ThemedText style={styles.roleText}>{provider?.role ?? ''}</ThemedText>
-                <View style={styles.dot} />
-                <Star size={12} color="#F59E0B" fill="#F59E0B" />
-                <ThemedText style={styles.ratingText}>{(provider?.rating ?? 0).toFixed(1)}</ThemedText>
+            {showEta && (
+              <View style={styles.etaChip} accessible accessibilityLabel={`Arriving in ${eta}${distance !== '—' ? `, ${distance} away` : ''}`}>
+                <ThemedText style={styles.etaBig}>{etaNumber}</ThemedText>
+                <ThemedText style={styles.etaSmall}>{etaUnit}{distance !== '—' ? ` · ${distance}` : ''}</ThemedText>
               </View>
-            </View>
-            <View style={styles.shieldBadge}>
-              <ShieldCheck size={16} color="#10B981" />
-            </View>
-          </TouchableOpacity>
-
-          {/* The vehicle that's coming — checked by Dodorez. A different one
-              turning up is worth reporting. */}
-          {vehicle && (
-            <View style={styles.vehicleCard}>
-              {vehicle.photo_url
-                ? <Image source={{ uri: vehicle.photo_url }} style={styles.vehiclePhoto} />
-                : <View style={[styles.vehiclePhoto, styles.vehiclePhotoEmpty]}><VehicleIcon type={vehicle.vehicle_type} size={24} color="#6B7280" /></View>}
-              <View style={{ flex: 1, gap: 2 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <VehicleIcon type={vehicle.vehicle_type} size={13} color="#6B7280" />
-                  <ThemedText style={styles.vehicleLabel}>Coming in</ThemedText>
-                </View>
-                <ThemedText style={styles.vehicleName} numberOfLines={2}>{vehicle.description}</ThemedText>
-                {!!vehicle.plate && (
-                  <View style={styles.plate}>
-                    <ThemedText style={styles.plateText}>{vehicle.plate}</ThemedText>
-                    {!!vehicle.plate_state && <ThemedText style={styles.plateState}>{vehicle.plate_state}</ThemedText>}
-                  </View>
-                )}
-              </View>
-              <View style={styles.checkedBadge}>
-                <ShieldCheck size={12} color="#047857" />
-                <ThemedText style={styles.checkedText}>Checked</ThemedText>
-              </View>
-            </View>
-          )}
-
-          {/* Actions */}
-          <View style={styles.actionRow}>
-            <TouchableOpacity style={styles.callButton} onPress={handleCallProvider}>
-              <Phone size={20} color="#000" />
-              <ThemedText style={styles.actionBtnText}>Call</ThemedText>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.callButton, styles.msgButton]}
-              onPress={() => provider && router.push({
-                pathname: '/chat',
-                params: { jobId: jobId ?? '', id: provider.id, name: provider.name, profileImage: provider.image ?? '', profession: provider.role }
-              })}
-            >
-              <MessageCircle size={20} color="#fff" />
-              <ThemedText style={[styles.actionBtnText, { color: '#fff' }]}>Chat</ThemedText>
-            </TouchableOpacity>
-            {/* Once the provider has the order, cancelling would leave it with
-                them — the server refuses; Report an Issue below instead. */}
-            {!orderCollected && (
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={handleCancelHire}
-              >
-                <Trash2 size={20} color="#EF4444" />
-              </TouchableOpacity>
             )}
           </View>
 
-          {/* Inspection fee — pay right after hiring, before the provider
-              can request the on-site inspection OTP. */}
-          {jobId && paysUpfront && (
-            <CarePanel jobId={jobId} onMessage={(kind, title, message) => appAlert.show(kind, title, message)} />
-          )}
+          {!minimized && (
+            <>
+              {ready && stage.key !== 'closed' && <TripProgress steps={stage.steps} current={stage.step} />}
 
-          {jobStatus === 'ACCEPTED' && !paysUpfront && inspectionFeeStatus !== 'HELD' && (
-            <View style={styles.inspectionCard}>
-              <ThemedText style={styles.inspectionCardTitle}>
-                {jobKind === 'PICKUP_DROPOFF' ? 'Pay Delivery Fee' : 'Pay Visiting Fee'}
-              </ThemedText>
-              <ThemedText style={styles.inspectionCardBody}>
-                {jobKind === 'PICKUP_DROPOFF'
-                  ? `Pay the delivery fee so your provider can head to the ${pickupFromPerson ? 'pickup' : 'store'}.`
-                  : 'Pay the visiting fee so your provider can start inspecting the job once they arrive.'}
-              </ThemedText>
-              <TouchableOpacity
-                style={styles.completeJobBtn}
-                onPress={handlePayInspectionFee}
-                disabled={payingFee}
-              >
-                <ThemedText style={styles.completeJobBtnText}>{payingFee ? 'Processing…' : 'Pay Now'}</ThemedText>
-              </TouchableOpacity>
-            </View>
-          )}
-          {/* On-site inspection code — only exists in Redis while the job is
-              still ACCEPTED (verify_inspection_otp deletes it the instant
-              it's checked, before the status flips to INSPECTING), so this
-              must show here and not once the job reaches INSPECTING —
-              by then the code is already consumed and gone. Doesn't apply to
-              Pickup & Drop — the customer isn't at the pickup point to hand
-              over a code, see the pickup-photo card below instead. */}
-          {jobStatus === 'ACCEPTED' && !paysUpfront && jobKind !== 'PICKUP_DROPOFF' && inspectionFeeStatus === 'HELD' && inspectionOtp.otp && (
-            <CodeCard
-              title="Give this code to your provider"
-              code={inspectionOtp.otp}
-              body="Your provider needs this code to start inspecting the job."
-              styles={styles}
-            />
-          )}
-          {jobStatus === 'ACCEPTED' && !paysUpfront && jobKind !== 'PICKUP_DROPOFF' && inspectionFeeStatus === 'HELD' && !inspectionOtp.otp && (
-            <View style={styles.inspectionCard}>
-              <ThemedText style={styles.inspectionCardBody}>
-                Waiting for your provider to arrive and start the inspection.
-              </ThemedText>
-            </View>
-          )}
+              <View style={styles.rule} />
 
-          {/* Pickup & Drop — proof of pickup substitutes for the OTP flow
-              above (the customer isn't physically at the pickup point). */}
-          {jobStatus === 'ACCEPTED' && jobKind === 'PICKUP_DROPOFF' && pickupPaid && pickupConfirmedAt && (
-            <View style={styles.inspectionCard}>
-              <ThemedText style={styles.inspectionCardTitle}>Picked up ✓</ThemedText>
-              {pickupPhotoUrl && (
-                <Image source={{ uri: pickupPhotoUrl }} style={styles.pickupPhoto} contentFit="cover" />
+              <ProviderStrip
+                provider={provider}
+                vehicle={vehicle}
+                onOpenProfile={openProfile}
+                onCall={handleCallProvider}
+                onChat={openChat}
+                onMore={() => setMenuOpen(true)}
+              />
+
+              {/* ── The one thing to do now ─────────────────────────────── */}
+
+              {jobId && paysUpfront && (
+                <CarePanel jobId={jobId} care={care} onMessage={(kind, title, message) => appAlert.show(kind, title, message)} />
               )}
-              {purchaseLimit != null && goodsAmount != null && (
-                <ThemedText style={[styles.inspectionCardBody, { marginBottom: 6 }]}>
-                  {goodsReceiptLine(purchaseLimit, goodsAmount)}
-                </ThemedText>
-              )}
-              <ThemedText style={styles.inspectionCardBody}>
-                {paysUpfront
-                  ? (purchaseLimit != null ? 'Your provider has your items and is bringing them to you.'
-                    : 'Your provider has your order and is bringing it to you.')
-                  : purchaseLimit != null
-                    ? "Your provider has your items. Review and pay their delivery price, and they'll bring them to you."
-                    : "Your provider has your order. Review and pay the final price, and they'll bring it to you."}
-              </ThemedText>
-            </View>
-          )}
-          {jobStatus === 'ACCEPTED' && jobKind === 'PICKUP_DROPOFF' && pickupPaid && !pickupConfirmedAt
-            && purchaseLimit != null && goodsHoldStatus !== 'HELD' && (
-            <GoodsHoldCard limit={purchaseLimit} paying={payingGoods} onPay={handlePayGoodsHold} styles={styles} />
-          )}
-          {jobStatus === 'ACCEPTED' && jobKind === 'PICKUP_DROPOFF' && pickupPaid && !pickupConfirmedAt
-            && (purchaseLimit == null || goodsHoldStatus === 'HELD') && (
-            <View style={styles.inspectionCard}>
-              <ThemedText style={styles.inspectionCardBody}>
-                {purchaseLimit != null
-                  ? 'Shopping money held ✓ Waiting for your provider to buy your items and confirm pickup.'
-                  : pickupFromPerson
-                    ? "Waiting for your provider to arrive. They'll check the item before taking it, and can refuse anything that isn't allowed."
-                    : 'Waiting for your provider to arrive and confirm pickup.'}
-              </ThemedText>
-            </View>
-          )}
-          {jobStatus === 'ACCEPTED' && jobKind === 'PICKUP_DROPOFF' && !pickupConfirmedAt && purchaseLimit == null && !pickupFromPerson && jobId && (
-            <PickupCodeEditor jobId={jobId} code={pickupCode} styles={styles} />
-          )}
 
-          {/* Delivered, not yet completed (a booked trip's CarePanel says it). */}
-          {jobStatus === 'IN_PROGRESS' && jobKind === 'PICKUP_DROPOFF' && delivered && !paysUpfront && (
-            <View style={styles.inspectionCard}>
-              <ThemedText style={styles.inspectionCardTitle}>Delivered ✓</ThemedText>
-              {dropoffPhotoUrl && (
+              {/* Quoted: the visiting / delivery fee, before the provider sets off. */}
+              {jobStatus === 'ACCEPTED' && !paysUpfront && feeChecked && inspectionFeeStatus !== 'HELD' && (
+                <View style={styles.inspectionCard}>
+                  <ThemedText style={styles.inspectionCardBody}>
+                    {jobKind === 'PICKUP_DROPOFF'
+                      ? 'It’s held safely until your order is delivered.'
+                      : 'It’s held safely, and counts toward the price if you go ahead.'}
+                  </ThemedText>
+                  <TouchableOpacity style={styles.completeJobBtn} onPress={handlePayInspectionFee} disabled={payingFee} accessibilityRole="button">
+                    <ThemedText style={styles.completeJobBtnText}>{payingFee ? 'Processing…' : 'Pay now'}</ThemedText>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* The arrival code (a visit) — only while it exists, before the inspection starts. */}
+              {jobStatus === 'ACCEPTED' && !paysUpfront && jobKind !== 'PICKUP_DROPOFF' && inspectionFeeStatus === 'HELD' && inspectionOtp.otp && (
+                <CodeCard title="Give your provider this code" code={inspectionOtp.otp} validUntil={arrivalCodeUntil} styles={styles} />
+              )}
+
+              {/* Pickup & Delivery, before it's collected. */}
+              {jobStatus === 'ACCEPTED' && jobKind === 'PICKUP_DROPOFF' && pickupPaid && !pickupConfirmedAt
+                && purchaseLimit != null && goodsHoldStatus !== 'HELD' && (
+                <GoodsHoldCard limit={purchaseLimit} paying={payingGoods} onPay={handlePayGoodsHold} styles={styles} />
+              )}
+              {jobStatus === 'ACCEPTED' && jobKind === 'PICKUP_DROPOFF' && !pickupConfirmedAt && purchaseLimit == null && !pickupFromPerson && jobId && (
+                <PickupCodeEditor jobId={jobId} code={pickupCode} styles={styles} />
+              )}
+
+              {/* Collected: the provider's photo of it (and what the shopping came to). */}
+              {jobKind === 'PICKUP_DROPOFF' && !!pickupConfirmedAt && !delivered && (pickupPhotoUrl || (purchaseLimit != null && goodsAmount != null)) && (
+                <PhotoNote
+                  uri={pickupPhotoUrl}
+                  title={`Picked up${pickupClock ? ` at ${pickupClock}` : ''}`}
+                  body={purchaseLimit != null && goodsAmount != null ? goodsReceiptLine(purchaseLimit, goodsAmount) : 'Photo of your order'}
+                  styles={styles}
+                />
+              )}
+
+              {/* On its way: the drop-off code, once the provider asks for it. */}
+              {jobStatus === 'IN_PROGRESS' && jobKind === 'PICKUP_DROPOFF' && !delivered && deliveryCode && (
+                <CodeCard
+                  title={recipientName ? `Drop-off code for ${recipientName}` : 'Give your provider this code'}
+                  code={deliveryCode}
+                  validUntil={deliveryCodeUntil}
+                  styles={styles}
+                  action={recipientName ? {
+                    label: `Send code to ${recipientName}`,
+                    onPress: () => {
+                      Share.share({
+                        message: `Your Dodorez delivery is with you. Give the provider this code: ${deliveryCode}${deliveryCodeUntil ? ` (valid until ${clockTime(deliveryCodeUntil)})` : ''}.`,
+                      }).catch(() => {});
+                    },
+                  } : undefined}
+                />
+              )}
+
+              {/* Delivered (a booked trip's photo is in its booking card). */}
+              {jobStatus === 'IN_PROGRESS' && jobKind === 'PICKUP_DROPOFF' && delivered && !paysUpfront && !!dropoffPhotoUrl && (
                 <Image source={{ uri: dropoffPhotoUrl }} style={styles.pickupPhoto} contentFit="cover" />
               )}
-              <ThemedText style={styles.inspectionCardBody}>
-                All good? Mark the job as completed, then rate your provider.
-              </ThemedText>
-            </View>
-          )}
-          {jobStatus === 'IN_PROGRESS' && jobKind === 'PICKUP_DROPOFF' && !delivered && (
-            deliveryCode ? (
-              <CodeCard
-                title={recipientName ? `Drop-off code for ${recipientName}` : 'Your drop-off code'}
-                code={deliveryCode}
-                body={recipientName
-                  ? `Send this code to ${recipientName}. They give it to your provider when it arrives — that's how we know it reached them.`
-                  : 'Give this code to your provider when they hand over your order.'}
-                styles={styles}
-                action={recipientName ? {
-                  label: `Send code to ${recipientName}`,
-                  onPress: () => {
-                    Share.share({
-                      message: `Your Dodorez delivery is with you. Give the provider this code: ${deliveryCode} (valid for a few minutes).`,
-                    }).catch(() => {});
-                  },
-                } : undefined}
-              />
-            ) : (
-              <View style={styles.inspectionCard}>
-                <ThemedText style={styles.inspectionCardTitle}>On the way to you</ThemedText>
-                <ThemedText style={styles.inspectionCardBody}>
-                  When your provider arrives, they'll ask for a code — it will show here.
-                </ThemedText>
-              </View>
-            )
-          )}
 
-          {jobStatus === 'INSPECTING' && !inspection.completed && (
-            <View style={styles.inspectionCard}>
-              <ThemedText style={styles.inspectionCardTitle}>Inspection in progress</ThemedText>
-              <ThemedText style={styles.inspectionCardBody}>
-                Your provider is inspecting the job on-site. You'll see their report here.
-              </ThemedText>
-            </View>
-          )}
-          {/* The report, to confirm — until it's confirmed (§4). */}
-          {jobId && (jobStatus === 'INSPECTING' || jobStatus === 'INVOICE_PENDING') && inspection.completed
-            && (!inspection.confirmed || jobStatus === 'INSPECTING') && (
-            <InspectionReportCard
-              jobId={jobId}
-              jobStatus={jobStatus}
-              report={inspection.report}
-              confirmed={inspection.confirmed}
-              disputed={inspection.disputed}
-              onChanged={() => setInspectionTick((t) => t + 1)}
-              onError={(title, message) => appAlert.show('error', title, message)}
-            />
-          )}
-
-          {/* Invoice — the real price, set only after inspection. */}
-          {jobStatus === 'INVOICE_PENDING' && invoice && (
-            <View style={styles.inspectionCard}>
-              <ThemedText style={styles.inspectionCardTitle}>
-                {invoice.status === 'COUNTERED' ? 'Waiting for provider…'
-                  : invoice.status === 'COUNTER_REJECTED' ? 'Original Price Offered'
-                  : invoice.status === 'ACCEPTED' ? 'Invoice Accepted'
-                  : 'Invoice Ready'}
-              </ThemedText>
-              <ThemedText style={styles.invoiceAmount}>
-                {/* final_amount is the one authoritative settled number once
-                    resolved — whether that's the original invoice.amount or
-                    a counter-offer the provider accepted. Falls back to
-                    counter_amount/amount only while still unresolved. */}
-                $ {Number(
-                  invoice.final_amount ?? (invoice.status === 'COUNTERED' ? invoice.counter_amount : invoice.amount)
-                ).toFixed(2)}
-              </ThemedText>
-              {invoice.materials?.length > 0 && (
-                <View style={{ marginBottom: 8 }}>
-                  {invoice.materials.map((m: any, idx: number) => (
-                    <ThemedText key={idx} style={styles.inspectionCardBody}>
-                      • {m.name} × {m.quantity} (${m.unit_cost}/ea)
-                    </ThemedText>
-                  ))}
-                </View>
-              )}
-              {invoice.notes && <ThemedText style={styles.inspectionCardBody}>{invoice.notes}</ThemedText>}
-              {invoice.status === 'PENDING' && jobId && <QuoteGuide jobId={jobId} />}
-              {invoice.visit_credit > 0 && (
-                <ThemedText style={[styles.inspectionCardBody, { marginTop: 6 }]}>
-                  The ${Number(invoice.visit_credit).toFixed(2)} visiting fee you paid counts toward this price.
-                </ThemedText>
-              )}
-              {invoice.deposit_percent > 0 && (
-                <ThemedText style={[styles.inspectionCardBody, { marginTop: 6 }]}>
-                  {invoice.deposit_percent}% goes to your provider when work starts, for parts and materials; the rest when the
-                  job is done. You pay it all now, and it's held safely until then.
-                </ThemedText>
+              {/* The inspection report, to look over — until it's confirmed (§4). */}
+              {jobId && (jobStatus === 'INSPECTING' || jobStatus === 'INVOICE_PENDING') && inspection.completed
+                && (!inspection.confirmed || jobStatus === 'INSPECTING') && (
+                <InspectionReportCard
+                  jobId={jobId}
+                  jobStatus={jobStatus}
+                  report={inspection.report}
+                  confirmed={inspection.confirmed}
+                  disputed={inspection.disputed}
+                  onChanged={() => setInspectionTick((t) => t + 1)}
+                  onError={(title, message) => appAlert.show('error', title, message)}
+                />
               )}
 
-              {invoice.status === 'PENDING' && !showCounterInput && (
-                // Primary action gets its own full-width row; Counter/Reject
-                // as compact secondary text buttons below. The previous
-                // 3-across row squeezed "Reject" into cancelButton — a fixed
-                // 56x56 circular icon button designed for a trash icon, not
-                // a text label — clipping/wrapping the word inside it.
-                <View style={{ marginTop: 8, gap: 8 }}>
-                  <TouchableOpacity
-                    style={[styles.completeJobBtn, { marginTop: 0 }]}
-                    onPress={() => handleRespondToInvoice('ACCEPT')}
-                    disabled={respondingToInvoice}
-                  >
-                    <ThemedText style={styles.completeJobBtnText}>Accept & Pay</ThemedText>
+              {/* The price — set only after the provider has seen the job. */}
+              {jobStatus === 'INVOICE_PENDING' && invoice && renderInvoice()}
+
+              {/* Work the provider asks to add mid-job (§11). */}
+              {jobId && !isCompleted && jobStatus === 'IN_PROGRESS' && (
+                <ExtraWorkCard jobId={jobId} onMessage={(kind, title, message) => appAlert.show(kind, title, message)} />
+              )}
+
+              {/* Done: the main button once it's handed over or the work is
+                  done. A delivery still on its way can be marked received
+                  early (handed over without the code) — offered quietly,
+                  not as the next step. */}
+              {!isCompleted && jobStatus === 'IN_PROGRESS' && (
+                jobKind === 'PICKUP_DROPOFF' && !delivered ? (
+                  <TouchableOpacity style={styles.quietLink} onPress={handleCompleteJob} accessibilityRole="button">
+                    <ThemedText style={styles.quietLinkText}>Already have it? Mark as received</ThemedText>
                   </TouchableOpacity>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <TouchableOpacity
-                      style={styles.invoiceSecondaryBtn}
-                      onPress={() => setShowCounterInput(true)}
-                      disabled={respondingToInvoice}
-                    >
-                      <ThemedText style={styles.invoiceSecondaryBtnText}>Counter</ThemedText>
-                    </TouchableOpacity>
-                    {/* Rejecting cancels the job — not once the provider has the order. */}
-                    {!orderCollected && (
-                      <TouchableOpacity
-                        style={[styles.invoiceSecondaryBtn, { backgroundColor: '#FEF2F2', borderColor: '#FEE2E2' }]}
-                        onPress={() => handleRespondToInvoice('REJECT')}
-                        disabled={respondingToInvoice}
-                      >
-                        <ThemedText style={[styles.invoiceSecondaryBtnText, { color: '#EF4444' }]}>Reject</ThemedText>
-                      </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity style={styles.completeJobBtn} onPress={handleCompleteJob} accessibilityRole="button">
+                    <ThemedText style={styles.completeJobBtnText}>Mark as completed</ThemedText>
+                  </TouchableOpacity>
+                )
+              )}
+
+              {/* ── The fine print, one tap away ─────────────────────────── */}
+              {hasTripDetails && (
+                <View style={styles.detailsBox}>
+                  <Disclosure label="Trip details" icon={<Receipt size={18} color={themeColors.textSecondary} />}>
+                    {paysUpfront && <CareTripDetails care={care} />}
+                    {vehicle && (
+                      <View style={styles.vehicleDetail}>
+                        {vehicle.photo_url
+                          ? <Image source={{ uri: vehicle.photo_url }} style={styles.vehiclePhoto} />
+                          : <View style={[styles.vehiclePhoto, styles.vehiclePhotoEmpty]}><VehicleIcon type={vehicle.vehicle_type} size={22} color="#6B7280" /></View>}
+                        <View style={{ flex: 1, gap: 4 }}>
+                          <ThemedText style={styles.vehicleName} numberOfLines={2}>{vehicle.description}</ThemedText>
+                          <View style={styles.checkedBadge}>
+                            <ShieldCheck size={12} color="#047857" />
+                            <ThemedText style={styles.checkedText}>Checked by Dodorez</ThemedText>
+                          </View>
+                        </View>
+                      </View>
                     )}
-                  </View>
+                    {jobKind === 'PICKUP_DROPOFF' && pickupFromPerson && !pickupConfirmedAt && (
+                      <ThemedText style={styles.inspectionCardBody}>
+                        Your provider checks the item before taking it, and can refuse anything that isn’t allowed.
+                      </ThemedText>
+                    )}
+                  </Disclosure>
                 </View>
               )}
-
-              {invoice.status === 'COUNTER_REJECTED' && (
-                // The provider declined the one counter-offer — the original
-                // amount (already what's shown above, since it's not
-                // 'COUNTERED') is back on the table. No Counter option here:
-                // the one-round cap was already spent on the earlier attempt.
-                <View style={{ marginTop: 8, gap: 8 }}>
-                  <ThemedText style={styles.inspectionCardBody}>
-                    {orderCollected
-                      ? 'Your provider declined your offer. Pay the original price to get your order, or report an issue below.'
-                      : 'Your provider declined your offer. Pay the original price to proceed, or cancel.'}
-                  </ThemedText>
-                  <TouchableOpacity
-                    style={[styles.completeJobBtn, { marginTop: 0 }]}
-                    onPress={() => handleRespondToInvoice('ACCEPT')}
-                    disabled={respondingToInvoice}
-                  >
-                    <ThemedText style={styles.completeJobBtnText}>Accept & Pay</ThemedText>
-                  </TouchableOpacity>
-                  {!orderCollected && (
-                    <TouchableOpacity
-                      style={[styles.invoiceSecondaryBtn, { backgroundColor: '#FEF2F2', borderColor: '#FEE2E2' }]}
-                      onPress={() => handleRespondToInvoice('REJECT')}
-                      disabled={respondingToInvoice}
-                    >
-                      <ThemedText style={[styles.invoiceSecondaryBtnText, { color: '#EF4444' }]}>Reject & Cancel Job</ThemedText>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-
-              {invoice.status === 'PENDING' && showCounterInput && (
-                <View style={{ marginTop: 8 }}>
-                  <TextInput
-                    style={[styles.counterInput, { fontWeight: '700', fontSize: 17 }]}
-                    placeholder="Your offer ($)"
-                    placeholderTextColor="#9CA3AF"
-                    keyboardType="numeric"
-                    value={counterAmountInput}
-                    onChangeText={setCounterAmountInput}
-                    onFocus={scrollToFocusedInput}
-                  />
-                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                    {/* completeJobBtn is 48px tall with its own marginTop:16;
-                        callButton is 56px with none — mismatched heights and
-                        an offset only one of them had was why these two never
-                        actually lined up in the same row. Both now share one
-                        explicit height/margin regardless of their base styles. */}
-                    <TouchableOpacity
-                      style={[styles.completeJobBtn, { flex: 1, height: 52, marginTop: 0 }]}
-                      onPress={() => handleRespondToInvoice('COUNTER')}
-                      disabled={respondingToInvoice}
-                    >
-                      <ThemedText style={styles.completeJobBtnText}>Send Offer</ThemedText>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.callButton, { flex: 1, height: 52 }]}
-                      onPress={() => setShowCounterInput(false)}
-                    >
-                      <ThemedText style={styles.actionBtnText}>Cancel</ThemedText>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-
-              {invoice.status === 'COUNTERED' && (
-                <ThemedText style={styles.inspectionCardBody}>
-                  You offered ${invoice.counter_amount} — waiting for the provider to respond.
-                </ThemedText>
-              )}
-
-              {invoice.status === 'ACCEPTED' && (
-                <>
-                  <ThemedText style={styles.inspectionCardBody}>
-                    {invoice.counter_amount != null
-                      ? 'Your provider accepted your counter-offer — pay now to start the job.'
-                      : 'Pay now to start the job.'}
-                  </ThemedText>
-                  <TouchableOpacity
-                    style={[styles.completeJobBtn, { marginTop: 8 }]}
-                    onPress={handlePayAcceptedInvoice}
-                    disabled={respondingToInvoice}
-                  >
-                    <ThemedText style={styles.completeJobBtnText}>
-                      {respondingToInvoice ? 'Processing…' : 'Pay Now'}
-                    </ThemedText>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-          )}
-
-          {/* Work the provider asks to add mid-job (§11). */}
-          {jobId && !isCompleted && jobStatus === 'IN_PROGRESS' && (
-            <ExtraWorkCard jobId={jobId} onMessage={(kind, title, message) => appAlert.show(kind, title, message)} />
-          )}
-
-          {/* Mark as Completed Button */}
-          {!isCompleted && jobStatus === 'IN_PROGRESS' && (
-            <TouchableOpacity
-              style={styles.completeJobBtn}
-              onPress={handleCompleteJob}
-            >
-              <ThemedText style={styles.completeJobBtnText}>Mark as Completed</ThemedText>
-            </TouchableOpacity>
-          )}
-
-          {/* Backend accepts a dispute for IN_PROGRESS or COMPLETED, or once a
-              delivery order is collected (can_dispute in app/domain/pickup.py)
-              — before that, cancel is the right action instead. */}
-          {(jobStatus === 'IN_PROGRESS' || isCompleted
-            || (orderCollected && (jobStatus === 'ACCEPTED' || jobStatus === 'INVOICE_PENDING'))) && (
-            <TouchableOpacity
-              style={styles.reportIssueBtn}
-              onPress={() => setIsDisputeModalVisible(true)}
-            >
-              <ThemedText style={styles.reportIssueBtnText}>Report an Issue</ThemedText>
-            </TouchableOpacity>
+            </>
           )}
         </ScrollView>
       </Animated.View>
       </KeyboardAvoidingView>
+
+      <JobMenu
+        visible={menuOpen}
+        canCancel={canCancel}
+        canReport={canReport}
+        onPick={pickMenu}
+        onClose={() => setMenuOpen(false)}
+      />
 
       {jobId && (
         <CheckoutSheet
@@ -1638,44 +1723,6 @@ export default function TrackProviderScreen() {
 function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: t.card },
   map: { ...StyleSheet.absoluteFillObject },
-  header: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 40,
-    left: 20,
-    right: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: t.card,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 4,
-  },
-  statusPill: {
-    backgroundColor: t.card,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 24,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 4,
-  },
-  statusText: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontFamily: Fonts.poppinsBold,
-    color: t.textPrimary,
-  },
   bottomSheetKeyboardWrapper: {
     position: 'absolute',
     bottom: 0,
@@ -1685,7 +1732,36 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   // Rounded like the panel, so content scrolls under its top corners, not
   // over them (clipped here, not on the panel: that would cut iOS's shadow).
   bottomSheetScroll: { borderTopLeftRadius: 32, borderTopRightRadius: 32, overflow: 'hidden' },
-  bottomSheetContent: { padding: 24 },
+  bottomSheetContent: { paddingHorizontal: 20, paddingTop: 4, gap: 16 },
+  // Over the map: back on the left, follow-the-provider on the right.
+  topBar: {
+    position: 'absolute', left: 16, right: 16, zIndex: 10,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+  },
+  roundMapButton: {
+    width: 44, height: 44, borderRadius: 22, backgroundColor: t.card,
+    justifyContent: 'center', alignItems: 'center',
+    shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 5,
+  },
+  // The sheet's grab handle: swipe or tap it to fold the sheet to its headline.
+  handleArea: { alignItems: 'center', paddingTop: 10, paddingBottom: 8 },
+  handleHit: { paddingHorizontal: 24, paddingVertical: 4 },
+  handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: t.border },
+  stageRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  stageTitle: { fontSize: 22, lineHeight: 29, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
+  stageSubtitle: { fontSize: 13.5, lineHeight: 19, fontFamily: Fonts.poppins, color: t.textSecondary, marginTop: 2 },
+  etaChip: { minWidth: 72, alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: t.brand },
+  etaBig: { fontSize: 22, lineHeight: 26, fontFamily: Fonts.poppinsBold, color: '#111827' },
+  etaSmall: { fontSize: 11.5, lineHeight: 15, fontFamily: Fonts.poppinsSemiBold, color: '#111827' },
+  rule: { height: 1, backgroundColor: t.borderSubtle },
+  quietLink: { alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 12 },
+  quietLinkText: { fontSize: 13.5, lineHeight: 19, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary, textDecorationLine: 'underline' },
+  detailsBox: { borderTopWidth: 1, borderTopColor: t.borderSubtle },
+  vehicleDetail: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  photoNote: { padding: 12, borderRadius: 16, borderWidth: 1, borderColor: t.border, backgroundColor: t.card, gap: 10 },
+  photoNoteRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  photoThumb: { width: 52, height: 52, borderRadius: 10, backgroundColor: t.inputFilled },
+  photoNoteTitle: { fontSize: 14.5, lineHeight: 20, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
   bottomSheet: {
     backgroundColor: t.card,
     borderTopLeftRadius: 32,
@@ -1696,117 +1772,14 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     shadowRadius: 10,
     elevation: 10,
   },
-  arrivalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  arrivingLabel: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontFamily: Fonts.poppins,
-    color: t.textSecondary,
-  },
-  etaText: {
-    fontSize: 24,
-    lineHeight: 30,
-    fontFamily: Fonts.poppinsBold,
-    color: t.textPrimary,
-  },
-  distanceBadge: {
-    backgroundColor: t.inputFilled,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  distanceText: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontFamily: Fonts.poppinsBold,
-    color: t.textPrimary,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: t.inputFilled,
-    marginBottom: 20,
-  },
-  providerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: t.inputFilled,
-  },
-  providerInfo: {
-    flex: 1,
-    marginLeft: 16,
-  },
-  vehicleCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12, padding: 12,
-    borderRadius: 16, backgroundColor: t.inputFilled,
-  },
   vehiclePhoto: { width: 64, height: 52, borderRadius: 10, backgroundColor: '#E5E7EB' },
   vehiclePhotoEmpty: { alignItems: 'center', justifyContent: 'center' },
-  vehicleLabel: { fontSize: 11.5, lineHeight: 15, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary },
   vehicleName: { fontSize: 14, lineHeight: 19, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
-  plate: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginTop: 2,
-    paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, borderWidth: 1.5, borderColor: '#111827', backgroundColor: '#FFFFFF',
-  },
-  plateText: { fontSize: 13, lineHeight: 18, fontFamily: Fonts.poppinsBold, color: '#111827', letterSpacing: 1 },
-  plateState: { fontSize: 10, lineHeight: 14, fontFamily: Fonts.poppinsSemiBold, color: '#6B7280' },
   checkedBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 3,
     borderRadius: 999, backgroundColor: '#ECFDF5', alignSelf: 'flex-start',
   },
   checkedText: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppinsSemiBold, color: '#047857' },
-  providerName: {
-    fontSize: 18,
-    lineHeight: 24,
-    fontFamily: Fonts.poppinsBold,
-    color: t.textPrimary,
-  },
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 2,
-  },
-  roleText: {
-    fontSize: 13,
-    lineHeight: 19,
-    fontFamily: Fonts.poppins,
-    color: t.textSecondary,
-  },
-  dot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: t.border,
-  },
-  ratingText: {
-    fontSize: 13,
-    lineHeight: 19,
-    fontFamily: Fonts.poppinsBold,
-    color: t.textPrimary,
-  },
-  shieldBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#ECFDF5',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  actionRow: {
-    flexDirection: 'row',
-    gap: 16,
-  },
   callButton: {
     flex: 1,
     height: 56,
@@ -1821,72 +1794,23 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  msgButton: {
-    backgroundColor: '#111827',
-    shadowColor: '#000',
-  },
   actionBtnText: {
     fontSize: 16,
     lineHeight: 22,
     fontFamily: Fonts.poppinsBold,
     color: '#000',
   },
-  locateMeContainer: {
-    position: 'absolute',
-    // Was pinned a fixed 300px from the screen bottom — fine for the
-    // original short sheet (ETA + provider info + buttons), but the sheet
-    // now grows much taller once the OTP/invoice/counter-offer sections
-    // appear, so this fixed offset ended up sitting inside the sheet's own
-    // content instead of above it. Anchoring from the top of the map
-    // (below the header) keeps it clear of the sheet regardless of how
-    // tall it gets.
-    top: Platform.OS === 'ios' ? 120 : 100,
-    right: 20,
-    zIndex: 11,
-  },
-  locateMeButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: t.card,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 6,
-    borderWidth: 1,
-    borderColor: t.inputFilled,
-  },
   locateMeButtonActive: {
     backgroundColor: '#4285F4',
     borderColor: '#4285F4',
   },
-  cancelButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#FEF2F2',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#FEE2E2',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    elevation: 2,
-  },
+  // The screen's main button — the brand's, as Book and the rest of the app.
   completeJobBtn: {
-    marginTop: 16,
-    height: 48,
-    backgroundColor: '#10B981',
-    borderRadius: 24,
+    height: 52,
+    backgroundColor: '#FFCE48',
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#10B981',
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 2,
   },
   invoiceSecondaryBtn: {
     flex: 1,
@@ -1905,28 +1829,18 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     color: '#111827',
   },
   completeJobBtnText: {
-    color: '#fff',
-    fontSize: 14,
-    lineHeight: 20,
+    color: '#111827',
+    fontSize: 15,
+    lineHeight: 21,
     fontFamily: Fonts.poppinsBold,
   },
-  reportIssueBtn: {
-    marginTop: 10,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  reportIssueBtnText: {
-    color: '#EF4444',
-    fontSize: 13,
-    lineHeight: 18,
-    fontFamily: Fonts.poppinsSemiBold,
-  },
   inspectionCard: {
-    marginTop: 16,
     padding: 16,
     borderRadius: 16,
-    backgroundColor: t.inputFilled,
+    backgroundColor: t.card,
+    borderWidth: 1,
+    borderColor: t.border,
+    gap: 10,
   },
   inspectionCardTitle: {
     fontSize: 15,
@@ -1942,13 +1856,11 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   pickupPhoto: {
     width: '100%',
-    height: 160,
-    borderRadius: 12,
-    marginBottom: 10,
+    height: 180,
+    borderRadius: 14,
     backgroundColor: t.inputFilled,
   },
   otpCard: {
-    marginTop: 16,
     padding: 20,
     borderRadius: 20,
     backgroundColor: t.card,
