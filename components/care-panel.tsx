@@ -105,6 +105,14 @@ export function CarePanel({ jobId, care, onMessage }: Props) {
   };
 
   const waiting = waitLine(job, wait);
+  // A running clock at a stop the customer isn't at (server: can_stop false there).
+  const running = !!wait && wait.counts && !!wait.stop_arrived_at && !wait.stopped_at
+    && (wait.stage === 'PICKUP' || wait.stage === 'DROPOFF');
+  const elsewhere = running && !wait.can_stop
+    ? (wait.stage === 'PICKUP'
+      ? `${job.pickup_details?.handover_name ?? 'The person at the pickup'} hands it over — waiting stops when your provider confirms the pickup.`
+      : `${job.pickup_details?.recipient_name ?? 'Your recipient'} receives it — waiting stops when they give your provider the code.`)
+    : null;
   const handBack = job.status === 'IN_PROGRESS' && steps.includes('HANDBACK_CODE') && (!delivery || !!job.delivered_at);
 
   return (
@@ -189,6 +197,8 @@ export function CarePanel({ jobId, care, onMessage }: Props) {
           {wait?.can_stop && (wait.stage === 'PICKUP' || wait.stage === 'DROPOFF') && (
             <HandedOverButton onPress={stopWaiting} busy={stopping} />
           )}
+          {/* Someone else is at this stop: they end it, not a guess from here. */}
+          {!!elsewhere && <ThemedText style={[s.muted, { color: t.textSecondary }]}>{elsewhere}</ThemedText>}
         </View>
       )}
 
