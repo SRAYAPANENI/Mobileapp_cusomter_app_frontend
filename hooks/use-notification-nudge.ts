@@ -1,15 +1,18 @@
 import { notificationsBlocked } from '@/services/notification-permission';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AppState } from 'react-native';
+
+// Closed with ✕: for the rest of this launch — not just this mount of the
+// screen (the home screen mounts again after signing out and in).
+let closedThisLaunch = false;
 
 /** Whether to show "Turn on notifications": only while they're really off.
  * Checked again each time the app comes back to the front — turned on in
- * Settings, it goes away by itself. Closed with ✕, it stays closed until the
- * app is next opened. */
+ * Settings, it goes away by itself; back from Settings still off, it stays.
+ * Closed with ✕, it stays closed until the app is next opened. */
 export function useNotificationNudge(): { show: boolean; dismiss: () => void } {
   const [blocked, setBlocked] = useState(false);
-  const dismissed = useRef(false);
-  const [, rerender] = useState(0);
+  const [closed, setClosed] = useState(closedThisLaunch);
 
   useEffect(() => {
     let alive = true;
@@ -24,9 +27,9 @@ export function useNotificationNudge(): { show: boolean; dismiss: () => void } {
   }, []);
 
   const dismiss = useCallback(() => {
-    dismissed.current = true;
-    rerender((n) => n + 1);
+    closedThisLaunch = true;
+    setClosed(true);
   }, []);
 
-  return { show: blocked && !dismissed.current, dismiss };
+  return { show: blocked && !closed, dismiss };
 }

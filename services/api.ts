@@ -1280,6 +1280,8 @@ export const SkoFyApi = {
       destination_lng: number | null;
       distance_km: number | null;
       eta_minutes: number | null;
+      /** The provider's own figures (their navigation screen), not an estimate. */
+      figures_from_provider?: boolean;
       /** Set once the job is cancelled — shown to the customer (e.g. a refused pickup). */
       cancellation_reason?: string | null;
     }> => request(`/jobs/${jobId}/track`),

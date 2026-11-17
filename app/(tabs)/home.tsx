@@ -1632,7 +1632,7 @@ export default function HomeScreen() {
               <ThemedText style={styles.notifNudgeTitle}>Turn on notifications</ThemedText>
               <ThemedText style={styles.notifNudgeText}>Get instant alerts when providers apply to your jobs.</ThemedText>
             </View>
-            <TouchableOpacity style={styles.notifNudgeBtn} onPress={() => { notifNudge.dismiss(); notifee.openNotificationSettings(); }}>
+            <TouchableOpacity style={styles.notifNudgeBtn} onPress={() => { notifee.openNotificationSettings(); }}>
               <ThemedText style={styles.notifNudgeBtnText}>Enable</ThemedText>
             </TouchableOpacity>
             <TouchableOpacity style={styles.notifNudgeDismiss} onPress={notifNudge.dismiss}>

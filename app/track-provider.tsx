@@ -6,7 +6,7 @@ import { ProviderStrip } from '@/components/tracking/provider-strip';
 import { TripProgress } from '@/components/tracking/trip-progress';
 import { useCareJob } from '@/hooks/use-care-job';
 import { trackingStage } from '@/services/tracking-stage';
-import { RouteFollower, estimate, haversineKm, type LatLng } from '@/services/route';
+import { RouteFollower, estimate, fromEncoded, haversineKm, progress, type LatLng, type Route } from '@/services/route';
 import { CancelJobModal } from '@/components/cancel-job-modal';
 import { DisputeModal } from '@/components/dispute-modal';
 import { ThemedText } from '@/components/themed-text';
@@ -65,6 +65,9 @@ if (Platform.OS !== 'web') {
 
 
 const TRACK_POLL_INTERVAL_MS = 2000;
+// The provider's phone sends its figures every few seconds while its
+// navigation screen is open; older than this, they've stopped.
+const PROVIDER_TRIP_FRESH_MS = 15_000;
 const ANIM_TICK_MS = 50; // ~20fps — smooth enough for a slow-moving marker, cheap on battery
 
 const WS_BASE = BASE_URL
@@ -326,6 +329,14 @@ export default function TrackProviderScreen() {
   const [provider, setProvider] = useState<TrackedProvider | null>(null);
   const [vehicle, setVehicle] = useState<ComingVehicle | null>(null);
   const [destination, setDestination] = useState<{ latitude: number; longitude: number } | null>(null);
+  const destinationRef = useRef<LatLng | null>(null);
+  useEffect(() => { destinationRef.current = destination; }, [destination]);
+  // The provider's own figures and road, while their navigation screen sends
+  // them (backend app/domain/trip_figures.py): shown exactly as they are, so
+  // both phones say the same miles and minutes. Without them (screen closed,
+  // older app), this phone works them out itself.
+  const providerTripRef = useRef<{ at: number; eta: number; miles: number; route: Route | null } | null>(null);
+  const providerTripFresh = () => !!providerTripRef.current && Date.now() - providerTripRef.current.at < PROVIDER_TRIP_FRESH_MS;
   const [eta, setEta] = useState('—');
   const [distance, setDistance] = useState('—');
   const [jobStatus, setJobStatus] = useState('ACCEPTED');
@@ -430,12 +441,37 @@ export default function TrackProviderScreen() {
   useEffect(() => {
     const id = setInterval(() => {
       if (!stillTravelling(jobStatusRef.current) || etaBaseRef.current == null) return;
+      if (providerTripFresh()) return;   // their figure, as they see it
       const elapsedMins = (Date.now() - etaSetAtRef.current) / 60000;
       const remaining = Math.max(0, Math.round(etaBaseRef.current - elapsedMins));
       setEta(`${remaining} min${remaining === 1 ? '' : 's'}`);
     }, 1000);
     return () => clearInterval(id);
   }, []);
+
+  // The provider's figures and road (a 'trip' message): for this stop only —
+  // a delivery's pickup figures mustn't show on the drive to the drop-off.
+  const applyProviderTrip = (msg: any) => {
+    const dest = destinationRef.current;
+    if (!dest || !stillTravelling(jobStatusRef.current)) return;
+    if (typeof msg.eta_min !== 'number' || typeof msg.distance_mi !== 'number') return;
+    if (haversineKm(dest, { latitude: msg.dest_lat, longitude: msg.dest_lng }) > 0.15) return;
+    const before = providerTripRef.current;
+    const route = typeof msg.route === 'string'
+      ? fromEncoded(msg.route, typeof msg.route_mins === 'number' ? msg.route_mins : msg.eta_min)
+      : before?.route ?? null;
+    providerTripRef.current = { at: Date.now(), eta: msg.eta_min, miles: msg.distance_mi, route };
+    setDistance(`${Number(msg.distance_mi).toFixed(1)} mi`);
+    setEta(`${msg.eta_min} min${msg.eta_min === 1 ? '' : 's'}`);
+    etaBaseRef.current = msg.eta_min;
+    etaSetAtRef.current = Date.now();
+    liveAtRef.current = Date.now();
+    if (route) {
+      fullRouteCoordsRef.current = route.coords;   // the marker snaps to their road
+      const here = currentPosRef.current;
+      if (here) setRouteCoords(progress(here, dest, route).coords);
+    }
+  };
 
   // Central location update handler — applies EMA smoothing, route snapping,
   // then feeds the animation system. Called from both WS and HTTP poll paths.
@@ -525,6 +561,8 @@ export default function TrackProviderScreen() {
           if (msg.type === 'handover_code') {
             pollNowRef.current?.();
             careReloadRef.current?.();
+          } else if (msg.type === 'trip') {
+            applyProviderTrip(msg);
           } else if (msg.type === 'location' && msg.lat != null && msg.lng != null) {
             lastWsLocRef.current = Date.now();
             applyLocation(
@@ -586,6 +624,14 @@ export default function TrackProviderScreen() {
           setDistance('0 mi');
           setEta(t.job_status === 'COMPLETED' ? 'Completed' : 'Arrived');
           etaBaseRef.current = null;
+        } else if (t.figures_from_provider && t.eta_minutes != null && t.distance_km != null
+                   && t.destination_lat != null && t.destination_lng != null) {
+          // The provider's figures, through the server while this phone's
+          // socket is down: as they are, the same as on their screen.
+          applyProviderTrip({
+            eta_min: t.eta_minutes, distance_mi: Math.round(kmToMiles(t.distance_km) * 10) / 10,
+            dest_lat: t.destination_lat, dest_lng: t.destination_lng,
+          });
         } else if (Date.now() - liveAtRef.current < 15_000) {
           // Worked out from a live location just now (services/route.ts): kept.
         } else if (t.eta_minutes != null) {
@@ -888,6 +934,7 @@ export default function TrackProviderScreen() {
   // is the wrong road (the follower drops it too, and any answer for it).
   useEffect(() => {
     fullRouteCoordsRef.current = [];
+    providerTripRef.current = null;
     setRouteCoords([]);
   }, [destination?.latitude, destination?.longitude]);
 
@@ -906,10 +953,22 @@ export default function TrackProviderScreen() {
     // straight line × 1.3 without one (services/route.ts). Every location,
     // so distance and time go down as they drive. Only a road is drawn:
     // without one the map shows the two ends, never a straight line.
+    const shared = providerTripRef.current;
+    if (shared?.route && providerTripFresh()) {
+      // Their figures stand (applyProviderTrip); their road, from where the
+      // marker is now. Nothing asked of Google from here.
+      setRouteCoords(progress(polledLoc, destination, shared.route).coords);
+      return;
+    }
+    // This phone's own road — and its own figures, unless theirs are fresh:
+    // their phone may have figures but no road to send (no route allowed on
+    // its key), and the map still draws one.
     const follower = followerRef.current!;
     follower.follow(polledLoc, destination, (left) => {
+      if (providerTripRef.current?.route && providerTripFresh()) return;   // their road arrived meanwhile
       fullRouteCoordsRef.current = follower.roadCoords;
       setRouteCoords(left.road ? left.coords : []);
+      if (providerTripFresh()) return;   // their miles and minutes stand
       setDistance(`${left.distanceMi.toFixed(1)} mi`);
       etaBaseRef.current = left.durationMins;
       etaSetAtRef.current = Date.now();

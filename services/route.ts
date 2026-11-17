@@ -24,6 +24,9 @@ export interface Route {
   road: boolean;
   distanceMi: number;
   durationMins: number;
+  /** Google's own encoding of the road — what the provider's phone sends the
+   * customer's, so both draw and measure the same road (fromEncoded). */
+  encoded?: string;
 }
 
 /** Roads aren't straight: a straight line × this is close to the driving distance. */
@@ -110,7 +113,7 @@ async function viaRoutesApi(origin: LatLng, dest: LatLng, key: string): Promise<
   const encoded = r?.polyline?.encodedPolyline;
   if (!encoded) return null;
   const seconds = parseInt(String(r.duration ?? '0'), 10) || 0;
-  return { coords: decodePolyline(encoded), road: true, distanceMi: (r.distanceMeters ?? 0) / 1609.344, durationMins: Math.max(1, Math.ceil(seconds / 60)) };
+  return { coords: decodePolyline(encoded), road: true, encoded, distanceMi: (r.distanceMeters ?? 0) / 1609.344, durationMins: Math.max(1, Math.ceil(seconds / 60)) };
 }
 
 async function viaDirectionsApi(origin: LatLng, dest: LatLng, key: string): Promise<Route | 'refused' | null> {
@@ -121,7 +124,7 @@ async function viaDirectionsApi(origin: LatLng, dest: LatLng, key: string): Prom
   const encoded = route?.overview_polyline?.points;
   const leg = route?.legs?.[0];
   if (!encoded || !leg) return null;
-  return { coords: decodePolyline(encoded), road: true, distanceMi: leg.distance.value / 1609.344, durationMins: Math.max(1, Math.ceil(leg.duration.value / 60)) };
+  return { coords: decodePolyline(encoded), road: true, encoded, distanceMi: leg.distance.value / 1609.344, durationMins: Math.max(1, Math.ceil(leg.duration.value / 60)) };
 }
 
 /** The road from `origin` to `dest`, or the straight-line estimate when
@@ -186,6 +189,11 @@ export class RouteFollower {
   constructor(private readonly key: string) {}
 
   /** The whole road being followed (empty without one) — to snap a marker to. */
+  /** The road being followed, if there is one (for the provider to send). */
+  get road(): Route | null {
+    return this.route?.road ? this.route : null;
+  }
+
   get roadCoords(): LatLng[] {
     return this.route?.road ? this.route.coords : [];
   }
@@ -231,6 +239,17 @@ export class RouteFollower {
 
 /** What's left of the trip from `here`: along the road route (trimmed to
  * start where the provider is), or the estimate without one. */
+/** A road the other phone sent (its encoding and Google's time for it). */
+export function fromEncoded(encoded: string, durationMins: number): Route | null {
+  try {
+    const coords = decodePolyline(encoded);
+    if (coords.length < 2) return null;
+    return { coords, road: true, encoded, distanceMi: lineKm(coords) / KM_PER_MILE, durationMins: Math.max(1, durationMins) };
+  } catch {
+    return null;   // a broken string: no road, not a crash
+  }
+}
+
 export function progress(here: LatLng, dest: LatLng, route: Route | null): Progress {
   if (!route || !route.road || route.coords.length < 2) {
     return { coords: [here, dest], road: false, ...estimate(here, dest) };
