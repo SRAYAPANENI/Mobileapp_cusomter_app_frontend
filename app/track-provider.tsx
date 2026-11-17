@@ -6,6 +6,7 @@ import { ProviderStrip } from '@/components/tracking/provider-strip';
 import { TripProgress } from '@/components/tracking/trip-progress';
 import { useCareJob } from '@/hooks/use-care-job';
 import { trackingStage } from '@/services/tracking-stage';
+import { RouteFollower, estimate, haversineKm, type LatLng } from '@/services/route';
 import { CancelJobModal } from '@/components/cancel-job-modal';
 import { DisputeModal } from '@/components/dispute-modal';
 import { ThemedText } from '@/components/themed-text';
@@ -65,43 +66,11 @@ if (Platform.OS !== 'web') {
 
 const TRACK_POLL_INTERVAL_MS = 2000;
 const ANIM_TICK_MS = 50; // ~20fps — smooth enough for a slow-moving marker, cheap on battery
-const ROUTE_REFETCH_KM = 0.3; // only re-fetch route when provider moves this far
 
 const WS_BASE = BASE_URL
   .replace(/^https:\/\//, 'wss://')
   .replace(/^http:\/\//, 'ws://');
 
-type LatLng = { latitude: number; longitude: number };
-
-function haversineKm(a: LatLng, b: LatLng): number {
-  const R = 6371;
-  const dLat = (b.latitude - a.latitude) * Math.PI / 180;
-  const dLon = (b.longitude - a.longitude) * Math.PI / 180;
-  const x = Math.sin(dLat / 2) ** 2 +
-    Math.cos(a.latitude * Math.PI / 180) * Math.cos(b.latitude * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
-}
-
-function decodePolyline(encoded: string): LatLng[] {
-  const coords: LatLng[] = [];
-  let index = 0, lat = 0, lng = 0;
-  while (index < encoded.length) {
-    let b: number, shift = 0, result = 0;
-    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
-    lat += (result & 1) ? ~(result >> 1) : result >> 1;
-    shift = result = 0;
-    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
-    lng += (result & 1) ? ~(result >> 1) : result >> 1;
-    coords.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
-  }
-  return coords;
-}
-
-function routeDistanceMi(coords: LatLng[]): number {
-  let km = 0;
-  for (let i = 1; i < coords.length; i++) km += haversineKm(coords[i - 1], coords[i]);
-  return kmToMiles(km);
-}
 
 // ── Smoothing / snapping / dead-reckoning helpers ────────────────────────────
 
@@ -155,24 +124,6 @@ function deadReckon(from: LatLng, speedMs: number, headingDeg: number, elapsedSe
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function fetchRoute(origin: LatLng, dest: LatLng): Promise<{ coords: LatLng[]; durationMins: number | null; distanceMi: number | null }> {
-  try {
-    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${dest.latitude},${dest.longitude}&mode=driving&key=${GOOGLE_PLACES_API_KEY}`;
-    const res = await fetch(url);
-    const json = await res.json();
-    if (json.status && json.status !== 'OK') {
-      console.warn('[Directions API] status:', json.status, json.error_message ?? '');
-    }
-    const encoded = json?.routes?.[0]?.overview_polyline?.points;
-    const leg = json?.routes?.[0]?.legs?.[0];
-    const durationMins = leg ? Math.ceil(leg.duration.value / 60) : null;
-    const distanceMi = leg ? leg.distance.value / 1609.34 : null;
-    if (encoded) return { coords: decodePolyline(encoded), durationMins, distanceMi };
-  } catch (e) {
-    console.warn('[Directions API] fetch error:', e);
-  }
-  return { coords: [origin, dest], durationMins: null, distanceMi: null };
-}
 
 interface TrackedProvider {
   id: string;
@@ -357,8 +308,12 @@ export default function TrackProviderScreen() {
   const animToRef = useRef<LatLng | null>(null);
   const animStartTimeRef = useRef(0);
   const currentPosRef = useRef<LatLng | null>(null);
-  const lastRouteFetchLocRef = useRef<LatLng | null>(null);
   const fullRouteCoordsRef = useRef<LatLng[]>([]);
+  // Follows the trip — when to ask for the road again (services/route.ts) —
+  // and when the distance and time were last worked out from a live location.
+  const followerRef = useRef<RouteFollower | null>(null);
+  if (!followerRef.current) followerRef.current = new RouteFollower(GOOGLE_PLACES_API_KEY);
+  const liveAtRef = useRef(0);
   const emaLocRef = useRef<LatLng | null>(null);
   const speedRef = useRef(0);    // m/s — last known from provider
   const headingRef = useRef(0);  // degrees clockwise from north
@@ -631,6 +586,8 @@ export default function TrackProviderScreen() {
           setDistance('0 mi');
           setEta(t.job_status === 'COMPLETED' ? 'Completed' : 'Arrived');
           etaBaseRef.current = null;
+        } else if (Date.now() - liveAtRef.current < 15_000) {
+          // Worked out from a live location just now (services/route.ts): kept.
         } else if (t.eta_minutes != null) {
           // Seed the countdown timer; 1s interval ticks it down from here
           etaBaseRef.current = t.eta_minutes;
@@ -640,15 +597,14 @@ export default function TrackProviderScreen() {
             setDistance(`${kmToMiles(t.distance_km).toFixed(1)} mi`);
           }
         } else if (t.provider_lat != null && t.provider_lng != null && t.destination_lat != null && t.destination_lng != null) {
-          // No ETA from backend at all — derive rough estimate from haversine + 25 km/h
-          const distKm = haversineKm(
+          // No ETA from the server: the same estimate as everywhere (services/route.ts).
+          const est = estimate(
             { latitude: t.provider_lat, longitude: t.provider_lng },
             { latitude: t.destination_lat, longitude: t.destination_lng },
           );
-          const etaMins = Math.max(1, Math.round(distKm / 25 * 60));
-          etaBaseRef.current = etaMins;
+          etaBaseRef.current = est.durationMins;
           etaSetAtRef.current = Date.now();
-          if (fullRouteCoordsRef.current.length < 2) setDistance(`${kmToMiles(distKm).toFixed(1)} mi`);
+          if (fullRouteCoordsRef.current.length < 2) setDistance(`${est.distanceMi.toFixed(1)} mi`);
         }
         // Pick up the provider completing the job from their own app, not just
         // the customer tapping "Mark as Completed" here.
@@ -928,46 +884,36 @@ export default function TrackProviderScreen() {
   // Each poll: trim the route so the blue line always starts at the provider's
   // current position (Google Maps style), and re-fetch the full route only
   // when the provider moves significantly.
-  // A new destination (a delivery's drop-off, once collected): the old route is the wrong road.
+  // A new destination (a delivery's drop-off, once collected): the old route
+  // is the wrong road (the follower drops it too, and any answer for it).
   useEffect(() => {
     fullRouteCoordsRef.current = [];
-    lastRouteFetchLocRef.current = null;
     setRouteCoords([]);
   }, [destination?.latitude, destination?.longitude]);
 
+  useEffect(() => () => followerRef.current?.stop(), []);
+
   useEffect(() => {
     const deliveryLeg = jobStatus === 'IN_PROGRESS' && jobKind === 'PICKUP_DROPOFF' && !delivered;
-    if (!polledLoc || !destination || (jobStatus !== 'ACCEPTED' && !deliveryLeg)) return;
-
-    // Trim existing route: find nearest point to provider, slice from there
-    const full = fullRouteCoordsRef.current;
-    if (full.length >= 2) {
-      let minIdx = 0, minDist = Infinity;
-      for (let i = 0; i < full.length; i++) {
-        const d = haversineKm(polledLoc, full[i]);
-        if (d < minDist) { minDist = d; minIdx = i; }
-      }
-      const trimmed = [polledLoc, ...full.slice(minIdx + 1)];
-      setRouteCoords(trimmed);
-      // Live distance from remaining road segments — updates on every location fix
-      const liveMi = routeDistanceMi(trimmed);
-      if (liveMi > 0) setDistance(`${liveMi.toFixed(1)} mi`);
+    if (!polledLoc || !destination || (jobStatus !== 'ACCEPTED' && !deliveryLeg)) {
+      // Arrived, collected or done: a road still on its way mustn't bring
+      // back a distance over "Arrived".
+      followerRef.current?.stop();
+      return;
     }
 
-    // Re-fetch full route from Directions API when provider moves 0.3km
-    const last = lastRouteFetchLocRef.current;
-    if (last && haversineKm(last, polledLoc) < ROUTE_REFETCH_KM) return;
-    lastRouteFetchLocRef.current = polledLoc;
-    fetchRoute(polledLoc, destination).then(({ coords, durationMins, distanceMi }) => {
-      fullRouteCoordsRef.current = coords;
-      setRouteCoords(coords);
-      // Seed ETA countdown from Directions API (accounts for traffic/roads)
-      if (durationMins != null) {
-        etaBaseRef.current = durationMins;
-        etaSetAtRef.current = Date.now();
-      }
-      // Road distance from API is more accurate than haversine sum — use it
-      if (distanceMi != null) setDistance(`${distanceMi.toFixed(1)} mi`);
+    // What's left, from where they are now — along the road route, or the
+    // straight line × 1.3 without one (services/route.ts). Every location,
+    // so distance and time go down as they drive. Only a road is drawn:
+    // without one the map shows the two ends, never a straight line.
+    const follower = followerRef.current!;
+    follower.follow(polledLoc, destination, (left) => {
+      fullRouteCoordsRef.current = follower.roadCoords;
+      setRouteCoords(left.road ? left.coords : []);
+      setDistance(`${left.distanceMi.toFixed(1)} mi`);
+      etaBaseRef.current = left.durationMins;
+      etaSetAtRef.current = Date.now();
+      liveAtRef.current = Date.now();
     });
   }, [polledLoc, destination, jobStatus, jobKind, delivered]);
 
