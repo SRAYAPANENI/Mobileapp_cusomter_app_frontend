@@ -1,15 +1,34 @@
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
+import { AppState } from 'react-native';
 
 const APP_LOCK_KEY = 'skofy_app_lock_enabled';
 
 export const AppLock = {
+  /** Woken with the phone locked (a call, a notification), iOS can keep the
+   * setting shut: failing then left the lock off for that whole run, so the
+   * app opened unlocked. Waits until it can be read — the app in front. */
   async isEnabled(): Promise<boolean> {
-    return (await SecureStore.getItemAsync(APP_LOCK_KEY)) === 'true';
+    for (;;) {
+      try {
+        return (await SecureStore.getItemAsync(APP_LOCK_KEY)) === 'true';
+      } catch {
+        await new Promise<void>(resolve => {
+          const retry = setTimeout(done, 2_000);
+          const sub = AppState.addEventListener('change', state => { if (state === 'active') done(); });
+          function done() { clearTimeout(retry); sub.remove(); resolve(); }
+        });
+      }
+    }
   },
 
   async setEnabled(enabled: boolean): Promise<void> {
-    await SecureStore.setItemAsync(APP_LOCK_KEY, enabled ? 'true' : 'false');
+    // Removed first: writing over an entry keeps how it was first stored,
+    // and this one must be readable while the phone is locked.
+    await SecureStore.deleteItemAsync(APP_LOCK_KEY);
+    await SecureStore.setItemAsync(APP_LOCK_KEY, enabled ? 'true' : 'false', {
+      keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+    });
   },
 
   // Whether this device can actually do biometric auth right now — no

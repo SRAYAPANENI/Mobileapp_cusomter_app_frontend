@@ -171,8 +171,11 @@ export default function JobSummaryScreen() {
             name: m.uri.split('/').pop() || 'media.jpg',
           }));
           imageUrls = await SkoFyApi.jobs.uploadMedia(files);
-        } catch {
-          // Non-fatal — job still posts without images
+        } catch (err: any) {
+          // Not posted without them: the customer is told, the photos stay,
+          // and they try again or remove them.
+          alert.show('error', 'Photos Not Uploaded', err?.message);
+          return;
         }
       }
 

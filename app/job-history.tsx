@@ -31,6 +31,12 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 import { usePullRefresh } from '@/hooks/use-pull-refresh';
+import { usePagedTabs } from '@/hooks/use-paged-tabs';
+
+// Finished from the customer's side — DISPUTED too, it can still be rated.
+const HISTORY_STATUSES = ['COMPLETED', 'DISPUTED', 'CANCELLED'];
+const HISTORY_PAGE_SIZE = 20;
+const HISTORY_MAX_READ = 100;
 
 interface JobReview {
   skill_rating: number;
@@ -59,6 +65,8 @@ interface JobHistoryItem {
   /** The agreed quote, if there was one — suggested as a repeat booking's limit. */
   lastPrice: number | null;
   status: 'Completed' | 'Disputed' | 'Cancelled';
+  /** As the server sent it (to the microsecond): where the next page starts. */
+  createdAt: string;
   review: JobReview | null;           // what customer gave provider
   customer_review: CustomerReview | null; // what provider gave customer
 }
@@ -81,25 +89,35 @@ export default function JobHistoryScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
-  const [history, setHistory] = useState<JobHistoryItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Read a page at a time, more on scrolling: this used to be the newest 50
+  // jobs of every kind, filtered here — older finished jobs never showed, so
+  // they couldn't be rated, tipped, claimed or booked again.
+  const feed = usePagedTabs<'history', JobHistoryItem>(async (_, last, limit) => {
+    const jobs = await SkoFyApi.jobs.listByStatus(
+      HISTORY_STATUSES, limit, last && { created_at: last.createdAt, id: last.id },
+    );
+    return (Array.isArray(jobs) ? jobs : []).map(toHistoryItem);
+  }, HISTORY_PAGE_SIZE, HISTORY_MAX_READ);
+  const shown = feed.page('history');
+  const history = shown.items;
+  const loading = !shown.loaded;
+  const loadError = shown.failed;
   // Offline with nothing loaded: the shared page; reloads when back online.
   const offline = useOfflinePage(history.length > 0, () => { void fetchHistory(); });
-  const [loadError, setLoadError] = useState(false);
   const [ratingTarget, setRatingTarget] = useState<{ jobId: string; providerName: string } | null>(null);
   const [tipTarget, setTipTarget] = useState<{ jobId: string; providerName: string } | null>(null);
   const appAlert = useAppAlert();
   const [guaranteeJob, setGuaranteeJob] = useState<string | null>(null);
   const [repeatJob, setRepeatJob] = useState<{ jobId: string; providerName: string; lastPrice: number | null } | null>(null);
 
-  const fetchHistory = useCallback(async (quiet = false) => {
-    try {
-      const jobs = await SkoFyApi.jobs.list();
-      const filtered = (Array.isArray(jobs) ? jobs : [])
-        // DISPUTED is finished from the customer's side too — and can still be rated.
-        .filter((j: any) => j.status === 'COMPLETED' || j.status === 'DISPUTED' || j.status === 'CANCELLED')
-        .sort((a: any, b: any) => new Date(b.updated_at ?? b.created_at).getTime() - new Date(a.updated_at ?? a.created_at).getTime());
-      setHistory(filtered.map((j: any) => ({
+  // Read again from the top, as far down as was shown; a failed read keeps
+  // what's shown (an empty list says it couldn't load).
+  const fetchHistory = useCallback(async (_quiet = false) => {
+    await feed.reload('history');
+  }, [feed.reload]);
+
+  function toHistoryItem(j: any): JobHistoryItem {
+      return ({
         id: j.id,
         title: j.title,
         professional: j.assigned_provider?.name ?? 'No provider assigned',
@@ -107,6 +125,7 @@ export default function JobHistoryScreen() {
         price: `$ ${j.inspection_fee ?? 0}`,
         lastPrice: j.invoice?.final_amount ?? null,
         status: j.status === 'COMPLETED' ? 'Completed' : j.status === 'DISPUTED' ? 'Disputed' : 'Cancelled',
+        createdAt: j.created_at,
         review: j.review ?? null,
         customer_review: j.customer_review ? {
           overall: j.customer_review.overall_rating,
@@ -116,14 +135,8 @@ export default function JobHistoryScreen() {
           environment: j.customer_review.environment_rating,
           comment: j.customer_review.comment ?? null,
         } : null,
-      })));
-      setLoadError(false);
-    } catch {
-      if (!quiet) setLoadError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      });
+  }
 
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
   // Quiet unless the error is showing: then a good reload replaces it.
@@ -137,7 +150,9 @@ export default function JobHistoryScreen() {
 
   const renderItem = ({ item, index }: { item: JobHistoryItem; index: number }) => (
     <Animated.View
-      entering={FadeInDown.delay(index * 100)}
+      // Only the first few are staggered: read a page at a time, a card far
+      // down would wait seconds to appear.
+      entering={FadeInDown.delay(Math.min(index, 5) * 100)}
       style={styles.card}
     >
       <View style={styles.cardHeader}>
@@ -344,6 +359,11 @@ export default function JobHistoryScreen() {
           // Keyboard-aware: a box in a row scrolls up above the keyboard.
           renderScrollComponent={(props) => <KeyboardAwareScrollView {...props} bottomOffset={24} />}
           data={history}
+          onEndReached={() => { void feed.loadMore('history'); }}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={shown.loadingMore ? (
+            <ActivityIndicator color={themeColors.brand} style={{ paddingVertical: 20 }} />
+          ) : null}
           renderItem={renderItem}
           keyExtractor={item => item.id}
           contentContainerStyle={padBottom(styles.listContent, bottomInset)}

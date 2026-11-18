@@ -59,15 +59,18 @@ export default function AppLockGate({ children }: { children: React.ReactNode })
     const sub = AppState.addEventListener('change', async (next) => {
       const prev = appState.current;
       appState.current = next;
+      // Taken before the read: with the phone locked the read can wait until
+      // it's unlocked, and timing from then made every absence look instant.
+      const at = Date.now();
       const isEnabled = await AppLock.isEnabled();
       if (!isEnabled) {
         backgroundedAt.current = null;
         return;
       }
       if (prev === 'active' && next !== 'active') {
-        backgroundedAt.current = Date.now();
+        backgroundedAt.current = at;
       } else if (next === 'active' && prev !== 'active') {
-        const awayMs = backgroundedAt.current ? Date.now() - backgroundedAt.current : Infinity;
+        const awayMs = backgroundedAt.current ? at - backgroundedAt.current : Infinity;
         backgroundedAt.current = null;
         // A call/chat screen being open (or an incoming call in the process
         // of being answered — see isCallScreenActive's own comment) means

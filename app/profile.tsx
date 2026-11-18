@@ -687,6 +687,294 @@ export default function ProfileScreen() {
     }, [])
   );
 
+  // Server drops this phone's tokens; the phone also has Firebase forget its
+  // token and stops any ringing, so a failed server call can't leave it
+  // ringing after logout. The home cache goes too, on top of its own
+  // per-account check — the next customer on this phone never sees this one.
+  const handleLogout = async () => {
+    await signOutDevice();
+    await clearHomeCache().catch(() => {});
+    router.replace('/login');
+  };
+
+  // Settings — Logout above all — never depend on the profile having loaded:
+  // when it failed, the only way out (log out, log in) used to be hidden
+  // behind it, leaving a customer stuck on "We couldn't load your profile".
+  // Change Password and the screen's messages go with it, or their rows in
+  // the sheet would do nothing there.
+  const settingsSheet = (
+    <>
+      <Popup closeOn="outside" statusBarTranslucent navigationBarTranslucent
+        visible={isSettingsOpen}
+        transparent={true}
+        animationType="slide"
+        onClose={() => setIsSettingsOpen(false)}
+      >
+        {/* Stops below the status bar and the list scrolls: with every row it
+            can be taller than a small screen, and a bottom-anchored sheet then
+            grows up under the status bar. */}
+        <View style={[styles.modalOverlay, { paddingTop: insets.top + 12 }]}>
+          <PopupCard style={[styles.modalContent, modalBottomPad, { maxHeight: '100%' }]}>
+            <View style={styles.modalHeader}>
+              <ThemedText style={styles.modalTitle}>Settings</ThemedText>
+              <TouchableOpacity onPress={() => setIsSettingsOpen(false)}>
+                <XCircle size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={styles.settingsList} showsVerticalScrollIndicator={false}>
+              <TouchableOpacity
+                style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}
+                onPress={() => { setIsSettingsOpen(false); openEditDetails(); }}
+              >
+                <View style={styles.settingInfo}>
+                  <UserPen size={20} color="#6B7280" />
+                  <ThemedText style={styles.settingLabel}>Edit details</ThemedText>
+                </View>
+                <ChevronRight size={20} color="#D1D5DB" />
+              </TouchableOpacity>
+
+              <View style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}>
+                <View style={styles.settingInfo}>
+                  <Bell size={20} color="#6B7280" />
+                  <ThemedText style={styles.settingLabel}>Push Notifications</ThemedText>
+                </View>
+                <Switch
+                  value={pushEnabled}
+                  onValueChange={setPushEnabled}
+                  trackColor={{ false: '#D1D5DB', true: '#FFCE48' }}
+                  thumbColor="#fff"
+                />
+              </View>
+
+              <View style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}>
+                <View style={styles.settingInfo}>
+                  <Fingerprint size={20} color="#6B7280" />
+                  <ThemedText style={styles.settingLabel}>App Lock</ThemedText>
+                </View>
+                <Switch
+                  value={appLockEnabled}
+                  onValueChange={handleToggleAppLock}
+                  trackColor={{ false: '#D1D5DB', true: '#FFCE48' }}
+                  thumbColor="#fff"
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}
+                onPress={() => {
+                  setIsSettingsOpen(false);
+                  setTimeout(() => setIsPasswordOpen(true), 500);
+                }}
+              >
+                <View style={styles.settingInfo}>
+                  <Lock size={20} color="#6B7280" />
+                  <ThemedText style={styles.settingLabel}>Change Password</ThemedText>
+                </View>
+                <ChevronRight size={20} color="#D1D5DB" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}
+                onPress={() => {
+                  setIsSettingsOpen(false);
+                  router.push('/terms' as any);
+                }}
+              >
+                <View style={styles.settingInfo}>
+                  <FileText size={20} color="#6B7280" />
+                  <ThemedText style={styles.settingLabel}>Terms & Conditions</ThemedText>
+                </View>
+                <ChevronRight size={20} color="#D1D5DB" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}
+                onPress={() => {
+                  setIsSettingsOpen(false);
+                  router.push('/account-standing' as any);
+                }}
+              >
+                <View style={styles.settingInfo}>
+                  <Gift size={20} color="#6B7280" />
+                  <ThemedText style={styles.settingLabel}>Credits & account</ThemedText>
+                </View>
+                <ChevronRight size={20} color="#D1D5DB" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}
+                onPress={() => {
+                  setIsSettingsOpen(false);
+                  router.push('/regular-bookings' as any);
+                }}
+              >
+                <View style={styles.settingInfo}>
+                  <Repeat size={20} color="#6B7280" />
+                  <ThemedText style={styles.settingLabel}>Regular bookings</ThemedText>
+                </View>
+                <ChevronRight size={20} color="#D1D5DB" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}
+                onPress={() => {
+                  setIsSettingsOpen(false);
+                  router.push('/help-support');
+                }}
+              >
+                <View style={styles.settingInfo}>
+                  <MessageSquare size={20} color="#6B7280" />
+                  <ThemedText style={styles.settingLabel}>Help & Support</ThemedText>
+                </View>
+                <ChevronRight size={20} color="#D1D5DB" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}
+                onPress={() => {
+                  setIsSettingsOpen(false);
+                  router.push('/delete-account' as any);
+                }}
+              >
+                <View style={styles.settingInfo}>
+                  <Trash2 size={20} color="#6B7280" />
+                  <ThemedText style={styles.settingLabel}>Delete account</ThemedText>
+                </View>
+                <ChevronRight size={20} color="#D1D5DB" />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.settingItem} onPress={() => { setIsSettingsOpen(false); void handleLogout(); }}>
+                <View style={styles.settingInfo}>
+                  <LogOut size={20} color="#EF4444" />
+                  <ThemedText style={[styles.settingLabel, { color: '#EF4444' }]}>Logout</ThemedText>
+                </View>
+              </TouchableOpacity>
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.closeModalButton}
+              onPress={() => setIsSettingsOpen(false)}
+            >
+              <ThemedText style={styles.closeModalButtonText}>Close</ThemedText>
+            </TouchableOpacity>
+          </PopupCard>
+        </View>
+      </Popup>
+
+      {/* Change Password Modal */}
+      <Popup closeOn={isSavingPassword ? 'none' : 'back'} statusBarTranslucent navigationBarTranslucent
+        visible={isPasswordOpen}
+        animationType="fade"
+        transparent
+        onClose={() => { setIsPasswordOpen(false); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setShowCurrentPassword(false); setShowNewPassword(false); setShowConfirmPassword(false); }}
+      >
+        <KeyboardAvoidingView
+          style={[styles.modalOverlay, { justifyContent: 'center', padding: 20 }]}
+          behavior="padding"
+          automaticOffset
+        >
+          <View style={[styles.modalContent, { borderRadius: 24 }, modalBottomPad]}>
+            <ThemedText style={[styles.modalTitle, { marginBottom: 20 }]}>Change Password</ThemedText>
+            <ThemedText style={styles.inputLabel}>Current Password</ThemedText>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+              <TextInput
+                placeholder="Enter current password"
+                placeholderTextColor={themeColors.icon}
+                secureTextEntry={!showCurrentPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={currentPassword}
+                onChangeText={setCurrentPassword}
+                style={[styles.editableInput, { flex: 1, paddingRight: 44 }]}
+              />
+              <TouchableOpacity
+                style={{ position: 'absolute', right: 12 }}
+                onPress={() => setShowCurrentPassword(v => !v)}
+              >
+                {showCurrentPassword ? (
+                  <EyeOff size={18} color={themeColors.icon} />
+                ) : (
+                  <Eye size={18} color={themeColors.icon} />
+                )}
+              </TouchableOpacity>
+            </View>
+            <ThemedText style={styles.inputLabel}>New Password</ThemedText>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+              <TextInput
+                placeholder="New password"
+                placeholderTextColor={themeColors.icon}
+                secureTextEntry={!showNewPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={newPassword}
+                onChangeText={setNewPassword}
+                style={[styles.editableInput, { flex: 1, paddingRight: 44 }]}
+              />
+              <TouchableOpacity
+                style={{ position: 'absolute', right: 12 }}
+                onPress={() => setShowNewPassword(v => !v)}
+              >
+                {showNewPassword ? (
+                  <EyeOff size={18} color={themeColors.icon} />
+                ) : (
+                  <Eye size={18} color={themeColors.icon} />
+                )}
+              </TouchableOpacity>
+            </View>
+            <ThemedText style={styles.inputLabel}>Confirm New Password</ThemedText>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
+              <TextInput
+                placeholder="Repeat password"
+                placeholderTextColor={themeColors.icon}
+                secureTextEntry={!showConfirmPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                style={[styles.editableInput, { flex: 1, paddingRight: 44 }]}
+              />
+              <TouchableOpacity
+                style={{ position: 'absolute', right: 12 }}
+                onPress={() => setShowConfirmPassword(v => !v)}
+              >
+                {showConfirmPassword ? (
+                  <EyeOff size={18} color={themeColors.icon} />
+                ) : (
+                  <Eye size={18} color={themeColors.icon} />
+                )}
+              </TouchableOpacity>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity
+                style={[styles.closeModalButton, { flex: 1, marginTop: 0 }]}
+                onPress={() => { setIsPasswordOpen(false); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setShowCurrentPassword(false); setShowNewPassword(false); setShowConfirmPassword(false); }}
+              >
+                <ThemedText>Cancel</ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.closeModalButton, { flex: 1, marginTop: 0, backgroundColor: '#FFCE48' }, isSavingPassword && { opacity: 0.6 }]}
+                onPress={handleChangePassword}
+                disabled={isSavingPassword}
+              >
+                <ThemedText style={{ fontFamily: Fonts.poppinsBold }}>{isSavingPassword ? 'Saving…' : 'Update'}</ThemedText>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Popup>
+
+      {/* Profile's own messages, in the shared dialog. */}
+      <AppAlert
+        visible={customAlert.visible}
+        type={customAlert.type}
+        title={customAlert.title}
+        message={customAlert.message}
+        onDismiss={hideAlert}
+      />
+    </>
+  );
+
   // This used to render the full form immediately with userData's zeroed-
   // out defaults (0 Total Jobs, 0% HCI, $0 Spent) indistinguishable from a
   // real empty profile — no loading state ever existed here at all.
@@ -698,7 +986,9 @@ export default function ProfileScreen() {
             <ChevronLeft size={24} color="#000" />
           </TouchableOpacity>
           <ThemedText style={styles.headerTitle}>My Profile</ThemedText>
-          <View style={{ width: 22 }} />
+          <TouchableOpacity style={styles.settingsButton} onPress={() => setIsSettingsOpen(true)} accessibilityLabel="Settings">
+            <Settings size={22} color="#000" />
+          </TouchableOpacity>
         </View>
         {offline ? (
           <NoInternetState onRetry={() => loadProfile()} />
@@ -707,6 +997,10 @@ export default function ProfileScreen() {
             <ThemedText style={{ textAlign: 'center' }}>We couldn't load your profile. Please try again.</ThemedText>
             <TouchableOpacity onPress={() => loadProfile()} style={{ paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, backgroundColor: themeColors.brand }}>
               <ThemedText style={{ fontFamily: Fonts.poppinsBold, color: '#000' }}>Retry</ThemedText>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { void handleLogout(); }} style={styles.loadFailedLogout} hitSlop={8}>
+              <LogOut size={18} color="#EF4444" />
+              <ThemedText style={[styles.settingLabel, { color: '#EF4444' }]}>Log out</ThemedText>
             </TouchableOpacity>
           </View>
         ) : (
@@ -726,6 +1020,7 @@ export default function ProfileScreen() {
             <Skeleton width="100%" height={64} borderRadius={14} />
           </View>
         )}
+        {settingsSheet}
       </ThemedView>
     );
   }
@@ -990,279 +1285,6 @@ export default function ProfileScreen() {
         <View style={styles.footerSpacer} />
       </ScrollView>
 
-      {/* Settings Modal Integrated logic */}
-      <Popup closeOn="outside" statusBarTranslucent navigationBarTranslucent
-        visible={isSettingsOpen}
-        transparent={true}
-        animationType="slide"
-        onClose={() => setIsSettingsOpen(false)}
-      >
-        {/* Stops below the status bar and the list scrolls: with every row it
-            can be taller than a small screen, and a bottom-anchored sheet then
-            grows up under the status bar. */}
-        <View style={[styles.modalOverlay, { paddingTop: insets.top + 12 }]}>
-          <PopupCard style={[styles.modalContent, modalBottomPad, { maxHeight: '100%' }]}>
-            <View style={styles.modalHeader}>
-              <ThemedText style={styles.modalTitle}>Settings</ThemedText>
-              <TouchableOpacity onPress={() => setIsSettingsOpen(false)}>
-                <XCircle size={24} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={styles.settingsList} showsVerticalScrollIndicator={false}>
-              <TouchableOpacity
-                style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}
-                onPress={() => { setIsSettingsOpen(false); openEditDetails(); }}
-              >
-                <View style={styles.settingInfo}>
-                  <UserPen size={20} color="#6B7280" />
-                  <ThemedText style={styles.settingLabel}>Edit details</ThemedText>
-                </View>
-                <ChevronRight size={20} color="#D1D5DB" />
-              </TouchableOpacity>
-
-              <View style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}>
-                <View style={styles.settingInfo}>
-                  <Bell size={20} color="#6B7280" />
-                  <ThemedText style={styles.settingLabel}>Push Notifications</ThemedText>
-                </View>
-                <Switch
-                  value={pushEnabled}
-                  onValueChange={setPushEnabled}
-                  trackColor={{ false: '#D1D5DB', true: '#FFCE48' }}
-                  thumbColor="#fff"
-                />
-              </View>
-
-              <View style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}>
-                <View style={styles.settingInfo}>
-                  <Fingerprint size={20} color="#6B7280" />
-                  <ThemedText style={styles.settingLabel}>App Lock</ThemedText>
-                </View>
-                <Switch
-                  value={appLockEnabled}
-                  onValueChange={handleToggleAppLock}
-                  trackColor={{ false: '#D1D5DB', true: '#FFCE48' }}
-                  thumbColor="#fff"
-                />
-              </View>
-
-              <TouchableOpacity
-                style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}
-                onPress={() => {
-                  setIsSettingsOpen(false);
-                  setTimeout(() => setIsPasswordOpen(true), 500);
-                }}
-              >
-                <View style={styles.settingInfo}>
-                  <Lock size={20} color="#6B7280" />
-                  <ThemedText style={styles.settingLabel}>Change Password</ThemedText>
-                </View>
-                <ChevronRight size={20} color="#D1D5DB" />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}
-                onPress={() => {
-                  setIsSettingsOpen(false);
-                  router.push('/terms' as any);
-                }}
-              >
-                <View style={styles.settingInfo}>
-                  <FileText size={20} color="#6B7280" />
-                  <ThemedText style={styles.settingLabel}>Terms & Conditions</ThemedText>
-                </View>
-                <ChevronRight size={20} color="#D1D5DB" />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}
-                onPress={() => {
-                  setIsSettingsOpen(false);
-                  router.push('/account-standing' as any);
-                }}
-              >
-                <View style={styles.settingInfo}>
-                  <Gift size={20} color="#6B7280" />
-                  <ThemedText style={styles.settingLabel}>Credits & account</ThemedText>
-                </View>
-                <ChevronRight size={20} color="#D1D5DB" />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}
-                onPress={() => {
-                  setIsSettingsOpen(false);
-                  router.push('/regular-bookings' as any);
-                }}
-              >
-                <View style={styles.settingInfo}>
-                  <Repeat size={20} color="#6B7280" />
-                  <ThemedText style={styles.settingLabel}>Regular bookings</ThemedText>
-                </View>
-                <ChevronRight size={20} color="#D1D5DB" />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}
-                onPress={() => {
-                  setIsSettingsOpen(false);
-                  router.push('/help-support');
-                }}
-              >
-                <View style={styles.settingInfo}>
-                  <MessageSquare size={20} color="#6B7280" />
-                  <ThemedText style={styles.settingLabel}>Help & Support</ThemedText>
-                </View>
-                <ChevronRight size={20} color="#D1D5DB" />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.settingItem, { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}
-                onPress={() => {
-                  setIsSettingsOpen(false);
-                  router.push('/delete-account' as any);
-                }}
-              >
-                <View style={styles.settingInfo}>
-                  <Trash2 size={20} color="#6B7280" />
-                  <ThemedText style={styles.settingLabel}>Delete account</ThemedText>
-                </View>
-                <ChevronRight size={20} color="#D1D5DB" />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.settingItem} onPress={async () => {
-                setIsSettingsOpen(false);
-                // Server drops this phone's tokens; the phone also has
-                // Firebase forget its token and stops any ringing, so a
-                // failed server call can't leave it ringing after logout.
-                await signOutDevice();
-                // Defense in depth on top of the cache's own per-account
-                // userId check — a different customer logging in on this
-                // same device should never have any chance of seeing
-                // whoever was logged in before.
-                await clearHomeCache().catch(() => {});
-                router.replace('/login');
-              }}>
-                <View style={styles.settingInfo}>
-                  <LogOut size={20} color="#EF4444" />
-                  <ThemedText style={[styles.settingLabel, { color: '#EF4444' }]}>Logout</ThemedText>
-                </View>
-              </TouchableOpacity>
-            </ScrollView>
-
-            <TouchableOpacity
-              style={styles.closeModalButton}
-              onPress={() => setIsSettingsOpen(false)}
-            >
-              <ThemedText style={styles.closeModalButtonText}>Close</ThemedText>
-            </TouchableOpacity>
-          </PopupCard>
-        </View>
-      </Popup>
-
-      {/* Change Password Modal */}
-      <Popup closeOn={isSavingPassword ? 'none' : 'back'} statusBarTranslucent navigationBarTranslucent
-        visible={isPasswordOpen}
-        animationType="fade"
-        transparent
-        onClose={() => { setIsPasswordOpen(false); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setShowCurrentPassword(false); setShowNewPassword(false); setShowConfirmPassword(false); }}
-      >
-        <KeyboardAvoidingView
-          style={[styles.modalOverlay, { justifyContent: 'center', padding: 20 }]}
-          behavior="padding"
-          automaticOffset
-        >
-          <View style={[styles.modalContent, { borderRadius: 24 }, modalBottomPad]}>
-            <ThemedText style={[styles.modalTitle, { marginBottom: 20 }]}>Change Password</ThemedText>
-            <ThemedText style={styles.inputLabel}>Current Password</ThemedText>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-              <TextInput
-                placeholder="Enter current password"
-                placeholderTextColor={themeColors.icon}
-                secureTextEntry={!showCurrentPassword}
-                autoCapitalize="none"
-                autoCorrect={false}
-                value={currentPassword}
-                onChangeText={setCurrentPassword}
-                style={[styles.editableInput, { flex: 1, paddingRight: 44 }]}
-              />
-              <TouchableOpacity
-                style={{ position: 'absolute', right: 12 }}
-                onPress={() => setShowCurrentPassword(v => !v)}
-              >
-                {showCurrentPassword ? (
-                  <EyeOff size={18} color={themeColors.icon} />
-                ) : (
-                  <Eye size={18} color={themeColors.icon} />
-                )}
-              </TouchableOpacity>
-            </View>
-            <ThemedText style={styles.inputLabel}>New Password</ThemedText>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-              <TextInput
-                placeholder="New password"
-                placeholderTextColor={themeColors.icon}
-                secureTextEntry={!showNewPassword}
-                autoCapitalize="none"
-                autoCorrect={false}
-                value={newPassword}
-                onChangeText={setNewPassword}
-                style={[styles.editableInput, { flex: 1, paddingRight: 44 }]}
-              />
-              <TouchableOpacity
-                style={{ position: 'absolute', right: 12 }}
-                onPress={() => setShowNewPassword(v => !v)}
-              >
-                {showNewPassword ? (
-                  <EyeOff size={18} color={themeColors.icon} />
-                ) : (
-                  <Eye size={18} color={themeColors.icon} />
-                )}
-              </TouchableOpacity>
-            </View>
-            <ThemedText style={styles.inputLabel}>Confirm New Password</ThemedText>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
-              <TextInput
-                placeholder="Repeat password"
-                placeholderTextColor={themeColors.icon}
-                secureTextEntry={!showConfirmPassword}
-                autoCapitalize="none"
-                autoCorrect={false}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                style={[styles.editableInput, { flex: 1, paddingRight: 44 }]}
-              />
-              <TouchableOpacity
-                style={{ position: 'absolute', right: 12 }}
-                onPress={() => setShowConfirmPassword(v => !v)}
-              >
-                {showConfirmPassword ? (
-                  <EyeOff size={18} color={themeColors.icon} />
-                ) : (
-                  <Eye size={18} color={themeColors.icon} />
-                )}
-              </TouchableOpacity>
-            </View>
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <TouchableOpacity
-                style={[styles.closeModalButton, { flex: 1, marginTop: 0 }]}
-                onPress={() => { setIsPasswordOpen(false); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setShowCurrentPassword(false); setShowNewPassword(false); setShowConfirmPassword(false); }}
-              >
-                <ThemedText>Cancel</ThemedText>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.closeModalButton, { flex: 1, marginTop: 0, backgroundColor: '#FFCE48' }, isSavingPassword && { opacity: 0.6 }]}
-                onPress={handleChangePassword}
-                disabled={isSavingPassword}
-              >
-                <ThemedText style={{ fontFamily: Fonts.poppinsBold }}>{isSavingPassword ? 'Saving…' : 'Update'}</ThemedText>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Popup>
-
       {/* Add Address Modal */}
       <Popup closeOn="back"
         visible={isAddAddressOpen}
@@ -1453,14 +1475,8 @@ export default function ProfileScreen() {
         </View>
       </Popup>
 
-      {/* Profile's own messages, in the shared dialog. */}
-      <AppAlert
-        visible={customAlert.visible}
-        type={customAlert.type}
-        title={customAlert.title}
-        message={customAlert.message}
-        onDismiss={hideAlert}
-      />
+      {/* Settings, Change Password and messages: last, so a message shows above any sheet. */}
+      {settingsSheet}
       {photoPicker.element}
 
       {/* ── Fixed Bottom Navigation Dock ── */}
@@ -1502,6 +1518,12 @@ function makeStyles(t: typeof Colors.light) {
     height: 40,
     justifyContent: 'center',
     alignItems: 'flex-end',
+  },
+  loadFailedLogout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
   },
   scrollContent: {
     paddingBottom: 0, // the bottom bar's clearance is added (padBottom)

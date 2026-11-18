@@ -31,7 +31,7 @@ import { AppProvider } from '@/context/AppContext';
 import { PostRequirementProvider } from '@/context/PostRequirementContext';
 import { clearPushForSignOut, initCallManager, registerFcmToken } from '@/services/callManager';
 import { startAppConfigSocket } from '@/services/app-config-socket';
-import { STRIPE_PUBLISHABLE_KEY, TokenStore, staleSessionCleared, setSessionExpiredHandler } from '@/services/api';
+import { STRIPE_PUBLISHABLE_KEY, staleSessionCleared, setSessionExpiredHandler, storedAccessToken } from '@/services/api';
 import { clearHomeCache } from '@/services/homeCache';
 import { NetworkStatusBanner } from '@/components/network-status-banner';
 import { ActiveJobStatusBanner } from '@/components/active-job-status-banner';
@@ -85,7 +85,7 @@ export default function RootLayout() {
     staleSessionCleared.then(() => {
       initCallManager();
       startAppConfigSocket();
-      TokenStore.getAccessToken().then(token => {
+      storedAccessToken().then(token => {
         if (token) registerFcmToken();
       });
     });

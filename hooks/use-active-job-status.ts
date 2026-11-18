@@ -78,14 +78,17 @@ export function useActiveJobStatus(): ActiveJobBanner[] {
       // a dead, pre-uninstall token straight out of Keychain and getting it
       // refused as an unprompted "Signed Out".
       await staleSessionCleared;
-      const token = await TokenStore.getAccessToken();
+      // A shut keychain (phone locked): no banner this round, the next poll asks again.
+      const token = await TokenStore.getAccessToken().catch(() => null);
       if (!token) {
         if (!cancelled) setBanners([]);
         return;
       }
 
       try {
-        const jobs = await SkoFyApi.jobs.list();
+        // Only the tracked ones, from all of them: filtering the newest 50
+        // missed a job in progress posted before 50 others.
+        const jobs = await SkoFyApi.jobs.listByStatus(TRACKED_STATUSES, 100);
         const active = (jobs || []).filter((j: any) => TRACKED_STATUSES.includes(j.status));
         if (!active.length) {
           if (!cancelled) setBanners([]);

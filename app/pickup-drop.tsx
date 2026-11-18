@@ -395,16 +395,16 @@ export default function PickupDropScreen() {
     try {
       let imageUrls: string[] = [];
       if (media.length > 0) {
-        try {
-          const files = media.map(m => {
-            const ext = m.uri.split('.').pop()?.toLowerCase();
-            const type = m.type === 'video'
-              ? (ext === 'mov' ? 'video/quicktime' : 'video/mp4')
-              : 'image/jpeg';
-            return { uri: m.uri, type, name: m.uri.split('/').pop() || 'media.jpg' };
-          });
-          imageUrls = await SkoFyApi.jobs.uploadMedia(files);
-        } catch { /* non-fatal — job still posts without media */ }
+        const files = media.map(m => {
+          const ext = m.uri.split('.').pop()?.toLowerCase();
+          const type = m.type === 'video'
+            ? (ext === 'mov' ? 'video/quicktime' : 'video/mp4')
+            : 'image/jpeg';
+          return { uri: m.uri, type, name: m.uri.split('/').pop() || 'media.jpg' };
+        });
+        // A failure stops the post (the outer catch says why): the photos
+        // stay, to try again or remove — never posted without them unseen.
+        imageUrls = await SkoFyApi.jobs.uploadMedia(files);
       }
       const fromPerson = source === 'PERSON';
       const sendFromMe = fromPerson && direction === 'FROM_ME';

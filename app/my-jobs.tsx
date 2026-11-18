@@ -9,6 +9,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useOfflinePage } from '@/components/offline-gate';
+import { usePagedTabs } from '@/hooks/use-paged-tabs';
 import { router, useFocusEffect } from 'expo-router';
 import {
   CalendarX,
@@ -19,9 +20,10 @@ import {
   Users,
   XCircle
 } from 'lucide-react-native';
-import { SkoFyApi } from '@/services/api';
+import { SkoFyApi, type JobTabCounts } from '@/services/api';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   BackHandler,
   FlatList,
   Platform,
@@ -53,6 +55,8 @@ interface Job {
   applicants?: number;
   actionLabel?: string;
   cancellationReason?: string;
+  /** As the server sent it (to the microsecond): where the next page starts. */
+  createdAt: string;
 }
 
 
@@ -91,7 +95,9 @@ function JobCard({
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(index * 100)}
+      // Only the first few are staggered: read a page at a time, the 30th
+      // card used to wait 3 s to appear while scrolling.
+      entering={FadeInDown.delay(Math.min(index, 5) * 100)}
       style={[styles.card, hasApplicants && animatedStyle]}
     >
       <View style={styles.cardHeader}>
@@ -278,8 +284,14 @@ function mapApiJob(j: any): Job {
     applicants: mapped.status === 'Open' && j.applicant_count > 0 ? j.applicant_count : undefined,
     actionLabel,
     cancellationReason: j.cancellation_reason ?? undefined,
+    createdAt: j.created_at,
   };
 }
+
+// Jobs read per page of a tab; and the most one read asks for (the
+// server's limit) — reading a tab again keeps as many as were shown.
+const JOBS_PAGE_SIZE = 20;
+const JOBS_MAX_READ = 100;
 
 export default function MyJobsScreen() {
   const barClearance = useBottomBarClearance();
@@ -287,29 +299,46 @@ export default function MyJobsScreen() {
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const appAlert = useAppAlert();
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [loading, setLoading] = useState(true);
-  // Offline with nothing to show: the shared page; reloads when back online.
-  const offline = useOfflinePage(jobs.length > 0, () => { void loadJobs(); });
-  const [refreshing, setRefreshing] = useState(false);
   // "Completed" was previously missing entirely — a job fell out of every
   // tab's filter the moment it finished, with no way to ever come back and
   // see it again (no history view at all for a completed job).
   const TABS = ['Open', 'Ongoing', 'Completed', 'Cancelled'] as const;
-  const [activeTab, setActiveTab] = useState<typeof TABS[number]>('Open');
+  type Tab = typeof TABS[number];
+  const [activeTab, setActiveTab] = useState<Tab>('Open');
+  const activeTabRef = React.useRef(activeTab);
+  activeTabRef.current = activeTab;
+  // How many jobs each tab holds — from the server, counting every job, not
+  // just the pages read so far.
+  const [tabCounts, setTabCounts] = useState<JobTabCounts | null>(null);
+  const countOf = (tab: Tab) => tabCounts?.[tab.toLowerCase() as keyof JobTabCounts];
   const [cancelJobId, setCancelJobId] = useState<string | null>(null);
   const [disputeJobId, setDisputeJobId] = useState<string | null>(null);
 
+  // Each tab is read from the server on its own, 20 at a time, more on
+  // scrolling down — it used to be one list of the newest 50 split up on the
+  // phone, so anything older never showed in any tab.
+  const tabs = usePagedTabs<Tab, Job>(async (tab, last, limit) => {
+    const data = await SkoFyApi.jobs.listTab(
+      tab.toLowerCase() as keyof JobTabCounts, limit,
+      last && { created_at: last.createdAt, id: last.id },
+    );
+    return Array.isArray(data) ? data.map(mapApiJob) : [];
+  }, JOBS_PAGE_SIZE, JOBS_MAX_READ);
+  const shown = tabs.page(activeTab);
+  const [refreshing, setRefreshing] = useState(false);
+  // Offline with nothing to show: the shared page; reloads when back online.
+  const offline = useOfflinePage(shown.items.length > 0, () => { void loadJobs(); });
+
+  // The counts and the shown tab, again (focus, pull-down, a cancel, a
+  // dispute); the other tabs when next opened. A failed read keeps what's shown.
   const loadJobs = async () => {
-    try {
-      const data: any[] = await SkoFyApi.jobs.list();
-      setJobs(Array.isArray(data) ? data.map(mapApiJob) : []);
-    } catch {
-      // Kept as it was: offline, the jobs already shown stay readable.
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+    SkoFyApi.jobs.getTabCounts().then(setTabCounts).catch(() => {});
+    await tabs.reload(activeTabRef.current);
+    setRefreshing(false);
+  };
+  const chooseTab = (tab: Tab) => {
+    setActiveTab(tab);
+    tabs.open(tab);
   };
 
   useFocusEffect(useCallback(() => {
@@ -322,12 +351,6 @@ export default function MyJobsScreen() {
     return () => backHandler.remove();
   }, []));
 
-  const filteredJobs = jobs.filter(j => {
-    if (activeTab === 'Open') return j.status === 'Open';
-    if (activeTab === 'Ongoing') return j.status === 'Ongoing';
-    if (activeTab === 'Completed') return j.status === 'Completed';
-    return j.status === 'Cancelled' || j.status === 'Expired';
-  });
 
   return (
     <ThemedView style={styles.container}>
@@ -344,8 +367,15 @@ export default function MyJobsScreen() {
           <TouchableOpacity
             key={tab}
             style={[styles.tabBtn, activeTab === tab && styles.tabBtnActive]}
-            onPress={() => setActiveTab(tab)}
+            onPress={() => chooseTab(tab)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === tab }}
+            accessibilityLabel={countOf(tab) != null ? `${tab}, ${countOf(tab)} jobs` : tab}
           >
+            {/* A dash until the counts arrive, so the row doesn't jump. */}
+            <ThemedText style={[styles.tabCount, activeTab === tab && styles.tabBtnTextActive]} numberOfLines={1}>
+              {countOf(tab) ?? '–'}
+            </ThemedText>
             <ThemedText
               style={[styles.tabBtnText, activeTab === tab && styles.tabBtnTextActive]}
               numberOfLines={1}
@@ -362,7 +392,7 @@ export default function MyJobsScreen() {
           full page. A list already shown stays, with the banner. */}
       {offline ? (
         <NoInternetState onRetry={loadJobs} />
-      ) : loading ? (
+      ) : !shown.loaded ? (
         (
           <View style={{ paddingHorizontal: 16, paddingTop: 16, gap: 14 }}>
             {[0, 1, 2, 3].map(i => (
@@ -376,7 +406,12 @@ export default function MyJobsScreen() {
         )
       ) : (
         <FlatList keyboardShouldPersistTaps="handled"
-          data={filteredJobs}
+          data={shown.items}
+          onEndReached={() => { void tabs.loadMore(activeTab); }}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={shown.loadingMore ? (
+            <ActivityIndicator color="#FFCE48" style={{ paddingVertical: 20 }} />
+          ) : null}
           renderItem={({ item, index }) => (
             <JobCard item={item} index={index} onCancelPress={setCancelJobId} onReportIssue={setDisputeJobId} />
           )}
@@ -392,7 +427,14 @@ export default function MyJobsScreen() {
             />
           }
           ListEmptyComponent={
-            activeTab === 'Ongoing' ? (
+            shown.failed ? (
+              <EmptyJobsState
+                title="Couldn't load your jobs"
+                subtitle="Check your connection, then try again."
+                onPress={() => { void loadJobs(); }}
+                buttonLabel="Try Again"
+              />
+            ) : activeTab === 'Ongoing' ? (
               <EmptyJobsState title="No ongoing jobs" subtitle="Once you hire a provider, they'll show up here." />
             ) : activeTab === 'Cancelled' ? (
               // This tab also holds jobs whose deadline passed unhired
@@ -500,7 +542,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   tabBtn: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 8,
     paddingHorizontal: 4,
     borderRadius: 12,
     backgroundColor: t.inputFilled,
@@ -508,6 +550,12 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   tabBtnActive: {
     backgroundColor: '#FFCE48',
+  },
+  tabCount: {
+    fontSize: 16,
+    lineHeight: 22,
+    fontFamily: Fonts.poppinsBold,
+    color: t.text,
   },
   tabBtnText: {
     fontSize: 12,

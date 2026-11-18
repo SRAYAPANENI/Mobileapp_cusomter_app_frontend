@@ -6,7 +6,7 @@ import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useEffect, useRef } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 import { Text } from '@/components/scaled-text';
-import { TokenStore, staleSessionCleared } from '@/services/api';
+import { storedAccessToken } from '@/services/api';
 import { handleInitialCallAction, handleInitialNotification } from '@/services/callManager';
 import { prefetchHomeEssentials } from '@/services/homeCache';
 
@@ -29,7 +29,7 @@ export default function SplashScreen() {
   useFocusEffect(useCallback(() => {
     focusedRef.current = true;
     if (leftRef.current || handledRef.current) {
-      staleSessionCleared.then(() => TokenStore.getAccessToken()).then(token => {
+      storedAccessToken().then(token => {
         router.replace(token ? '/home' : '/login');
       });
     }
@@ -67,8 +67,7 @@ export default function SplashScreen() {
     // a dead session as "logged in" for this one launch, briefly show the
     // home screen from cache, then bounce into a confusing "Signed Out" the
     // moment a live call gets rejected.
-    const tokenPromise = staleSessionCleared.then(() => TokenStore.getAccessToken());
-    tokenPromise.then(token => {
+    storedAccessToken().then(token => {
       if (token) prefetchHomeEssentials();
     });
 
@@ -79,8 +78,11 @@ export default function SplashScreen() {
       // A previous bug here always sent the user to /login on every cold start,
       // even with a perfectly valid stored session — meaning killing the app and
       // reopening it (or tapping a notification, before the fix above) always
-      // demanded a fresh login. Now it actually checks for one first.
-      tokenPromise.then(token => {
+      // demanded a fresh login. Now it actually checks for one first —
+      // asked again now, not at mount: a session that ended during the
+      // animation (the "Signed out" message is held back on this screen)
+      // used to open Home with no login behind it, every screen empty.
+      storedAccessToken().then(token => {
         router.replace(token ? '/home' : '/login');
       });
     }, 2500);

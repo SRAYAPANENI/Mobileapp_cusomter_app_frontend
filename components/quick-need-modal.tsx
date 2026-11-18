@@ -79,10 +79,10 @@ export function QuickNeedModal({ visible, need, lat, lng, address, onClose, onPo
     try {
       let imageUrls: string[] = [];
       if (photos.length > 0) {
-        try {
-          const files = photos.map(uri => ({ uri, type: 'image/jpeg', name: uri.split('/').pop() || 'photo.jpg' }));
-          imageUrls = await SkoFyApi.jobs.uploadMedia(files);
-        } catch { /* non-fatal — job posts without photos */ }
+        const files = photos.map(uri => ({ uri, type: 'image/jpeg', name: uri.split('/').pop() || 'photo.jpg' }));
+        // A failure stops the post (the outer catch says why): the photos
+        // stay, to try again or remove — never posted without them unseen.
+        imageUrls = await SkoFyApi.jobs.uploadMedia(files);
       }
       await SkoFyApi.jobs.create({
         title: need.title,

@@ -868,20 +868,20 @@ export function VoicePostModal({
     try {
       let imageUrls: string[] = [];
       if (photos.length > 0) {
-        try {
-          // MIME must match the actual file — this was previously hardcoded
-          // to 'image/jpeg' for every file regardless of type, which is why
-          // a video (once selectable at all) would upload mislabeled and
-          // then get rendered as a broken image on the provider's side.
-          const files = photos.map(p => {
-            const ext = p.uri.split('.').pop()?.toLowerCase();
-            const mime = p.type === 'video'
-              ? (ext === 'mov' ? 'video/quicktime' : 'video/mp4')
-              : 'image/jpeg';
-            return { uri: p.uri, type: mime, name: p.uri.split('/').pop() || `media.${ext || (p.type === 'video' ? 'mp4' : 'jpg')}` };
-          });
-          imageUrls = await SkoFyApi.jobs.uploadMedia(files);
-        } catch { /* non-fatal — job posts without photos */ }
+        // MIME must match the actual file — this was previously hardcoded
+        // to 'image/jpeg' for every file regardless of type, which is why
+        // a video (once selectable at all) would upload mislabeled and
+        // then get rendered as a broken image on the provider's side.
+        const files = photos.map(p => {
+          const ext = p.uri.split('.').pop()?.toLowerCase();
+          const mime = p.type === 'video'
+            ? (ext === 'mov' ? 'video/quicktime' : 'video/mp4')
+            : 'image/jpeg';
+          return { uri: p.uri, type: mime, name: p.uri.split('/').pop() || `media.${ext || (p.type === 'video' ? 'mp4' : 'jpg')}` };
+        });
+        // A failure stops the post (the catch below says why): the photos
+        // stay, to try again or remove — never posted without them unseen.
+        imageUrls = await SkoFyApi.jobs.uploadMedia(files);
       }
 
       // The location shown on screen (resolved when the modal opened). If it
@@ -910,6 +910,14 @@ export function VoicePostModal({
       setPhase('success');
       setTimeout(() => { onJobPosted?.(); onClose(); }, 1600);
     } catch (err: any) {
+      // Photos that didn't upload: back to the confirmation with the job and
+      // the photos still there, to post again or remove them — the error
+      // screen's Try Again starts the whole conversation over.
+      if (err?.error_code === 'MEDIA_UPLOAD_FAILED') {
+        setPhase('confirm');
+        photoAlert.show('error', 'Photos Not Uploaded', err.message);
+        return;
+      }
       setPhase('error');
       // Previously misclassified by string-matching "skill" in the message —
       // the backend's same-skill-pending-direct-request guard (409 Conflict)
