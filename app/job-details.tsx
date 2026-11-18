@@ -501,7 +501,7 @@ export default function JobDetailsScreen() {
       {photoPicker.element}
       {/* The map, full screen — still inside the app, with the job's details. */}
       {hasLocation && MapView && (
-        <Popup closeOn="back" visible={mapFull} animationType="slide" onClose={() => setMapFull(false)} statusBarTranslucent>
+        <Popup closeOn="back" visible={mapFull} animationType="slide" onClose={() => setMapFull(false)} statusBarTranslucent navigationBarTranslucent>
           <View style={[styles.mapFullScreen, { backgroundColor: themeColors.background }]}>
             {/* The map fills what the card leaves — the card never covers it
                 (nor Google's logo in its corner). */}
