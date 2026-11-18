@@ -1090,9 +1090,10 @@ export const SkoFyApi = {
     getPersonPickupRules: async (): Promise<PersonPickupRules> =>
       request('/jobs/pickup-from-person'),
 
-    /** A location a friend shared (WhatsApp, Google Maps), pasted as a link:
-     * its pin, or — when it has none — the place's name to search for. */
-    resolveLocationLink: async (link: string): Promise<{ lat: number | null; lng: number | null; query: string | null }> =>
+    /** A location shared (WhatsApp, Google Maps), pasted as a link: its pin
+     * and, when the link names it, the place (`name`); or — with no pin — the
+     * place's name to search for. services/location-link.ts uses it. */
+    resolveLocationLink: async (link: string): Promise<{ lat: number | null; lng: number | null; query: string | null; name?: string | null }> =>
       request('/jobs/pickup-location-link', { method: 'POST', body: JSON.stringify({ link }) }),
 
     /** Pickup & Drop: add or change the store's pickup code until the order is collected. */

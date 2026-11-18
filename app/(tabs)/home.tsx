@@ -18,6 +18,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { RatingReminder } from '@/components/rating-reminder';
 import { BASE_URL, SkoFyApi } from '@/services/api';
 import { readHomeCache, writeHomeCache } from '@/services/homeCache';
+import { looksLikeLink, placeFromLink } from '@/services/location-link';
+import { PasteLocationLink } from '@/components/paste-location-link';
 import { providerShortTitle } from '@/services/providerName';
 import { ProfessionIcon } from '@/components/profession-icon';
 import type { OfferResponse } from '@/types/offer';
@@ -946,7 +948,29 @@ export default function HomeScreen() {
     if (!isLocationModalVisible || locationSearchQuery.trim().length < 2) {
       setLocationSuggestions([]);
       setLocationSearchError(null);
+      setLocationSearching(false); // a link just used empties the box mid-read
       return;
+    }
+    // A location shared as a link (WhatsApp, Google Maps): its place, used
+    // straight away — the same as picking it from the list.
+    if (looksLikeLink(locationSearchQuery)) {
+      setLocationSuggestions([]);
+      setLocationSearchError(null);
+      let stale = false;
+      setLocationSearching(true);
+      placeFromLink(locationSearchQuery)
+        .then((found) => {
+          if (stale) return;
+          if (found.kind === 'place') {
+            setLocationSearchQuery('');
+            confirmLocationSelection(found.place.address, found.place.lat, found.place.lng);
+          } else {
+            setLocationSearchQuery(found.query); // a named place, no pin: search for it
+          }
+        })
+        .catch((e: any) => { if (!stale) setLocationSearchError(e?.message || "Couldn't read that link. Type the address instead."); })
+        .finally(() => { if (!stale) setLocationSearching(false); });
+      return () => { stale = true; };
     }
     const controller = new AbortController();
     const handle = setTimeout(async () => {
@@ -1944,6 +1968,9 @@ export default function HomeScreen() {
                 </View>
               )}
               {!!locationSearchError && <Text style={styles.searchErrorText}>{locationSearchError}</Text>}
+              {!locationSearching && (
+                <PasteLocationLink onLink={setLocationSearchQuery} onError={setLocationSearchError} />
+              )}
             </View>
             <TouchableOpacity style={styles.locationOption} onPress={() => confirmLocationSelection(address, location?.coords.latitude, location?.coords.longitude)}>
               <View style={[styles.locationIconBox, { backgroundColor: '#E0F2FE' }]}>

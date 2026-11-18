@@ -10,6 +10,8 @@ import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useOfflinePage } from '@/components/offline-gate';
 import { GooglePlacesService, GooglePlaceSuggestion } from '@/services/google-places';
+import { looksLikeLink, placeFromLink } from '@/services/location-link';
+import { PasteLocationLink } from '@/components/paste-location-link';
 import { SkoFyApi } from '@/services/api';
 import { clearHomeCache } from '@/services/homeCache';
 import { AppLock } from '@/services/appLock';
@@ -296,12 +298,41 @@ export default function ProfileScreen() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const searchTimeoutRef = useRef<any>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  // The latest pasted link being read: an older one finishing late is dropped.
+  const linkReadRef = useRef(0);
 
   const handleSearch = (text: string, index: number | 'new') => {
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     if (abortControllerRef.current) abortControllerRef.current.abort();
 
     setActiveSearchIndex(index);
+
+    // A location shared as a link (WhatsApp, Google Maps): its place, with
+    // its pin — not searched for as text.
+    if (index === 'new' && looksLikeLink(text)) {
+      setSuggestions([]);
+      setSearchError(null);
+      setIsSearching(true);
+      const read = ++linkReadRef.current;
+      placeFromLink(text)
+        .then((found) => {
+          if (read !== linkReadRef.current) return;
+          if (found.kind === 'place') {
+            setNewAddressValue(found.place.address);
+            setNewAddressCoords({ lat: found.place.lat, lng: found.place.lng });
+            setActiveSearchIndex(null);
+          } else {
+            setNewAddressValue(found.query); // a named place, no pin: search for it
+            handleSearch(found.query, 'new');
+          }
+        })
+        .catch((e: any) => {
+          if (read === linkReadRef.current) setSearchError(e?.message || "Couldn't read that link. Type the address instead.");
+        })
+        .finally(() => { if (read === linkReadRef.current) setIsSearching(false); });
+      return;
+    }
+    linkReadRef.current++; // typing on: a link still being read is dropped
 
     if (text.length > 2) {
       setSearchError(null);
@@ -1342,6 +1373,14 @@ export default function ProfileScreen() {
               placeholderTextColor={themeColors.icon}
               textAlignVertical="top"
             />
+            {!(activeSearchIndex === 'new' && isSearching) && (
+              <View style={{ marginTop: -6, marginBottom: 10 }}>
+                <PasteLocationLink
+                  onLink={(link) => { setNewAddressValue(link); handleSearch(link, 'new'); }}
+                  onError={(message) => { setActiveSearchIndex('new'); setSearchError(message); }}
+                />
+              </View>
+            )}
 
             {activeSearchIndex === 'new' && (suggestions.length > 0 || searchError || isSearching) && (
               <View style={[styles.inlineSuggestions, { marginBottom: 12 }, isSearching && { minHeight: 60, justifyContent: 'center' }]}>

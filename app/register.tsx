@@ -15,6 +15,8 @@ import { NAME_PART_MAX, hasFullName, namePayload } from '@/services/name';
 import { PASSWORD_RULE, isValidPassword } from '@/services/password';
 import { registerFcmToken } from '@/services/callManager';
 import { GooglePlacesService, GooglePlaceSuggestion } from '@/services/google-places';
+import { looksLikeLink, placeFromLink } from '@/services/location-link';
+import { PasteLocationLink } from '@/components/paste-location-link';
 import { Image } from 'expo-image';
 import { usePhotoPicker } from '@/components/photo-picker';
 import * as ExpoLocation from 'expo-location';
@@ -297,6 +299,74 @@ export default function RegisterScreen() {
     }
 
     return <ThemedText style={styles.suggestionMainText}>{parts}</ThemedText>;
+  };
+
+  // The address box's search, as typed (debounced).
+  const runAddressSearch = (text: string) => {
+    if (text.length > 2) {
+      setShowSuggestions(true);
+      setSearchError(null);
+      setSuggestions([]); // Clear old results while searching
+      searchTimeoutRef.current = setTimeout(async () => {
+        try {
+          setIsSearching(true);
+          abortControllerRef.current = new AbortController();
+          const results = await GooglePlacesService.searchAddress(text);
+          setSuggestions(results);
+          if (results.length === 0) {
+            setSearchError('No locations found');
+          }
+        } catch (error: any) {
+          if (error.name !== 'AbortError') {
+            console.error('Search error:', error);
+            setSearchError('Could not fetch locations. Check internet.');
+          }
+        } finally {
+          setIsSearching(false);
+        }
+      }, 300);
+    } else {
+      setShowSuggestions(false);
+      setSuggestions([]);
+    }
+  };
+
+  // A location shared as a link (WhatsApp, Google Maps): its place and pin,
+  // not searched for as text. The latest link wins; typing on drops it.
+  const linkReadRef = useRef(0);
+  const readAddressLink = (link: string) => {
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    setFormData(prev => ({ ...prev, address: link }));
+    setSuggestions([]);
+    setSearchError(null);
+    setShowSuggestions(true);
+    setIsSearching(true);
+    // The link is read by the server, which needs the sign-in that verifying
+    // the number gives — before it, say so rather than fail as "log in again".
+    if (!isOtpVerified) {
+      setIsSearching(false);
+      setSearchError('Verify your mobile number first, then paste the location link.');
+      return;
+    }
+    const read = ++linkReadRef.current;
+    placeFromLink(link)
+      .then((found) => {
+        if (read !== linkReadRef.current) return;
+        if (found.kind === 'place') {
+          setFormData(prev => ({ ...prev, address: found.place.address }));
+          setSelectedCoords({ lat: found.place.lat, lng: found.place.lng });
+          setAddressHeight(56);
+          setShowSuggestions(false);
+        } else {
+          setFormData(prev => ({ ...prev, address: found.query })); // a named place, no pin: search for it
+          runAddressSearch(found.query);
+        }
+      })
+      .catch((e: any) => {
+        if (read === linkReadRef.current) setSearchError(e?.message || "Couldn't read that link. Type the address instead.");
+      })
+      .finally(() => { if (read === linkReadRef.current) setIsSearching(false); });
   };
 
   const handleSuggestionPress = async (item: GooglePlaceSuggestion) => {
@@ -787,32 +857,9 @@ export default function RegisterScreen() {
                     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
                     if (abortControllerRef.current) abortControllerRef.current.abort();
 
-                    if (text.length > 2) {
-                      setShowSuggestions(true);
-                      setSearchError(null);
-                      setSuggestions([]); // Clear old results while searching
-                      searchTimeoutRef.current = setTimeout(async () => {
-                        try {
-                          setIsSearching(true);
-                          abortControllerRef.current = new AbortController();
-                          const results = await GooglePlacesService.searchAddress(text);
-                          setSuggestions(results);
-                          if (results.length === 0) {
-                            setSearchError('No locations found');
-                          }
-                        } catch (error: any) {
-                          if (error.name !== 'AbortError') {
-                            console.error('Search error:', error);
-                            setSearchError('Could not fetch locations. Check internet.');
-                          }
-                        } finally {
-                          setIsSearching(false);
-                        }
-                      }, 300);
-                    } else {
-                      setShowSuggestions(false);
-                      setSuggestions([]);
-                    }
+                    linkReadRef.current++; // typing on: a link still being read is dropped
+                    if (looksLikeLink(text)) { readAddressLink(text); return; }
+                    runAddressSearch(text);
                   }}
                   onFocus={() => setFocusedInput('address')}
                   onBlur={() => {
@@ -830,6 +877,13 @@ export default function RegisterScreen() {
                   </View>
                 )}
               </View>
+
+              {isOtpVerified && !isSearching && (
+                <PasteLocationLink
+                  onLink={readAddressLink}
+                  onError={(message) => { setShowSuggestions(true); setSuggestions([]); setSearchError(message); }}
+                />
+              )}
 
               {showSuggestions && (suggestions.length > 0 || searchError || isSearching) && (
                 <View style={[styles.suggestionsDropdown, isSearching && { minHeight: 80, justifyContent: 'center' }]}>

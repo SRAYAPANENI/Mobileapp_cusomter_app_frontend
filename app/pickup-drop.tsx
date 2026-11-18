@@ -2,12 +2,10 @@ import { useAppAlert } from '@/components/app-alert';
 import { Colors, Fonts } from '@/constants/theme';
 import { SkoFyApi } from '@/services/api';
 import { GooglePlacesService, GooglePlaceSuggestion } from '@/services/google-places';
-import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
-import * as Location from 'expo-location';
 import { usePhotoPicker } from '@/components/photo-picker';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { ArrowDownToLine, ArrowUpFromLine, Bookmark, Camera, ChevronLeft, ClipboardPaste, CheckCircle2, Home, IdCard, MapPin, ShieldAlert, Square, SquareCheck, Store, Video as VideoIcon, X } from 'lucide-react-native';
+import { ArrowDownToLine, ArrowUpFromLine, Bookmark, Camera, ChevronLeft, CheckCircle2, Home, IdCard, MapPin, ShieldAlert, Square, SquareCheck, Store, Video as VideoIcon, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, BackHandler, Keyboard, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
@@ -18,6 +16,8 @@ import { useKeyboardVisible } from '@/hooks/use-keyboard-visible';
 import { PriceEstimateInfo, estimateMiles, hasEstimateNote } from '@/components/price-estimate-info';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { PickupOptions } from '@/components/pickup-options';
+import { PasteLocationLink } from '@/components/paste-location-link';
+import { placeFromLink, type LinkedPlace } from '@/services/location-link';
 import {
   DEFAULT_PERSON_PICKUP_RULES, PersonPickupRules, PickupDetails, declarationFor, storeDeclarationError, PickupDirection, PickupPurchase, PickupSource, PickupTiming,
   ShoppingItem, hasIdOnFile, looksLikeLink, newShoppingItem, tripError, tripMiles, parseLimit, personPickupError, pickupJobFields, purchaseError,
@@ -188,29 +188,29 @@ export default function PickupDropScreen() {
   };
 
   // A pin from a shared link: shown as an address when the phone can name it.
-  const applySharedPin = async (lat: number, lng: number) => {
-    let text = `Shared location (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
-    try {
-      const [place] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
-      const named = place && [place.name, place.street && place.street !== place.name ? place.street : null, place.city]
-        .filter(Boolean).join(', ');
-      if (named) text = `${named} (shared location)`;
-    } catch { /* the coordinates are enough */ }
-    chosenTextRef.current = text;
-    setPickupQuery(text);
-    setPickupPlaceId(null); setPickupPlaceType(null);
-    setPickupLat(lat); setPickupLng(lng);
+  // A place from a pasted link. A store is checked exactly as one picked
+  // from the search is: a business Google files under an allowed type.
+  const applyLinkedPlace = (place: LinkedPlace) => {
+    chosenTextRef.current = place.address;
+    setPickupQuery(place.address);
+    setPickupPlaceId(place.placeId);
+    setPickupLat(place.lat); setPickupLng(place.lng);
     setChosenSavedId(null);
+    if (source === 'STORE') {
+      const storeType = storeTypeOf(place.primaryType, place.types, allowedPickupTypes);
+      setPickupPlaceType(storeType ?? place.primaryType);
+      setPickupTypeError(storeType
+        ? null
+        : "This doesn't look like a supported store (grocery, pharmacy, etc). Choose a business — or a pickup from a person.");
+    } else {
+      setPickupPlaceType(null);
+      setPickupTypeError(null);
+    }
   };
 
-  const pasteLink = async () => {
-    const text = (await Clipboard.getStringAsync().catch(() => '')).trim();
-    if (!text) {
-      setLinkError('Nothing to paste — copy the location they sent you first.');
-      return;
-    }
+  const pasteLink = (link: string) => {
     chosenTextRef.current = null;
-    setPickupQuery(text);
+    setPickupQuery(link);
   };
 
   // From a person: a saved place is the pickup, no search needed.
@@ -262,18 +262,16 @@ export default function PickupDropScreen() {
       setPickupSuggestions([]); setPickupSearching(false); return;
     }
     if (looksLikeLink(pickupQuery)) {
+      // A shared location — a store's own Google Maps link too: found on
+      // Google next to its pin and checked like a store picked from the list.
       setPickupSuggestions([]);
-      if (source === 'STORE') {
-        setLinkError('Location links work for a pickup from a person — or search for the store by name.');
-        return;
-      }
       let stale = false;
       setPickupSearching(true);
-      SkoFyApi.jobs.resolveLocationLink(pickupQuery)
-        .then(async (found) => {
+      placeFromLink(pickupQuery, { store: source === 'STORE' })
+        .then((found) => {
           if (stale) return;
-          if (found.lat != null && found.lng != null) await applySharedPin(found.lat, found.lng);
-          else if (found.query) setPickupQuery(found.query); // a named place: search for it
+          if (found.kind === 'place') applyLinkedPlace(found.place);
+          else setPickupQuery(found.query); // a named place, no pin: search for it
         })
         .catch((e: any) => { if (!stale) setLinkError(e?.message || "Couldn't read that link. Type the address instead."); })
         .finally(() => { if (!stale) setPickupSearching(false); });
@@ -609,12 +607,12 @@ export default function PickupDropScreen() {
             {miles != null && !tooFar && (
               <Text style={s.hintText}>About {miles < 1 ? 'under 1' : Math.round(miles)} mile{miles >= 1.5 ? 's' : ''} {sendFromMe ? 'from you' : 'from the drop-off'}</Text>
             )}
-            {fromPerson && !hasPickupPoint && phase === 'confirm' && (
-              <TouchableOpacity style={s.pasteRow} onPress={pasteLink}>
-                <ClipboardPaste size={14} color="#0EA5E9" />
-                <Text style={s.pasteText}>Paste a location link</Text>
-                <Text style={s.pasteHint}>shared on WhatsApp or Google Maps</Text>
-              </TouchableOpacity>
+            {!hasPickupPoint && phase === 'confirm' && (
+              <PasteLocationLink
+                onLink={pasteLink}
+                onError={setLinkError}
+                hint={fromPerson ? 'shared on WhatsApp or Google Maps' : "the store's link from Google Maps"}
+              />
             )}
             {!!pickupSearchError && !pickupSearching && pickupSuggestions.length === 0 && (
               <TouchableOpacity onPress={() => setRetryNonce(n => n + 1)}>
@@ -973,8 +971,6 @@ const s = StyleSheet.create({
   suggestionRow: { paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
   suggestionMainText: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: '#111827' },
   suggestionSecondaryText: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppins, color: '#6B7280', marginTop: 2 },
-  pasteRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 6 },
-  pasteText: { fontSize: 12.5, lineHeight: 17, fontFamily: Fonts.poppinsBold, color: '#0EA5E9' },
   pasteHint: { fontSize: 11.5, lineHeight: 16, fontFamily: Fonts.poppins, color: '#6B7280' },
   hintText: { fontSize: 11.5, lineHeight: 16, fontFamily: Fonts.poppins, color: '#6B7280', marginTop: 4 },
   hintLink: { fontFamily: Fonts.poppinsBold, color: '#0EA5E9' },
