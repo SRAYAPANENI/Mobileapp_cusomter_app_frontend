@@ -215,7 +215,10 @@ export default function JobDetailsScreen() {
   // After the first load, reloads are already quiet.
   const refreshControl = usePullRefresh(loadJob);
 
-  const canEditPhotos = (job?.applicant_count ?? 0) === 0;
+  // The server's rule (JobService.update_job): only before anyone's hired
+  // (open or expired) and before anyone's applied. A cancelled or completed
+  // job, reached from its card's Details, used to offer it and then fail.
+  const canEditPhotos = ['POSTED', 'DISTRIBUTED', 'EXPIRED'].includes(job?.status) && (job?.applicant_count ?? 0) === 0;
 
   const handleAddPhoto = async () => {
     if (!jobId || uploadingPhoto) return;
@@ -443,7 +446,12 @@ export default function JobDetailsScreen() {
           <View style={styles.photosHeaderRow}>
             <ThemedText style={[styles.sectionLabel, { marginTop: 0 }]}>Photos & Videos</ThemedText>
             {!canEditPhotos && (
-              <ThemedText style={styles.lockedNote}>Locked — a provider has already applied</ThemedText>
+              <ThemedText style={styles.lockedNote}>
+                {job.status === 'CANCELLED' ? 'Locked — the job was cancelled'
+                  : job.status === 'COMPLETED' ? 'Locked — the job is done'
+                  : !['POSTED', 'DISTRIBUTED', 'EXPIRED'].includes(job.status) ? 'Locked — a provider is hired'
+                  : 'Locked — a provider has already applied'}
+              </ThemedText>
             )}
           </View>
           <View style={styles.photoGrid}>
