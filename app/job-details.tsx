@@ -84,12 +84,12 @@ function JobMap({ job, styles, full = false }: { job: any; styles: ReturnType<ty
     ? { latitude: job.dropoff_lat, longitude: job.dropoff_lng }
     : null;
 
-  // Full screen: both pins in view, clear of the close button and the details card.
+  // Full screen: both pins in view, clear of the close button (the card is below the map).
   const fitAll = () => {
     if (!full || !dropoff) return;
     mapRef.current?.fitToCoordinates(
       [{ latitude: job.lat, longitude: job.lng }, dropoff],
-      { edgePadding: { top: 120, right: 60, bottom: 300, left: 60 }, animated: false },
+      { edgePadding: { top: 110, right: 60, bottom: 60, left: 60 }, animated: false },
     );
   };
 
@@ -503,17 +503,21 @@ export default function JobDetailsScreen() {
       {hasLocation && MapView && (
         <Popup closeOn="back" visible={mapFull} animationType="slide" onClose={() => setMapFull(false)} statusBarTranslucent>
           <View style={[styles.mapFullScreen, { backgroundColor: themeColors.background }]}>
-            <JobMap job={job} styles={styles} full />
+            {/* The map fills what the card leaves — the card never covers it
+                (nor Google's logo in its corner). */}
+            <View style={styles.mapFullArea}>
+              <JobMap job={job} styles={styles} full />
 
-            <TouchableOpacity
-              style={[styles.mapFullClose, { top: topInset + 12 }]}
-              onPress={() => setMapFull(false)}
-              accessibilityRole="button"
-              accessibilityLabel="Close the map"
-              hitSlop={8}
-            >
-              <X size={22} color="#111827" />
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.mapFullClose, { top: topInset + 12 }]}
+                onPress={() => setMapFull(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close the map"
+                hitSlop={8}
+              >
+                <X size={22} color="#111827" />
+              </TouchableOpacity>
+            </View>
 
             <View style={[styles.mapFullCard, { paddingBottom: bottomInset + 16 }]}>
               <ThemedText style={styles.mapFullTitle} numberOfLines={2}>{job.title}</ThemedText>
@@ -613,14 +617,15 @@ function makeStyles(t: typeof Colors.light) {
       shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.15, shadowRadius: 3, elevation: 3,
     },
     mapFullScreen: { flex: 1 },
+    mapFullArea: { flex: 1, overflow: 'hidden' },
     mapFullClose: {
       position: 'absolute', left: 16, width: 42, height: 42, borderRadius: 21,
       backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center',
       shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 4, elevation: 4,
     },
     mapFullCard: {
-      position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: t.card,
-      borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 18, gap: 8,
+      // Square top: it sits below the map, so rounded corners would show gaps.
+      backgroundColor: t.card, paddingHorizontal: 20, paddingTop: 18, gap: 8,
       shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 10,
     },
     mapFullTitle: { fontSize: 18, lineHeight: 24, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
