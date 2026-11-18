@@ -111,6 +111,9 @@ export default function PickupDropScreen() {
   const [pickupSuggestions, setPickupSuggestions] = useState<GooglePlaceSuggestion[]>([]);
   const [pickupSearching, setPickupSearching] = useState(false);
   const [pickupTypeError, setPickupTypeError] = useState<string | null>(null);
+  // A place chosen whose details didn't load (often a weak connection): kept,
+  // so "Tap to retry" asks for the same place again.
+  const [failedPick, setFailedPick] = useState<GooglePlaceSuggestion | null>(null);
   const [pickupPlaceId, setPickupPlaceId] = useState<string | null>(null);
   const [pickupPlaceType, setPickupPlaceType] = useState<string | null>(null);
   const [pickupLat, setPickupLat] = useState<number | null>(null);
@@ -179,7 +182,7 @@ export default function PickupDropScreen() {
   }, []));
 
   const resetPickupPlace = () => {
-    setPickupQuery(''); setPickupSuggestions([]); setPickupTypeError(null);
+    setPickupQuery(''); setPickupSuggestions([]); setPickupTypeError(null); setFailedPick(null);
     setPickupPlaceId(null); setPickupPlaceType(null);
     setPickupLat(null); setPickupLng(null);
     setChosenSavedId(null); setNoResultsFor(null); setLinkError(null);
@@ -218,7 +221,7 @@ export default function PickupDropScreen() {
     const text = `${a.label} · ${a.full_address}`;
     chosenTextRef.current = text;
     setPickupQuery(text);
-    setPickupSuggestions([]); setPickupTypeError(null); setNoResultsFor(null);
+    setPickupSuggestions([]); setPickupTypeError(null); setNoResultsFor(null); setFailedPick(null);
     setPickupPlaceId(null); setPickupPlaceType(null);
     setPickupLat(a.lat); setPickupLng(a.lng);
     setChosenSavedId(a.id);
@@ -349,8 +352,15 @@ export default function PickupDropScreen() {
       setPickupTypeError(isAllowed
         ? null
         : "This doesn't look like a supported store (grocery, pharmacy, etc). Choose a business — or a pickup from a person.");
-    } catch {
-      setPickupTypeError('Could not fetch location details. Please check your internet connection.');
+      setFailedPick(null);
+    } catch (e: any) {
+      // A short reason (NETWORK, PERMISSION_DENIED, 403…) so a screenshot says
+      // why; the service already asked once more before giving up.
+      const code = /—\s*([A-Z_]+|\d{3})/.exec(e?.message ?? '')?.[1];
+      setFailedPick(item);
+      setPickupTypeError(code === 'NETWORK'
+        ? "Couldn't load this place — the connection is weak or offline."
+        : `Couldn't load this place right now.${code ? ` (${code})` : ''}`);
     }
   };
 
@@ -581,7 +591,7 @@ export default function PickupDropScreen() {
                 placeholderTextColor="#9CA3AF"
                 value={pickupQuery}
                 onChangeText={(t) => {
-                  setPickupQuery(t); setPickupTypeError(null);
+                  setPickupQuery(t); setPickupTypeError(null); setFailedPick(null);
                   if (chosenTextRef.current && t !== chosenTextRef.current) {
                     chosenTextRef.current = null;
                     setPickupLat(null); setPickupLng(null); setPickupPlaceId(null); setPickupPlaceType(null);
@@ -630,7 +640,13 @@ export default function PickupDropScreen() {
                 <Text style={s.hintText}>No matches — try the street and city, e.g. “12 Oak St, Dallas”.</Text>
               )
             )}
-            {pickupTypeError && <Text style={s.fieldError}>{pickupTypeError}</Text>}
+            {pickupTypeError && (failedPick ? (
+              <TouchableOpacity onPress={() => handlePickupSelect(failedPick)}>
+                <Text style={s.fieldError}>{pickupTypeError} <Text style={s.hintLink}>Tap to retry</Text></Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={s.fieldError}>{pickupTypeError}</Text>
+            ))}
 
             {fromPerson && savedAddresses.length > 0 && (
               <View style={s.savedRow}>

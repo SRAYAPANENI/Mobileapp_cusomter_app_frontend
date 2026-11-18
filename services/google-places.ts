@@ -150,44 +150,66 @@ export const GooglePlacesService = {
    * Fetch specific coordinates and address components for a place (New v1 API)
    */
   getPlaceDetails: async (place_id: string): Promise<PlaceDetails> => {
-    try {
-      // Fields must be specified for the New API
-      const fields = 'location,formattedAddress,addressComponents,primaryType,types';
-      const url = `https://places.googleapis.com/v1/places/${place_id}?fields=${fields}&key=${GOOGLE_PLACES_API_KEY}&sessionToken=${sessionToken}`;
-
-      const response = await fetch(url);
-      const json = await response.json();
-
-      // Reset session token after a complete "Session"
-      sessionToken = Math.random().toString(36).substring(2, 15);
-
-      if (json.formattedAddress) {
-        const details: PlaceDetails = {
-          latitude: json.location.latitude,
-          longitude: json.location.longitude,
-          formatted_address: json.formattedAddress,
-          primary_type: json.primaryType,
-          types: json.types ?? [],
-        };
-
-        // Extract specific components (v1 uses different names)
-        json.addressComponents.forEach((comp: any) => {
-          if (comp.types.includes('locality')) details.city = comp.longText;
-          if (comp.types.includes('administrative_area_level_1')) details.state = comp.longText;
-          if (comp.types.includes('postal_code')) details.pincode = comp.longText;
-        });
-
-        return details;
-      } else {
-        if (json.error) {
-          console.error('Place Details Error (New):', json.error.status, json.error.message);
-          throw new Error(json.error.message || json.error.status);
-        }
-        throw new Error('Could not fetch place details');
+    // Asked again once when the request itself fails (a dropped or slow
+    // mobile connection, a brief Google 5xx) — a customer on weak signal
+    // got "Could not fetch location details" for a place that was fine.
+    // A real refusal from Google (key, quota, a bad place id) isn't retried.
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await fetchPlaceDetails(place_id);
+      } catch (error: any) {
+        lastError = error;
+        if (!error?.retryable) break;
       }
-    } catch (error) {
-      console.error('Place Details Error (New):', error);
-      throw error;
     }
-  }
+    console.error('Place Details Error (New):', lastError);
+    throw lastError;
+  },
+
 };
+
+/** One Place Details request (New v1 API). Errors carry Google's reason —
+ * "Places API error — <REASON>: …", as the search's do — and say whether
+ * asking again could help (`retryable`). */
+async function fetchPlaceDetails(place_id: string): Promise<PlaceDetails> {
+  // Fields must be specified for the New API.
+  const fields = 'location,formattedAddress,addressComponents,primaryType,types';
+  const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(place_id)}?fields=${fields}&key=${GOOGLE_PLACES_API_KEY}&sessionToken=${sessionToken}`;
+
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch (error: any) {
+    // No answer at all: the connection.
+    throw Object.assign(new Error(`Places API error — NETWORK: ${error?.message ?? 'no response'}`), { retryable: true });
+  }
+  if (!response.ok) {
+    const errJson = await response.json().catch(() => null);
+    const reason = errJson?.error?.details?.find((d: any) => d?.reason)?.reason;
+    const code = reason || errJson?.error?.status;
+    const detail = code ? `${code}: ${errJson.error.message || ''}`.trim() : `${response.status} ${response.statusText}`;
+    throw Object.assign(new Error(`Places API error — ${detail}`), { retryable: response.status >= 500 });
+  }
+  const json = await response.json();
+  // A complete session (autocomplete then details): the next search starts a new one.
+  sessionToken = Math.random().toString(36).substring(2, 15);
+
+  if (!json.formattedAddress || !json.location) {
+    throw Object.assign(new Error('Places API error — NO_LOCATION: this place has no address or point'), { retryable: false });
+  }
+  const details: PlaceDetails = {
+    latitude: json.location.latitude,
+    longitude: json.location.longitude,
+    formatted_address: json.formattedAddress,
+      primary_type: json.primaryType,
+      types: json.types ?? [],
+  };
+  // v1 names the parts differently; a place may have none (an area, a landmark).
+  (json.addressComponents ?? []).forEach((comp: any) => {
+    if (comp.types?.includes('locality')) details.city = comp.longText;
+    if (comp.types?.includes('administrative_area_level_1')) details.state = comp.longText;
+    if (comp.types?.includes('postal_code')) details.pincode = comp.longText;
+  });
+  return details;
+}
