@@ -1375,6 +1375,8 @@ export default function TrackProviderScreen() {
 
     return (
       <MapView
+        // No Google toolbar: tapping a pin must not send people out to Google Maps.
+        toolbarEnabled={false}
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
         style={styles.map}

@@ -20,6 +20,7 @@ import {
   Package,
   Pencil,
   Plus,
+  Maximize2,
   Sparkles,
   Video as VideoIcon,
   X,
@@ -35,6 +36,8 @@ import {
 } from 'react-native';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 import { usePullRefresh } from '@/hooks/use-pull-refresh';
+import { Popup } from '@/components/popup';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Map handled dynamically, same as track-provider.tsx / provider-map.tsx —
 // prevents crashes/web errors if react-native-maps isn't available.
@@ -70,8 +73,60 @@ function formatScheduledAt(iso?: string | null): string | null {
   });
 }
 
+/**
+ * The job's map — its place (the pickup, for a delivery) and the drop-off.
+ * Used by the small preview and the full-screen view, so both show the same.
+ * It never sends anyone out to Google Maps (no toolbar).
+ */
+function JobMap({ job, styles, full = false }: { job: any; styles: ReturnType<typeof makeStyles>; full?: boolean }) {
+  const mapRef = useRef<any>(null);
+  const dropoff = job.job_type === 'PICKUP_DROPOFF' && job.dropoff_lat != null && job.dropoff_lng != null
+    ? { latitude: job.dropoff_lat, longitude: job.dropoff_lng }
+    : null;
+
+  // Full screen: both pins in view, clear of the close button and the details card.
+  const fitAll = () => {
+    if (!full || !dropoff) return;
+    mapRef.current?.fitToCoordinates(
+      [{ latitude: job.lat, longitude: job.lng }, dropoff],
+      { edgePadding: { top: 120, right: 60, bottom: 300, left: 60 }, animated: false },
+    );
+  };
+
+  return (
+    <MapView
+      ref={mapRef}
+      // No Google toolbar: tapping a pin must not send people out to Google Maps.
+      toolbarEnabled={false}
+      provider={PROVIDER_GOOGLE}
+      style={styles.map}
+      initialRegion={{
+        latitude: job.lat,
+        longitude: job.lng,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
+      }}
+      zoomEnabled
+      pitchEnabled={full}
+      rotateEnabled={full}
+      onMapReady={fitAll}
+    >
+      {/* image prop, not children — the reliable native icon path,
+          same reasoning as track-provider.tsx's markers. */}
+      <Marker
+        coordinate={{ latitude: job.lat, longitude: job.lng }}
+        image={require('@/assets/images/destination-pin.png')}
+        anchor={{ x: 0.5, y: 1.0 }}
+      />
+      {dropoff && <Marker coordinate={dropoff} pinColor="#0EA5E9" />}
+    </MapView>
+  );
+}
+
 export default function JobDetailsScreen() {
   const bottomInset = useBottomInset();
+  const topInset = useSafeAreaInsets().top;
+  const [mapFull, setMapFull] = useState(false);
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
@@ -277,33 +332,17 @@ export default function JobDetailsScreen() {
 
           {hasLocation && MapView && (
             <View style={styles.mapContainer}>
-              <MapView
-                provider={PROVIDER_GOOGLE}
-                style={styles.map}
-                initialRegion={{
-                  latitude: job.lat,
-                  longitude: job.lng,
-                  latitudeDelta: 0.02,
-                  longitudeDelta: 0.02,
-                }}
-                zoomEnabled
-                pitchEnabled={false}
-                rotateEnabled={false}
+              <JobMap job={job} styles={styles} />
+              {/* Opens the same map full screen, inside the app, with the job's details. */}
+              <TouchableOpacity
+                style={styles.mapExpandButton}
+                onPress={() => setMapFull(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Show the map full screen"
+                hitSlop={8}
               >
-                {/* image prop, not children — the reliable native icon path,
-                    same reasoning as track-provider.tsx's markers. */}
-                <Marker
-                  coordinate={{ latitude: job.lat, longitude: job.lng }}
-                  image={require('@/assets/images/destination-pin.png')}
-                  anchor={{ x: 0.5, y: 1.0 }}
-                />
-                {job.job_type === 'PICKUP_DROPOFF' && job.dropoff_lat != null && job.dropoff_lng != null && (
-                  <Marker
-                    coordinate={{ latitude: job.dropoff_lat, longitude: job.dropoff_lng }}
-                    pinColor="#0EA5E9"
-                  />
-                )}
-              </MapView>
+                <Maximize2 size={16} color="#111827" />
+              </TouchableOpacity>
             </View>
           )}
           {(job.full_address || resolvedAddress) && (
@@ -460,6 +499,60 @@ export default function JobDetailsScreen() {
 
       {alert.element}
       {photoPicker.element}
+      {/* The map, full screen — still inside the app, with the job's details. */}
+      {hasLocation && MapView && (
+        <Popup closeOn="back" visible={mapFull} animationType="slide" onClose={() => setMapFull(false)} statusBarTranslucent>
+          <View style={[styles.mapFullScreen, { backgroundColor: themeColors.background }]}>
+            <JobMap job={job} styles={styles} full />
+
+            <TouchableOpacity
+              style={[styles.mapFullClose, { top: topInset + 12 }]}
+              onPress={() => setMapFull(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Close the map"
+              hitSlop={8}
+            >
+              <X size={22} color="#111827" />
+            </TouchableOpacity>
+
+            <View style={[styles.mapFullCard, { paddingBottom: bottomInset + 16 }]}>
+              <ThemedText style={styles.mapFullTitle} numberOfLines={2}>{job.title}</ThemedText>
+              {(job.full_address || resolvedAddress) && (
+                <View style={styles.mapFullRow}>
+                  <MapPin size={16} color="#DC2626" />
+                  <ThemedText style={styles.mapFullText} numberOfLines={2}>
+                    {job.job_type === 'PICKUP_DROPOFF' ? 'Pickup: ' : ''}{job.full_address || resolvedAddress}
+                  </ThemedText>
+                </View>
+              )}
+              {job.job_type === 'PICKUP_DROPOFF' && (job.dropoff_address || resolvedDropoffAddress) && (
+                <View style={styles.mapFullRow}>
+                  <MapPin size={16} color="#0EA5E9" />
+                  <ThemedText style={styles.mapFullText} numberOfLines={2}>
+                    Deliver to: {job.dropoff_address || resolvedDropoffAddress}
+                  </ThemedText>
+                </View>
+              )}
+              <View style={styles.mapFullStats}>
+                <View style={styles.mapFullStat}>
+                  <Clock size={14} color="#2563EB" />
+                  <ThemedText style={styles.mapFullStatText}>{scheduledLabel ?? 'As soon as possible'}</ThemedText>
+                </View>
+                {(job.budget_min != null || job.budget_max != null) && (
+                  <View style={styles.mapFullStat}>
+                    <DollarSign size={14} color="#059669" />
+                    <ThemedText style={styles.mapFullStatText}>
+                      {job.budget_min != null ? `$${job.budget_min}` : ''}
+                      {job.budget_min != null && job.budget_max != null ? ' – ' : ''}
+                      {job.budget_max != null ? `$${job.budget_max}` : ''}
+                    </ThemedText>
+                  </View>
+                )}
+              </View>
+            </View>
+          </View>
+        </Popup>
+      )}
     </ThemedView>
   );
 }
@@ -513,6 +606,32 @@ function makeStyles(t: typeof Colors.light) {
     postedViaBadge: { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' },
     badgeText: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary },
     mapContainer: { height: 160, borderRadius: 16, overflow: 'hidden' },
+    mapExpandButton: {
+      // Top-right: the bottom-left corner is Google's logo, which must stay visible.
+      position: 'absolute', top: 10, right: 10, width: 34, height: 34, borderRadius: 17,
+      backgroundColor: 'rgba(255, 255, 255, 0.95)', alignItems: 'center', justifyContent: 'center',
+      shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.15, shadowRadius: 3, elevation: 3,
+    },
+    mapFullScreen: { flex: 1 },
+    mapFullClose: {
+      position: 'absolute', left: 16, width: 42, height: 42, borderRadius: 21,
+      backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center',
+      shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 4, elevation: 4,
+    },
+    mapFullCard: {
+      position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: t.card,
+      borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 18, gap: 8,
+      shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 10,
+    },
+    mapFullTitle: { fontSize: 18, lineHeight: 24, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
+    mapFullRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    mapFullText: { flex: 1, fontSize: 14, lineHeight: 20, fontFamily: Fonts.poppins, color: t.textSecondary },
+    mapFullStats: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+    mapFullStat: {
+      flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6,
+      borderRadius: 14, backgroundColor: 'rgba(255, 206, 72, 0.14)',
+    },
+    mapFullStatText: { fontSize: 12, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: t.textPrimary },
     map: { flex: 1 },
     sectionLabel: {
       fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary,

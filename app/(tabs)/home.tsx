@@ -1842,6 +1842,8 @@ export default function HomeScreen() {
             </View>
           ) : (
             <MapView
+              // No Google toolbar: tapping a pin must not send people out to Google Maps.
+              toolbarEnabled={false}
               provider={PROVIDER_GOOGLE}
               style={styles.mapInner}
               key="main-map"

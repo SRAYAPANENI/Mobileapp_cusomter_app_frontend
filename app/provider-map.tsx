@@ -350,6 +350,8 @@ export default function ProviderMapScreen() {
     <View style={s.root}>
       {/* Map always rendered — animates to user location on GPS resolve */}
       <MapView
+        // No Google toolbar: tapping a pin must not send people out to Google Maps.
+        toolbarEnabled={false}
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
         style={StyleSheet.absoluteFill}
