@@ -13,9 +13,12 @@ import { usePagedTabs } from '@/hooks/use-paged-tabs';
 import { router, useFocusEffect } from 'expo-router';
 import {
   CalendarX,
+  CheckCircle2,
   ChevronLeft,
   Clock,
+  Flag,
   Info,
+  LifeBuoy,
   Pencil,
   Users,
   XCircle
@@ -70,6 +73,7 @@ function JobCard({
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
 
   const hasApplicants = item.status === 'Open' && (item.applicants ?? 0) > 0;
+  const finished = item.status === 'Completed' || item.status === 'Cancelled';
   const glow = useSharedValue(0.4);
 
   useEffect(() => {
@@ -102,17 +106,29 @@ function JobCard({
     >
       <View style={styles.cardHeader}>
         <View style={{ flex: 1 }}>
-          <ThemedText style={styles.jobTitle}>{item.title}</ThemedText>
-          <ThemedText style={styles.jobDescription} numberOfLines={2}>
-            {item.description}
-          </ThemedText>
+          <ThemedText style={styles.jobTitle} numberOfLines={2}>{item.title}</ThemedText>
+          {!!item.description && (
+            <ThemedText style={styles.jobDescription} numberOfLines={2}>
+              {item.description}
+            </ThemedText>
+          )}
         </View>
         <View style={styles.badgeContainer}>
-          <View style={[styles.statusTag, { backgroundColor: themeColors.inputFilled }]}>
-            <ThemedText style={styles.statusTagText}>
-              {item.status === 'Open' ? 'Open' : item.status === 'Ongoing' ? 'Ongoing' : 'Normal'}
-            </ThemedText>
-          </View>
+          {finished ? (
+            // What happened, in the corner — the same place an open job says "Open".
+            <View style={[styles.outcomeTag, item.status === 'Completed' ? styles.outcomeDone : styles.outcomeCancelled]}>
+              {item.status === 'Completed'
+                ? <CheckCircle2 size={13} color="#16A34A" />
+                : <XCircle size={13} color="#DC2626" />}
+              <ThemedText style={[styles.outcomeTagText, { color: item.status === 'Completed' ? '#16A34A' : '#DC2626' }]}>
+                {item.statusLabel}
+              </ThemedText>
+            </View>
+          ) : (item.status === 'Open' || item.status === 'Ongoing') && (
+            <View style={[styles.statusTag, { backgroundColor: themeColors.inputFilled }]}>
+              <ThemedText style={styles.statusTagText}>{item.status}</ThemedText>
+            </View>
+          )}
           {hasApplicants && (
             <View style={styles.newBadge}>
               <ThemedText style={styles.newBadgeText}>NEW</ThemedText>
@@ -121,11 +137,10 @@ function JobCard({
         </View>
       </View>
 
-      {item.cancellationReason && (
-        <View style={{ backgroundColor: '#FEF2F2', borderRadius: 8, padding: 8, marginBottom: 8 }}>
-          <ThemedText style={{ fontSize: 12, color: '#B91C1C' }}>
-            {item.cancellationReason}
-          </ThemedText>
+      {item.status === 'Cancelled' && !!item.cancellationReason && (
+        <View style={styles.reasonBox}>
+          <ThemedText style={styles.reasonLabel}>Reason</ThemedText>
+          <ThemedText style={styles.reasonText} numberOfLines={3}>{item.cancellationReason}</ThemedText>
         </View>
       )}
 
@@ -138,6 +153,7 @@ function JobCard({
         </View>
       )}
 
+      {!finished && (
       <View style={styles.metaRow}>
         <View style={[styles.typeBadge, {
           backgroundColor: item.type === 'Urgent' ? '#FFCE48' : item.type === 'Booked Slot' ? '#1F2937' : '#FFCE48'
@@ -153,6 +169,7 @@ function JobCard({
           <ThemedText style={styles.statusBadgeText}>{item.statusLabel}</ThemedText>
         </View>
       </View>
+      )}
 
       <View style={styles.footerTopRow}>
         <View style={styles.postedInfo}>
@@ -170,22 +187,32 @@ function JobCard({
         ) : null}
       </View>
 
-      {item.status === 'Completed' && (
-        <View style={styles.footerActionsRow}>
+      {finished && (
+        // Finished: look back at it, get help with it, or (completed) report a problem.
+        <View style={styles.finishedActions}>
           <TouchableOpacity
-            style={styles.editButton}
+            style={styles.finishedButton}
+            onPress={() => router.push({ pathname: '/job-details', params: { jobId: item.id } })}
+          >
+            <Info size={14} color={themeColors.textSecondary} />
+            <ThemedText style={styles.finishedButtonText} numberOfLines={1}>Details</ThemedText>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.finishedButton}
             onPress={() => router.push({ pathname: '/support-chat', params: { jobId: item.id } } as any)}
           >
-            <Info size={14} color="#6B7280" />
-            <ThemedText style={styles.editButtonText}>Get Help</ThemedText>
+            <LifeBuoy size={14} color={themeColors.textSecondary} />
+            <ThemedText style={styles.finishedButtonText} numberOfLines={1}>Get Help</ThemedText>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.cancelButtonSmall}
-            onPress={() => onReportIssue(item.id)}
-          >
-            <XCircle size={14} color="#EF4444" />
-            <ThemedText style={styles.cancelButtonSmallText}>Report an Issue</ThemedText>
-          </TouchableOpacity>
+          {item.status === 'Completed' && (
+            <TouchableOpacity
+              style={[styles.finishedButton, styles.reportButton]}
+              onPress={() => onReportIssue(item.id)}
+            >
+              <Flag size={14} color="#B45309" />
+              <ThemedText style={[styles.finishedButtonText, { color: '#B45309' }]} numberOfLines={1}>Report</ThemedText>
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -256,7 +283,7 @@ function mapApiJob(j: any): Job {
     INSPECTING:      { status: 'Ongoing', label: 'Inspecting the job', color: '#8B5CF6' },
     INVOICE_PENDING: { status: 'Ongoing', label: 'Invoice ready',      color: '#F59E0B' },
     IN_PROGRESS: { status: 'Ongoing',   label: 'In progress',      color: '#6366F1' },
-    COMPLETED:   { status: 'Completed', label: 'Completed',        color: '#4B5563' },
+    COMPLETED:   { status: 'Completed', label: 'Completed',        color: '#16A34A' },
     CANCELLED:   { status: 'Cancelled', label: 'Cancelled',        color: '#EF4444' },
     DISPUTED:    { status: 'Ongoing',   label: 'Disputed',         color: '#DC2626' },
     EXPIRED:     { status: 'Expired',   label: 'Deadline Passed',  color: '#6B7280' },
@@ -739,5 +766,63 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     lineHeight: 18,
     fontFamily: Fonts.poppinsSemiBold,
     color: '#EF4444',
-  }
+  },
+  outcomeTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  outcomeDone: { backgroundColor: 'rgba(22, 163, 74, 0.12)' },
+  outcomeCancelled: { backgroundColor: 'rgba(220, 38, 38, 0.10)' },
+  outcomeTagText: {
+    fontSize: 11,
+    lineHeight: 17,
+    fontFamily: Fonts.poppinsSemiBold,
+  },
+  reasonBox: {
+    backgroundColor: 'rgba(220, 38, 38, 0.06)',
+    borderLeftWidth: 3,
+    borderLeftColor: '#DC2626',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 14,
+  },
+  reasonLabel: {
+    fontSize: 11,
+    lineHeight: 16,
+    fontFamily: Fonts.poppinsSemiBold,
+    color: '#DC2626',
+  },
+  reasonText: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontFamily: Fonts.poppins,
+    color: t.textPrimary,
+  },
+  finishedActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  finishedButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 9,
+    borderRadius: 12,
+    backgroundColor: t.inputFilled,
+  },
+  reportButton: { backgroundColor: 'rgba(245, 158, 11, 0.14)' },
+  finishedButtonText: {
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: Fonts.poppinsSemiBold,
+    color: t.textSecondary,
+  },
 }); }

@@ -11,6 +11,7 @@ import { kmToMiles } from '@/services/units';
 import { Image } from 'expo-image';
 import { router, useFocusEffect } from 'expo-router';
 import {
+  BadgeCheck,
   AlertTriangle,
   Award,
   ChevronLeft,
@@ -107,9 +108,10 @@ function ApplicantCard({
         )}
         <View style={styles.headerInfo}>
           <View style={styles.nameRow}>
-            <ThemedText style={styles.nameText}>{item.name}</ThemedText>
+            <ThemedText style={styles.nameText} numberOfLines={2}>{item.name}</ThemedText>
             {(item as any).businessName ? (
-              <View style={[styles.expertiseBadge, { backgroundColor: '#2563EB' }]}>
+              <View style={[styles.expertiseBadge, styles.businessBadge]}>
+                <BadgeCheck size={12} color="#fff" />
                 <ThemedText style={styles.expertiseText}>Verified business</ThemedText>
               </View>
             ) : (
@@ -712,18 +714,30 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   nameRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    gap: 8,
   },
   nameText: {
+    // Shrinks and wraps, so a long business name never pushes its tag off the card.
+    flex: 1,
+    flexShrink: 1,
     fontSize: 18,
     lineHeight: 24,
     fontFamily: Fonts.poppinsBold,
     color: t.textPrimary,
   },
   expertiseBadge: {
-    paddingHorizontal: 12,
+    flexShrink: 0,
+    paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
+    marginTop: 2,
+  },
+  businessBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#2563EB',
   },
   expertiseText: {
     color: '#fff',
