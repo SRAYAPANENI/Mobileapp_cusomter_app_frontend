@@ -35,9 +35,12 @@ async function describeJob(job: any): Promise<ActiveJobBanner | null> {
       message = 'Pay the visiting fee to continue';
     } else {
       const otpResult = await SkoFyApi.jobs.getInspectionOtp(job.id).catch(() => null);
+      // At the provider's own place the customer is the one going there.
       message = otpResult?.otp
         ? 'Your inspection code is ready — tap to view'
-        : 'Waiting for your provider to arrive';
+        : job.shape?.venue === 'PROVIDER_PLACE'
+          ? "Head to your provider's place — they'll ask for your code there"
+          : 'Waiting for your provider to arrive';
     }
   } else if (job.status === 'INSPECTING') {
     message = 'Your provider is inspecting the job';
