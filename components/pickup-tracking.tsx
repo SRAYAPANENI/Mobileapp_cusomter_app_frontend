@@ -47,7 +47,8 @@ export function PickupCodeEditor({ jobId, code, styles }: { jobId: string; code:
     setSaving(true);
     try {
       await SkoFyApi.jobs.updatePickupCode(jobId, text.trim());
-      appAlert.show('success', 'Pickup code sent', 'Your provider can see it now.');
+      // The provider is sent it only once they're at the store (skofy-backend pickup_details_for).
+      appAlert.show('success', 'Pickup code saved', 'Your provider will see it when they reach the store.');
     } catch (e: any) {
       appAlert.show('error', 'Could not save', e?.message || 'Please try again.');
     } finally {
@@ -59,7 +60,7 @@ export function PickupCodeEditor({ jobId, code, styles }: { jobId: string; code:
     <View style={styles.inspectionCard}>
       <ThemedText style={styles.inspectionCardTitle}>Store pickup code</ThemedText>
       <ThemedText style={styles.inspectionCardBody}>
-        If the store sent you a code for this order, add it here — only your provider sees it.
+        If the store sent you a code for this order, add it here. Only your provider sees it, and only once they're at the store.
       </ThemedText>
       <View style={s.row}>
         <TextInput
