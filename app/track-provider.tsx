@@ -34,6 +34,7 @@ import { PanResponder, Platform, ScrollView, Share, StatusBar, StyleSheet, Touch
 import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { SlideInDown } from 'react-native-reanimated';
+import { SheetToggleHandle } from '@/components/sheet-toggle-handle';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RatingModal, RatingDimensions } from '@/components/ui/rating-modal';
 import { ExtraWorkCard } from '@/components/extra-work-card';
@@ -1475,15 +1476,13 @@ export default function TrackProviderScreen() {
       <KeyboardAvoidingView style={styles.bottomSheetKeyboardWrapper} behavior="padding">
       <Animated.View entering={SlideInDown.duration(500)} style={styles.bottomSheet}>
         <View style={styles.handleArea} {...sheetPan.panHandlers}>
-          <TouchableOpacity
+          {/* An arrow, not a bare line: it says the card can be folded (components/sheet-toggle-handle.tsx). */}
+          <SheetToggleHandle
+            expanded={!minimized}
             onPress={() => setMinimized((m) => !m)}
-            hitSlop={12}
-            style={styles.handleHit}
-            accessibilityRole="button"
-            accessibilityLabel={minimized ? 'Show the details' : 'Show more of the map'}
-          >
-            <View style={styles.handle} />
-          </TouchableOpacity>
+            expandLabel="Show the details"
+            collapseLabel="Show more of the map"
+          />
         </View>
 
         <ScrollView
@@ -1752,8 +1751,6 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   // The sheet's grab handle: swipe or tap it to fold the sheet to its headline.
   handleArea: { alignItems: 'center', paddingTop: 10, paddingBottom: 8 },
-  handleHit: { paddingHorizontal: 24, paddingVertical: 4 },
-  handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: t.border },
   stageRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   stageTitle: { fontSize: 22, lineHeight: 29, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
   stageSubtitle: { fontSize: 13.5, lineHeight: 19, fontFamily: Fonts.poppins, color: t.textSecondary, marginTop: 2 },
