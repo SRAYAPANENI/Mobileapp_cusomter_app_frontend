@@ -12,7 +12,8 @@ import { Linking } from 'react-native';
 // snooze still surfaces right away instead of waiting out the old one.
 // Mounted once at the app's root; renders nothing itself, just watches
 // app-config and fires the shared dialog (components/alert-host.tsx) when due.
-const SNOOZE_KEY = 'update_available_dismissed';
+// This app's own (each app has its own versions) — see terms-updated-banner.tsx.
+const SNOOZE_KEY = 'dodorez_customer_update_available_dismissed';
 const RESHOW_AFTER_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
 export default function UpdateAvailableCheck() {

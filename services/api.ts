@@ -14,7 +14,7 @@
  *   Production             → https://api.skofy.com/v1
  */
 
-import { AppState, Platform } from 'react-native';
+import { AppState } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { reportReachable, setHealthCheck } from '@/services/server-status';
 import { File, Paths } from 'expo-file-system';
@@ -54,11 +54,23 @@ if (__DEV__) console.log('[SkoFyApi] BASE_URL:', BASE_URL, '__DEV__:', __DEV__);
 export const STRIPE_PUBLISHABLE_KEY = 'pk_test_51TvsauRyqsQEDt0RCd5L6d51XipE7Ho1736WFkgfx3Qc2XgyDHkSMekLyCphMszlUpZhO9gaH6b5QVujtIdB24Yv00k8dcwdlg';
 
 // ─── TOKEN STORAGE ───────────────────────────────────────────────────────────
-const TOKEN_KEY = 'skofy_access_token';
-const REFRESH_KEY = 'skofy_refresh_token';
-const USER_KEY = 'skofy_user';
+// This app's own names. Both apps used the same ones ('skofy_access_token'
+// and so on): where both run inside one host app — an iPhone development
+// build or Expo Go — that's a single slot, so signing in to one app replaced
+// the other's login. The other app then sent this one's token, was refused
+// (403) on every screen, and stayed broken until logging out and in — which
+// broke the first app in turn.
+const APP_ROLE = 'customer';
+const TOKEN_KEY = 'dodorez_customer_access_token';
+const REFRESH_KEY = 'dodorez_customer_refresh_token';
+const USER_KEY = 'dodorez_customer_user';
 // Register verified the number but Create Account hasn't finished yet.
-const REGISTERING_KEY = 'skofy_registering';
+const REGISTERING_KEY = 'dodorez_customer_registering';
+// The names both apps shared before: a login there is moved to this app's
+// own names once, if it's this app's (adoptSharedLogin).
+const SHARED = {
+  token: 'skofy_access_token', refresh: 'skofy_refresh_token', user: 'skofy_user', registering: 'skofy_registering',
+} as const;
 
 // iOS keeps a keychain entry shut while the phone is locked unless it says
 // otherwise — and this app is woken with the phone locked (a call's VoIP
@@ -79,10 +91,14 @@ const KEYCHAIN_LOCKED: ApiError = {
 };
 
 async function readSecure(key: string): Promise<string | null> {
-  // Start-up may be moving the login to KEYCHAIN (openKeychainWhileLocked):
-  // read in that instant it isn't there, and the app would sign itself out.
+  // Start-up may be moving the login to this app's own names
+  // (adoptSharedLogin): read in that instant it isn't there, and the app
+  // would sign itself out.
   await staleSessionCleared;
   try {
+    // Not moved yet (the keychain was shut at start-up): moved now, or this
+    // read counts as "can't read yet" — never as signed out.
+    await ensureSharedLoginAdopted();
     return await SecureStore.getItemAsync(key);
   } catch {
     throw KEYCHAIN_LOCKED;
@@ -153,6 +169,9 @@ function getInstallMarkerFile(): File | null {
 }
 
 async function clearStaleSessionAfterReinstall(): Promise<void> {
+  // First, so an unfinished registration carried over is seen just below.
+  // The keychain shut right now: moved on the first read instead (readSecure).
+  await ensureSharedLoginAdopted().catch(() => {});
   try {
     // A registration left unfinished last time (see TokenStore.markRegistering).
     if (await SecureStore.getItemAsync(REGISTERING_KEY)) await TokenStore.clear();
@@ -161,7 +180,6 @@ async function clearStaleSessionAfterReinstall(): Promise<void> {
       await TokenStore.clear();
       marker.write('1');
     }
-    await openKeychainWhileLocked();
   } catch {
     // Best-effort — worst case a stale session survives one extra launch
     // and gets caught by the normal "Signed Out" rejection instead.
@@ -180,20 +198,54 @@ async function clearStaleSessionAfterReinstall(): Promise<void> {
 // Register — nothing here depended on which screen they were on.
 export const staleSessionCleared: Promise<void> = clearStaleSessionAfterReinstall();
 
-// A login saved before KEYCHAIN existed stays shut while the phone is locked:
-// writing over an entry keeps how it was first stored, so each one is moved
-// once — read, removed, written again. Locked right now: tried next launch.
-const KEYCHAIN_MOVED_KEY = 'skofy_keychain_after_unlock';
-async function openKeychainWhileLocked(): Promise<void> {
-  if (Platform.OS !== 'ios') return;
-  if (await SecureStore.getItemAsync(KEYCHAIN_MOVED_KEY)) return;
-  for (const key of [TOKEN_KEY, REFRESH_KEY, USER_KEY]) {
-    const value = await SecureStore.getItemAsync(key);
-    if (value === null) continue;
-    await SecureStore.deleteItemAsync(key);
-    await SecureStore.setItemAsync(key, value, KEYCHAIN);
+// The role a token was issued for, from its payload — not checked here (the
+// server does that); only to tell the two apps' logins apart.
+function roleOf(token: string | null): string | null {
+  try {
+    const part = token?.split('.')[1];
+    if (!part) return null;
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, '=')))?.role ?? null;
+  } catch {
+    return null;
   }
-  await SecureStore.setItemAsync(KEYCHAIN_MOVED_KEY, '1', KEYCHAIN);
+}
+
+/** A login saved under the names both apps used to share, moved to this
+ * app's own — only if it was issued to this app. The provider app's is left
+ * where it is, for that app to take; this one then opens at Login, once.
+ * Written before the old copy is removed, so nothing is lost if it stops
+ * half way. Throws while the keychain is shut. */
+async function adoptSharedLogin(): Promise<void> {
+  if (await SecureStore.getItemAsync(REFRESH_KEY)) return;
+  const refresh = await SecureStore.getItemAsync(SHARED.refresh);
+  if (!refresh) return;
+  const access = await SecureStore.getItemAsync(SHARED.token);
+  const user = await SecureStore.getItemAsync(SHARED.user);
+  let role = roleOf(access);
+  if (!role && user) {
+    try { role = JSON.parse(user)?.role ?? null; } catch { role = null; }
+  }
+  if (role !== APP_ROLE) return;
+  const registering = await SecureStore.getItemAsync(SHARED.registering);
+  if (access) await SecureStore.setItemAsync(TOKEN_KEY, access, KEYCHAIN);
+  if (user) await SecureStore.setItemAsync(USER_KEY, user, KEYCHAIN);
+  if (registering) await SecureStore.setItemAsync(REGISTERING_KEY, '1');
+  // Last: its presence is what says "moved" (the check at the top).
+  await SecureStore.setItemAsync(REFRESH_KEY, refresh, KEYCHAIN);
+  for (const key of Object.values(SHARED)) await SecureStore.deleteItemAsync(key);
+}
+
+// Once per run: requests starting together share the one move in progress;
+// a keychain still shut (it threw) is tried again on the next read.
+let sharedLoginChecked = false;
+let sharedLoginMove: Promise<void> | null = null;
+async function ensureSharedLoginAdopted(): Promise<void> {
+  if (sharedLoginChecked) return;
+  sharedLoginMove ??= adoptSharedLogin()
+    .then(() => { sharedLoginChecked = true; })
+    .finally(() => { sharedLoginMove = null; });
+  await sharedLoginMove;
 }
 
 // The stored login, for deciding where the app opens. Woken with the phone

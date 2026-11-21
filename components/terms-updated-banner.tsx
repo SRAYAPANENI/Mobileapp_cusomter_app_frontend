@@ -13,7 +13,9 @@ import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
 // button on /terms records consent (AppConfigService.accept_terms). Snoozed
 // per the version it was dismissed for, so a further bump while someone's
 // mid-snooze shows right away instead of waiting out the old snooze.
-const DISMISS_KEY = 'terms_banner_dismissed';
+// This app's own: the two apps' terms have their own versions, and where both
+// run inside one host app a shared name let one app's snooze hide the other's.
+const DISMISS_KEY = 'dodorez_customer_terms_banner_dismissed';
 const RESHOW_AFTER_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
 export default function TermsUpdatedBanner() {
