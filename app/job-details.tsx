@@ -9,6 +9,7 @@ import { SkoFyApi } from '@/services/api';
 import { kmToMiles } from '@/services/units';
 import { Image } from 'expo-image';
 import { usePhotoPicker } from '@/components/photo-picker';
+import { usePhotoViewer } from '@/components/photo-viewer';
 import * as Location from 'expo-location';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
@@ -134,6 +135,8 @@ export default function JobDetailsScreen() {
   const alert = useAppAlert();
   // Camera or gallery, in the app's own popup (components/photo-picker.tsx).
   const photoPicker = usePhotoPicker();
+  // Any photo here, seen whole: theirs, and the provider's at the pickup and drop-off.
+  const photoViewer = usePhotoViewer();
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -391,6 +394,34 @@ export default function JobDetailsScreen() {
           )}
         </View>
 
+        {/* The provider's photos at the pickup and drop-off — kept here once
+            the job is done (the tracking screen shows them only while live). */}
+        {job.job_type === 'PICKUP_DROPOFF' && (job.pickup_photo_url || job.dropoff_photo_url) && (() => {
+          const at = (iso?: string | null) => (iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : null);
+          const proof = [
+            job.pickup_photo_url && { uri: job.pickup_photo_url as string, label: 'At the pickup', when: at(job.pickup_confirmed_at) },
+            job.dropoff_photo_url && { uri: job.dropoff_photo_url as string, label: 'Delivered', when: at(job.delivered_at) },
+          ].filter(Boolean) as { uri: string; label: string; when: string | null }[];
+          return (
+            <View style={styles.mainCard}>
+              <ThemedText style={styles.sectionLabel}>From your provider</ThemedText>
+              <View style={styles.photoGrid}>
+                {proof.map((p, i) => (
+                  <TouchableOpacity key={p.uri} style={styles.proofItem} activeOpacity={0.85}
+                    accessibilityRole="button" accessibilityLabel={`${p.label} photo. Open it full size`}
+                    onPress={() => photoViewer.open(proof.map((q) => ({ uri: q.uri, caption: q.when ? `${q.label} · ${q.when}` : q.label })), i)}>
+                    <View style={styles.photoThumbWrapper}>
+                      <Image source={{ uri: p.uri }} style={styles.photoThumb} contentFit="cover" />
+                    </View>
+                    <ThemedText style={styles.proofLabel} numberOfLines={1}>{p.label}</ThemedText>
+                    {!!p.when && <ThemedText style={styles.proofWhen} numberOfLines={1}>{p.when}</ThemedText>}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          );
+        })()}
+
         <CareSheetSummary custody={job.shape?.custody} sheet={job.care_sheet} />
 
         <View style={styles.mainCard}>
@@ -466,7 +497,13 @@ export default function JobDetailsScreen() {
                     <VideoIcon size={22} color="#fff" />
                   </View>
                 ) : (
-                  <Image source={{ uri: url }} style={styles.photoThumb} contentFit="cover" />
+                  <TouchableOpacity activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Open the photo full size"
+                    onPress={() => {
+                      const stills = (job.images || []).filter((u: string) => !isVideoUrl(u));
+                      photoViewer.open(stills, stills.indexOf(url));
+                    }}>
+                    <Image source={{ uri: url }} style={styles.photoThumb} contentFit="cover" />
+                  </TouchableOpacity>
                 )}
                 {canEditPhotos && (
                   <TouchableOpacity style={styles.removePhotoBtn} onPress={() => handleRemovePhoto(url)}>
@@ -507,6 +544,7 @@ export default function JobDetailsScreen() {
 
       {alert.element}
       {photoPicker.element}
+      {photoViewer.element}
       {/* The map, full screen — still inside the app, with the job's details. */}
       {hasLocation && MapView && (
         <Popup closeOn="back" visible={mapFull} animationType="slide" onClose={() => setMapFull(false)} statusBarTranslucent navigationBarTranslucent>
@@ -672,6 +710,9 @@ function makeStyles(t: typeof Colors.light) {
     photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
     photoThumbWrapper: { width: 84, height: 84, borderRadius: 12, overflow: 'hidden' },
     photoThumb: { width: '100%', height: '100%' },
+    proofItem: { width: 84, gap: 2 },
+    proofLabel: { fontSize: 12, lineHeight: 16, fontFamily: Fonts.poppinsSemiBold, color: t.textPrimary, marginTop: 4 },
+    proofWhen: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppins, color: t.textSecondary },
     videoThumbPlaceholder: { backgroundColor: '#111827', alignItems: 'center', justifyContent: 'center' },
     removePhotoBtn: {
       position: 'absolute', top: 4, right: 4,

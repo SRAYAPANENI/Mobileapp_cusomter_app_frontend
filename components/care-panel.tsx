@@ -7,6 +7,7 @@ import type { CareJob } from '@/hooks/use-care-job';
 import { BookingSummary, SkoFyApi } from '@/services/api';
 import { BookingCheckout } from '@/components/booking-checkout';
 import { Image } from 'expo-image';
+import { usePhotoViewer } from '@/components/photo-viewer';
 import * as Location from 'expo-location';
 import { Camera, Clock, DoorOpen, KeyRound, MapPin, Timer } from 'lucide-react-native';
 import React, { useState } from 'react';
@@ -39,6 +40,8 @@ export function CarePanel({ jobId, care, onMessage }: Props) {
   const [stopping, setStopping] = useState(false);
   // Booking opens the checkout: offers, promo code, the bill, then Book.
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  // The provider's photos, seen whole (a tap on any of them).
+  const photoViewer = usePhotoViewer();
 
   if (!job) return null;
   const steps: string[] = job.steps ?? [];
@@ -211,7 +214,10 @@ export function CarePanel({ jobId, care, onMessage }: Props) {
 
       {/* Handed back / delivered: the provider's photo of it, when there is one. */}
       {handBack && !!job.delivered_at && delivery && !!job.dropoff_photo_url && (
-        <Image source={{ uri: job.dropoff_photo_url }} style={s.dropoffPhoto} contentFit="cover" />
+        <TouchableOpacity activeOpacity={0.9} accessibilityRole="button" accessibilityLabel="Delivery photo. Open it full size"
+          onPress={() => photoViewer.open([{ uri: job.dropoff_photo_url!, caption: 'Delivered' }])}>
+          <Image source={{ uri: job.dropoff_photo_url }} style={s.dropoffPhoto} contentFit="cover" />
+        </TouchableOpacity>
       )}
 
       {record && (record.handover_photos.length > 0 || record.updates.length > 0) && (
@@ -225,7 +231,12 @@ export function CarePanel({ jobId, care, onMessage }: Props) {
               <ThemedText style={[s.when, { color: t.textSecondary }]}>{when(u.created_at)}</ThemedText>
               {u.note ? <ThemedText style={[s.body, { color: t.textPrimary }]}>{u.note}</ThemedText> : null}
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {u.photo_urls.map((url) => <Image key={url} source={{ uri: url }} style={s.photo} contentFit="cover" />)}
+                {u.photo_urls.map((url, i) => (
+                  <TouchableOpacity key={url} activeOpacity={0.9} accessibilityRole="button" accessibilityLabel="Open the photo full size"
+                    onPress={() => photoViewer.open(u.photo_urls.map((p) => ({ uri: p, caption: u.note || when(u.created_at) })), i)}>
+                    <Image source={{ uri: url }} style={s.photo} contentFit="cover" />
+                  </TouchableOpacity>
+                ))}
               </ScrollView>
             </View>
           ))}
@@ -233,13 +244,19 @@ export function CarePanel({ jobId, care, onMessage }: Props) {
             <View style={[s.update, { borderTopColor: t.borderSubtle }]}>
               <ThemedText style={[s.when, { color: t.textSecondary }]}>Handed over {record.handover_at ? when(record.handover_at) : ''}</ThemedText>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {record.handover_photos.map((p) => <Image key={p.url} source={{ uri: p.url }} style={s.photo} contentFit="cover" />)}
+                {record.handover_photos.map((p, i) => (
+                  <TouchableOpacity key={p.url} activeOpacity={0.9} accessibilityRole="button" accessibilityLabel="Open the photo full size"
+                    onPress={() => photoViewer.open(record.handover_photos.map((h) => ({ uri: h.url, caption: 'Handed over' })), i)}>
+                    <Image source={{ uri: p.url }} style={s.photo} contentFit="cover" />
+                  </TouchableOpacity>
+                ))}
               </ScrollView>
             </View>
           )}
         </View>
       )}
       <BookingCheckout visible={checkoutOpen} jobId={jobId} onBook={book} onClose={() => setCheckoutOpen(false)} />
+      {photoViewer.element}
     </View>
   );
 }

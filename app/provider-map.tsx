@@ -8,6 +8,7 @@ import { ChevronLeft, Lock, LocateFixed, Navigation2, RefreshCw, Search, Star, X
 import { ProfessionIcon } from '@/components/profession-icon';
 import { Fonts } from '@/constants/theme';
 import { SkoFyApi } from '@/services/api';
+import { kmToMiles } from '@/services/units';
 import { NAME_AFTER_HIRING, providerShortTitle, providerTitle, isNameHidden } from '@/services/providerName';
 import { VoicePostModal } from '@/components/voice-post-modal';
 
@@ -567,7 +568,8 @@ export default function ProviderMapScreen() {
               </View>
               <View style={s.sheetStatDivider} />
               <View style={s.sheetStatBox}>
-                <Text style={s.sheetStatVal}>{selected.distance_km.toFixed(1)} km</Text>
+                {/* In miles (US launch); the server measures in kilometres. */}
+                <Text style={s.sheetStatVal}>{kmToMiles(selected.distance_km).toFixed(1)} mi</Text>
                 <Text style={s.sheetStatLabel}>Away</Text>
               </View>
             </View>

@@ -17,6 +17,7 @@ import { InspectionReport, InspectionReportCard } from '@/components/inspection-
 import { kmToMiles } from '@/services/units';
 import { GOOGLE_PLACES_API_KEY } from '@/services/google-places';
 import { Image } from 'expo-image';
+import { usePhotoViewer } from '@/components/photo-viewer';
 import { callTapAllowed } from '@/services/callManager';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
@@ -190,21 +191,22 @@ function CodeCard({ title, code, body, validUntil, styles, action }: {
 
 // A done step with the provider's photo of it: a small thumbnail beside a
 // line of text — tap it to see the photo full width, tap again to shrink it.
-function PhotoNote({ uri, title, body, styles }: {
-  uri: string | null; title: string; body: string; styles: ReturnType<typeof makeStyles>;
+/** The provider's photo at a stop, with what it shows. A tap opens it whole,
+ * full screen (it used to only grow inside the card, still cropped). */
+function PhotoNote({ uri, title, body, styles, onOpen }: {
+  uri: string | null; title: string; body: string; styles: ReturnType<typeof makeStyles>; onOpen: () => void;
 }) {
-  const [big, setBig] = useState(false);
   return (
     <TouchableOpacity
       style={styles.photoNote}
       activeOpacity={0.85}
       disabled={!uri}
-      onPress={() => setBig((b) => !b)}
+      onPress={onOpen}
       accessibilityRole={uri ? 'button' : undefined}
-      accessibilityLabel={uri ? `${title}. ${big ? 'Show the photo smaller' : 'Show the photo larger'}` : title}
+      accessibilityLabel={uri ? `${title}. Open the photo full size` : title}
     >
       <View style={styles.photoNoteRow}>
-        {uri && !big
+        {uri
           ? <Image source={{ uri }} style={styles.photoThumb} contentFit="cover" />
           : <CheckCircle2 size={22} color="#10B981" />}
         <View style={{ flex: 1 }}>
@@ -212,7 +214,6 @@ function PhotoNote({ uri, title, body, styles }: {
           <ThemedText style={styles.inspectionCardBody}>{body}</ThemedText>
         </View>
       </View>
-      {uri && big && <Image source={{ uri }} style={styles.pickupPhoto} contentFit="cover" />}
     </TouchableOpacity>
   );
 }
@@ -290,6 +291,8 @@ export default function TrackProviderScreen() {
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const appAlert = useAppAlert();
+  // The provider's photos at the pickup and drop-off, seen whole.
+  const photoViewer = usePhotoViewer();
   const insets = useSafeAreaInsets();
 
   const mapRef = useRef<any>(null);
@@ -1561,6 +1564,7 @@ export default function TrackProviderScreen() {
               {/* Collected: the provider's photo of it (and what the shopping came to). */}
               {jobKind === 'PICKUP_DROPOFF' && !!pickupConfirmedAt && !delivered && (pickupPhotoUrl || (purchaseLimit != null && goodsAmount != null)) && (
                 <PhotoNote
+                  onOpen={() => photoViewer.open([{ uri: pickupPhotoUrl!, caption: `Picked up${pickupClock ? ` at ${pickupClock}` : ''}` }])}
                   uri={pickupPhotoUrl}
                   title={`Picked up${pickupClock ? ` at ${pickupClock}` : ''}`}
                   body={purchaseLimit != null && goodsAmount != null ? goodsReceiptLine(purchaseLimit, goodsAmount) : 'Photo of your order'}
@@ -1588,7 +1592,13 @@ export default function TrackProviderScreen() {
 
               {/* Delivered (a booked trip's photo is in its booking card). */}
               {jobStatus === 'IN_PROGRESS' && jobKind === 'PICKUP_DROPOFF' && delivered && !paysUpfront && !!dropoffPhotoUrl && (
-                <Image source={{ uri: dropoffPhotoUrl }} style={styles.pickupPhoto} contentFit="cover" />
+                <TouchableOpacity activeOpacity={0.9} accessibilityRole="button" accessibilityLabel="Delivery photo. Open it full size"
+                  onPress={() => photoViewer.open([
+                    ...(pickupPhotoUrl ? [{ uri: pickupPhotoUrl, caption: 'At the pickup' }] : []),
+                    { uri: dropoffPhotoUrl, caption: 'Delivered' },
+                  ], pickupPhotoUrl ? 1 : 0)}>
+                  <Image source={{ uri: dropoffPhotoUrl }} style={styles.pickupPhoto} contentFit="cover" />
+                </TouchableOpacity>
               )}
 
               {/* The inspection report, to look over — until it's confirmed (§4). */}
@@ -1722,6 +1732,7 @@ export default function TrackProviderScreen() {
         />
       )}
       {appAlert.element}
+      {photoViewer.element}
     </View>
   );
 }
