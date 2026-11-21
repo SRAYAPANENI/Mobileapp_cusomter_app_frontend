@@ -105,7 +105,7 @@ const CATEGORY_FAQS: Record<string, { question: string; answer: string }[]> = {
     },
     {
       question: "How are providers checked?",
-      answer: "Before anyone can apply, their ID is verified and their skills are checked with a skill test. Before they can be hired, they also need a cleared background check and an approved licence. You can see their ratings and past jobs too.",
+      answer: "Before anyone can apply, their ID is verified. Most skills are also checked with a skill test, and trades like electrical, plumbing and gas with a camera test a person at Dodorez reviews. For simple jobs, their first customers' ratings decide whether they keep getting them. Before they can be hired, they also need a cleared background check and an approved licence. You can see their ratings and past jobs too.",
     },
     {
       question: "How do I rate my provider?",
