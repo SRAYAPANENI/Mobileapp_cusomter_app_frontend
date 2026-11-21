@@ -1,3 +1,4 @@
+import { Req, missingField } from '@/components/required-mark';
 import { Text, TextInput } from '@/components/scaled-text';
 import { Fonts } from '@/constants/theme';
 import {
@@ -11,25 +12,27 @@ interface Props {
   items: ShoppingItem[];
   onChange: (items: ShoppingItem[]) => void;
   editable: boolean;
+  /** No item yet, after the form was sent: the first box goes red. */
+  missing?: boolean;
 }
 
 const CHOICES = Object.keys(IF_UNAVAILABLE_LABELS) as IfUnavailable[];
 
 // Buy it for me: what to buy, how many, and what to do if it's out of stock.
 // Controlled — the list's rules are in services/pickupOptions.ts.
-export function ShoppingListEditor({ items, onChange, editable }: Props) {
+export function ShoppingListEditor({ items, onChange, editable, missing }: Props) {
   const update = (i: number, patch: Partial<ShoppingItem>) =>
     onChange(items.map((it, j) => (j === i ? { ...it, ...patch } : it)));
   const remove = (i: number) => onChange(items.length > 1 ? items.filter((_, j) => j !== i) : [newShoppingItem()]);
 
   return (
     <View style={s.wrap}>
-      <Text style={s.label}>Shopping list</Text>
+      <Text style={s.label}>Shopping list<Req /></Text>
       {items.map((item, i) => (
         <View key={i} style={s.row}>
           <View style={s.topLine}>
             <TextInput
-              style={s.name}
+              style={[s.name, missing && i === 0 && missingField]}
               value={item.name}
               onChangeText={t => update(i, { name: t })}
               placeholder={i === 0 ? 'e.g. Milk, 1 gallon' : 'Another item'}

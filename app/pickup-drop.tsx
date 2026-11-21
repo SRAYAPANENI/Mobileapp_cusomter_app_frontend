@@ -17,6 +17,7 @@ import { PriceEstimateInfo, estimateMiles, hasEstimateNote } from '@/components/
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { PickupOptions } from '@/components/pickup-options';
 import { PasteLocationLink } from '@/components/paste-location-link';
+import { Req, RequiredLegend, missingField } from '@/components/required-mark';
 import { placeFromLink, type LinkedPlace } from '@/services/location-link';
 import {
   DEFAULT_PERSON_PICKUP_RULES, PersonPickupRules, PickupDetails, declarationFor, storeDeclarationError, PickupDirection, PickupPurchase, PickupSource, PickupTiming,
@@ -44,6 +45,9 @@ type MediaItem = { uri: string; type: 'image' | 'video' };
 // KeyboardAvoidingView, exactly like edit-job.tsx, and the keyboard just
 // shrinks the scrollable area beneath it.
 type Phase = 'confirm' | 'posting' | 'success';
+
+/** The fields that must be filled in, in the order the form asks for them. */
+type Need = 'place' | 'id' | 'item' | 'value' | 'person' | 'what' | 'time' | 'limit' | 'list' | 'declare';
 
 /** A place saved on the customer's profile, with a pin. */
 type SavedAddress = { id: string; label: string; full_address: string; lat: number; lng: number };
@@ -156,6 +160,12 @@ export default function PickupDropScreen() {
   const [linkError, setLinkError] = useState<string | null>(null);
   // How many providers the posted job reached — 0 means nobody near the pickup yet.
   const [reached, setReached] = useState<number | null>(null);
+  // Post was tapped with something missing: the missing fields go red, and
+  // the form scrolls to the first (where each field sits, from its layout).
+  const [tried, setTried] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const fieldY = useRef<Partial<Record<Need, number>>>({});
+  const at = (key: Need) => ({ onLayout: (e: { nativeEvent: { layout: { y: number } } }) => { fieldY.current[key] = e.nativeEvent.layout.y; } });
 
   useEffect(() => {
     (SkoFyApi.addresses.list() as Promise<any[]>)
@@ -231,6 +241,7 @@ export default function PickupDropScreen() {
   const chooseSource = (next: PickupSource) => {
     if (next === source) return;
     setSource(next);
+    setTried(false); // a different form: nothing in red until Post is tapped again
     setDeclared(false); // the sentence changes with the kind — it's ticked again
     resetPickupPlace(); // a store must be re-picked from the allowlist, and vice versa
     if (next === 'PERSON') setPurchase('PREPAID'); // nothing is bought from a person
@@ -371,17 +382,44 @@ export default function PickupDropScreen() {
     : null;
   const tooFar = miles != null ? tripError(miles, rules.max_trip_km) : null;
   const hasValidPickup = hasPickupPoint && (source === 'PERSON' || (!!pickupPlaceType && allowedPickupTypes.includes(pickupPlaceType)));
-  // What's still missing, in the order the form asks for it.
-  const formError = tooFar ?? (source === 'PERSON'
-    ? personPickupError(personItem, valueText, declared, rules)
-      ?? (handoverName.trim() ? null : direction === 'FROM_ME' ? 'Add who will receive it.' : 'Add who will hand it over.')
-      ?? (idOnFile === false ? 'Add your ID in Profile first — it’s needed for a pickup from a person.' : null)
-      ?? timingError(timing)
-    : (description.trim() ? null : 'Say what you need picked up.')
-      ?? timingError(timing) ?? purchaseError(purchase, limitText) ?? shoppingListError(purchase, shoppingItems)
-      ?? storeDeclarationError(declared, rules));
+  // Everything still missing, in the order the form asks for it — each with
+  // what to say. The same checks as before (services/pickupOptions.ts), now
+  // kept per field so each can be marked.
+  const person = source === 'PERSON';
+  const needs: { key: Need; message: string }[] = [];
+  const need = (key: Need, message: string | null) => { if (message) needs.push({ key, message }); };
+  need('place', tooFar ?? (hasValidPickup ? null : pickupTypeError ?? (!person
+    ? 'Choose the store to pick up from.'
+    : direction === 'FROM_ME' ? 'Choose where it goes.' : 'Choose the pickup address.')));
+  if (person) {
+    need('id', idOnFile === false ? 'Add your ID in Profile first — it’s needed for a pickup from a person.' : null);
+    const itemOrValue = personPickupError(personItem, valueText, true, rules);
+    need('item', personItem.trim() ? null : itemOrValue);
+    need('value', personItem.trim() ? itemOrValue : personPickupError('item', valueText, true, rules));
+    need('person', handoverName.trim() ? null : direction === 'FROM_ME' ? 'Add who will receive it.' : 'Add who will hand it over.');
+    need('time', timingError(timing));
+    need('declare', personPickupError('item', '1', declared, rules));
+  } else {
+    need('what', description.trim() ? null : 'Say what you need picked up.');
+    need('time', timingError(timing));
+    need('limit', purchaseError(purchase, limitText));
+    need('list', shoppingListError(purchase, shoppingItems));
+    need('declare', storeDeclarationError(declared, rules));
+  }
+  const missing = (key: Need) => tried && needs.some((n) => n.key === key);
+  const formError = needs[0]?.message ?? null;
   // A missing ID is in formError; if the profile couldn't be read, the server still checks it.
-  const ready = hasValidPickup && !formError && !!skillId && !resolvingSkill && dropoffLat != null && dropoffLng != null;
+  const ready = !formError && !!skillId && !resolvingSkill && dropoffLat != null && dropoffLng != null;
+
+  // Post with something missing: say what, and take them to it.
+  const showMissing = () => {
+    setTried(true);
+    Keyboard.dismiss();
+    const first = needs[0]?.key;
+    // The limit and the list sit inside the When/paying block: scrolled to that.
+    const y = first ? fieldY.current[first] ?? (first === 'limit' || first === 'list' ? fieldY.current.time : undefined) : undefined;
+    if (y != null) scrollRef.current?.scrollTo({ y: Math.max(0, y - 16), animated: true });
+  };
 
   // A photo of the item: taken now or from the gallery (videos too, from
   // the gallery), in the app's own popup. Photos are shrunk to send quickly.
@@ -398,7 +436,10 @@ export default function PickupDropScreen() {
   };
 
   const handlePost = async () => {
-    if (!ready || !skillId) return;
+    if (!ready || !skillId) {
+      if (formError) showMissing();
+      return;
+    }
     setPhase('posting');
     try {
       let imageUrls: string[] = [];
@@ -535,11 +576,13 @@ export default function PickupDropScreen() {
             iPhone) — the way back to the price and Post, which step aside
             while it's up. */}
         <ScrollView
+          ref={scrollRef}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           contentContainerStyle={s.scrollContent}
           showsVerticalScrollIndicator={false}
         >
+          <RequiredLegend />
           {/* Where from: a store, or a person at any address */}
           <View style={s.sourceRow}>
             {([['STORE', 'From a store', Store], ['PERSON', 'From a person', Home]] as const).map(([key, label, Icon]) => {
@@ -577,12 +620,13 @@ export default function PickupDropScreen() {
             </View>
           )}
 
-          <View style={s.fieldWrap}>
+          <View style={s.fieldWrap} {...at('place')}>
             <Text style={s.fieldLabel}>
               {!fromPerson ? 'Pickup from (store, pharmacy, etc.)'
                 : sendFromMe ? 'Deliver to (a friend, family, anyone)' : 'Pickup address (a friend, family, anyone)'}
+              <Req />
             </Text>
-            <View style={s.searchInputRow}>
+            <View style={[s.searchInputRow, missing('place') && missingField]}>
               {fromPerson ? <Home size={16} color="#6B7280" /> : <Store size={16} color="#6B7280" />}
               <TextInput
                 style={s.searchInput}
@@ -686,16 +730,16 @@ export default function PickupDropScreen() {
           {fromPerson ? (
             <>
               {idOnFile === false && (
-                <TouchableOpacity style={s.idNotice} onPress={goAddId}>
+                <TouchableOpacity style={[s.idNotice, missing('id') && { borderColor: '#EF4444' }]} onPress={goAddId} {...at('id')}>
                   <IdCard size={18} color="#B45309" />
                   <Text style={s.idNoticeText}>A pickup from a person needs your ID on your profile. <Text style={s.idNoticeLink}>Add it now</Text></Text>
                 </TouchableOpacity>
               )}
 
-              <View style={s.fieldWrap}>
-                <Text style={s.fieldLabel}>What's the item?</Text>
+              <View style={s.fieldWrap} {...at('item')}>
+                <Text style={s.fieldLabel}>What's the item?<Req /></Text>
                 <TextInput
-                  style={s.input}
+                  style={[s.input, missing('item') && missingField]}
                   placeholder="e.g. keys, a charger, a box"
                   placeholderTextColor="#9CA3AF"
                   value={personItem}
@@ -705,9 +749,9 @@ export default function PickupDropScreen() {
                 />
               </View>
 
-              <View style={s.fieldWrap}>
-                <Text style={s.fieldLabel}>What's it worth? (up to ${rules.max_value})</Text>
-                <View style={s.amountRow}>
+              <View style={s.fieldWrap} {...at('value')}>
+                <Text style={s.fieldLabel}>What's it worth? (up to ${rules.max_value})<Req /></Text>
+                <View style={[s.amountRow, missing('value') && missingField]}>
                   <Text style={s.dollar}>$</Text>
                   <TextInput
                     style={s.amountInput}
@@ -722,10 +766,10 @@ export default function PickupDropScreen() {
                 </View>
               </View>
 
-              <View style={s.fieldWrap}>
-                <Text style={s.fieldLabel}>{sendFromMe ? "Who's receiving it?" : "Who's handing it over?"}</Text>
+              <View style={s.fieldWrap} {...at('person')}>
+                <Text style={s.fieldLabel}>{sendFromMe ? "Who's receiving it?" : "Who's handing it over?"}<Req /></Text>
                 <TextInput
-                  style={s.input}
+                  style={[s.input, missing('person') && missingField]}
                   placeholder="Their name"
                   placeholderTextColor="#9CA3AF"
                   value={handoverName}
@@ -752,10 +796,13 @@ export default function PickupDropScreen() {
             </>
           ) : null}
 
-          <View style={s.fieldWrap}>
-            <Text style={s.fieldLabel}>{fromPerson ? 'Anything else the provider should know? (optional)' : 'What do you need picked up?'}</Text>
+          <View style={s.fieldWrap} {...at('what')}>
+            <Text style={s.fieldLabel}>
+              {fromPerson ? 'Anything else the provider should know? (optional)' : 'What do you need picked up?'}
+              {!fromPerson && <Req />}
+            </Text>
             <TextInput
-              style={s.notesInput}
+              style={[s.notesInput, missing('what') && missingField]}
               placeholder={fromPerson ? 'e.g. Ring the bell, it’s in a blue bag' : 'e.g. Prescription for John Smith, 2 bags of groceries…'}
               placeholderTextColor="#9CA3AF"
               value={description}
@@ -767,7 +814,7 @@ export default function PickupDropScreen() {
 
           {/* How big: a van-size item reaches only providers who can carry it. */}
           <View style={s.fieldWrap}>
-            <Text style={s.fieldLabel}>How big is it?</Text>
+            <Text style={s.fieldLabel}>How big is it?<Req /></Text>
             <View style={s.sizeRow}>
               {ITEM_SIZES.map(({ key, label, hint }) => {
                 const on = itemSize === key;
@@ -782,7 +829,10 @@ export default function PickupDropScreen() {
             </View>
           </View>
 
+          {/* When, the spending limit and the list all sit in here. */}
+          <View {...at('time')}>
           <PickupOptions
+            missing={{ time: missing('time'), limit: missing('limit'), list: missing('list') }}
             timing={timing}
             onTimingChange={setTiming}
             purchase={purchase}
@@ -798,6 +848,7 @@ export default function PickupDropScreen() {
             editable={phase === 'confirm'}
             source={source}
           />
+          </View>
 
           {fromPerson && (
             <View style={s.safetyNote}>
@@ -809,14 +860,15 @@ export default function PickupDropScreen() {
           {/* What it isn't — a store order or an item from a person. The
               sentence is the server's, kept word for word with the job. */}
           <TouchableOpacity
-            style={s.declareRow}
+            {...at('declare')}
+            style={[s.declareRow, missing('declare') && s.declareRowMissing]}
             onPress={() => setDeclared(d => !d)}
             disabled={phase !== 'confirm'}
             accessibilityRole="checkbox"
             accessibilityState={{ checked: declared }}
           >
-            {declared ? <SquareCheck size={20} color="#10B981" /> : <Square size={20} color="#6B7280" />}
-            <Text style={s.declareText}>{declarationFor(source, rules)}</Text>
+            {declared ? <SquareCheck size={20} color="#10B981" /> : <Square size={20} color={missing('declare') ? '#EF4444' : '#6B7280'} />}
+            <Text style={s.declareText}>{declarationFor(source, rules)}<Req /></Text>
           </TouchableOpacity>
 
           <View style={s.fieldWrap}>
@@ -869,8 +921,9 @@ export default function PickupDropScreen() {
             </TouchableOpacity>
           )}
 
-          {phase === 'confirm' && hasValidPickup && formError && (
-            <Text style={s.fieldError}>{formError}</Text>
+          {/* What's missing: once they've tapped Post, or once a place is chosen. */}
+          {phase === 'confirm' && (tried || hasValidPickup) && formError && (
+            <Text style={s.fieldError} accessibilityLiveRegion="polite">{formError}</Text>
           )}
           {/* One row: the price (a starting price, not the price — each
               provider sets their own fare) and Post. What it's based on, and
@@ -893,11 +946,14 @@ export default function PickupDropScreen() {
                   </View>
                 </TouchableOpacity>
               )}
+              {/* Dimmed until ready, but a tap with something missing says
+                  what and scrolls to it (it used to do nothing). */}
               <TouchableOpacity
                 style={[s.postButton, s.postButtonGrow, !ready && s.postButtonDisabled]}
                 onPress={handlePost}
-                disabled={!ready}
+                disabled={!ready && !formError}
                 accessibilityRole="button"
+                accessibilityState={{ disabled: !ready }}
               >
                 <Text style={s.postButtonText}>Post Now</Text>
               </TouchableOpacity>
@@ -1010,6 +1066,8 @@ const s = StyleSheet.create({
   idNoticeText: { flex: 1, fontSize: 12.5, lineHeight: 17, fontFamily: Fonts.poppins, color: '#92400E' },
   idNoticeLink: { fontFamily: Fonts.poppinsBold, color: '#B45309', textDecorationLine: 'underline' },
   declareRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 14 },
+  // Not ticked, after Post: the same red outline as a missing field.
+  declareRowMissing: { borderWidth: 1, borderColor: '#EF4444', backgroundColor: '#FEF2F2', borderRadius: 12, padding: 10 },
   declareText: { flex: 1, fontSize: 12.5, lineHeight: 18, fontFamily: Fonts.poppins, color: '#374151' },
   safetyNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 14 },
   safetyText: { flex: 1, fontSize: 11.5, lineHeight: 16, fontFamily: Fonts.poppins, color: '#92400E' },

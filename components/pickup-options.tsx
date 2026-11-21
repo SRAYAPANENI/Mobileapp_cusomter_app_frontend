@@ -1,4 +1,5 @@
 import { PickupOrderDetails } from '@/components/pickup-order-details';
+import { Req, missingField } from '@/components/required-mark';
 import { Text, TextInput } from '@/components/scaled-text';
 import { ShoppingListEditor } from '@/components/shopping-list-editor';
 import { TimePickerModal } from '@/components/time-picker-modal';
@@ -28,6 +29,8 @@ interface Props {
   editable: boolean;
   /** From a store (default) or a person. */
   source?: PickupSource;
+  /** Still missing, after the form was sent: outlined in red. */
+  missing?: { time?: boolean; limit?: boolean; list?: boolean };
 }
 
 // The Pickup & Drop choices the form needs beyond "what" and "where": when,
@@ -41,7 +44,7 @@ export function PickupOptions(p: Props) {
 
   return (
     <View style={s.wrap}>
-      <Text style={s.label}>When</Text>
+      <Text style={s.label}>When<Req /></Text>
       <Segmented
         options={[['ASAP', 'As soon as possible'], ['SCHEDULED', 'Schedule']]}
         value={p.timing.kind}
@@ -60,7 +63,7 @@ export function PickupOptions(p: Props) {
               <Text style={[s.chipText, day === d && s.chipTextOn]}>{d === 0 ? 'Today' : 'Tomorrow'}</Text>
             </TouchableOpacity>
           ))}
-          <TouchableOpacity disabled={!p.editable} style={[s.chip, s.timeChip]} onPress={() => setPickerOpen(true)}>
+          <TouchableOpacity disabled={!p.editable} style={[s.chip, s.timeChip, p.missing?.time && missingField]} onPress={() => setPickerOpen(true)}>
             <Clock size={14} color="#374151" />
             <Text style={s.chipText}>
               {scheduled.at ? scheduled.at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Pick a time'}
@@ -72,7 +75,7 @@ export function PickupOptions(p: Props) {
       {/* From a person nothing is bought, and who hands it over replaces the
           store's order details (app/pickup-drop.tsx asks for that). */}
       {p.source !== 'PERSON' && (<>
-      <Text style={s.label}>Paying for the order</Text>
+      <Text style={s.label}>Paying for the order<Req /></Text>
       <Segmented
         options={[['PREPAID', 'Already paid — just collect'], ['BUY_FOR_ME', 'Buy it for me']]}
         value={p.purchase}
@@ -81,8 +84,8 @@ export function PickupOptions(p: Props) {
       />
       {p.purchase === 'BUY_FOR_ME' && (
         <View style={s.limitRow}>
-          <Text style={s.hint}>The provider may spend up to</Text>
-          <View style={s.amountBox}>
+          <Text style={s.hint}>The provider may spend up to<Req /></Text>
+          <View style={[s.amountBox, p.missing?.limit && missingField]}>
             <Text style={s.dollar}>$</Text>
             <TextInput
               style={s.amountInput}
@@ -100,7 +103,7 @@ export function PickupOptions(p: Props) {
       )}
       {p.purchase === 'BUY_FOR_ME' && <HoldNote limitText={p.limitText} />}
       {p.purchase === 'BUY_FOR_ME'
-        ? <ShoppingListEditor items={p.items} onChange={p.onItemsChange} editable={p.editable} />
+        ? <ShoppingListEditor items={p.items} onChange={p.onItemsChange} editable={p.editable} missing={p.missing?.list} />
         : <PickupOrderDetails details={p.details} onChange={p.onDetailsChange} editable={p.editable} />}
       </>)}
 
