@@ -43,7 +43,8 @@ import { ProfessionIcon } from '@/components/profession-icon';
 import { SkoFyApi } from '@/services/api';
 import { NAME_AFTER_HIRING, providerInitial, providerShortTitle, providerTitle, isNameHidden } from '@/services/providerName';
 import { Applicant } from '@/data/applicantsData';
-import { useHirePayment } from '@/hooks/use-hire-payment';
+import { useHireFlow } from '@/hooks/use-hire-flow';
+import { useJobEvents } from '@/hooks/use-job-events';
 import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 import AnimatedLogoMark from '@/components/animated-logo-mark';
 
@@ -314,35 +315,12 @@ export default function ApplicantsScreen() {
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const insets = useSafeAreaInsets();
-  const { hireApplicant, payInspectionFee, payBooking } = useHirePayment();
   const [applicants, setApplicants] = useState<(Applicant & { applicationId?: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [hiredIds, setHiredIds] = useState<string[]>([]);
   // Offline with nothing loaded: the shared page; reloads when back online.
   const offline = useOfflinePage(applicants.length > 0, () => loadApplicants());
-  const [hiringId, setHiringId] = useState<string | null>(null);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [lastHiredName, setLastHiredName] = useState('');
-  const [feeStatusMessage, setFeeStatusMessage] = useState('');
-  // A job priced up front: after hiring, its checkout (offers, then Book).
-  const [bookingOpen, setBookingOpen] = useState(false);
-  const bookHired = async (offerCode: string | null) => {
-    if (!jobId) return;
-    const booking = await payBooking(jobId, offerCode);
-    setBookingOpen(false);
-    setFeeStatusMessage(
-      booking.status === 'success' ? 'Booked — your payment is held safely until the job is done.'
-      : booking.status === 'cancelled' ? 'Book and pay from the job screen to confirm it.'
-      : booking.message,
-    );
-    setShowSuccessModal(true);
-  };
-  // Closed without booking: hired all the same — booked from the job screen.
-  const skipBooking = () => {
-    setBookingOpen(false);
-    setFeeStatusMessage('Book and pay from the job screen to confirm it.');
-    setShowSuccessModal(true);
-  };
 
   const [loadError, setLoadError] = useState(false);
   // Distinguishes "the job is permanently gone/inaccessible" (404/403 — a
@@ -358,6 +336,9 @@ export default function ApplicantsScreen() {
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   // Priced up front (per hour/day/night): hiring books and pays the total.
   const [paysUpfront, setPaysUpfront] = useState(false);
+  // Hire, then the checkout (priced up front) or the visiting fee — shared
+  // with an applicant's profile (hooks/use-hire-flow.ts).
+  const hireFlow = useHireFlow(jobId, paysUpfront);
   const [refreshing, setRefreshing] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
 
@@ -427,61 +408,19 @@ export default function ApplicantsScreen() {
       loadApplicants();
     }, [loadApplicants])
   );
+  // Live: someone applied or withdrew — the list follows at once, so a
+  // withdrawn applicant is gone before anyone taps Hire on them.
+  useJobEvents(jobId, (type) => { if (type === 'applicants_changed') loadApplicants(); });
 
   const handleHire = async (applicationId: string, name: string) => {
-    if (!jobId || !applicationId) {
-      // A missing param here means a stale/malformed deep link or notification
-      // landed on this screen without what it needs to actually hire — not a
-      // real success. Showing the success modal anyway (as this used to)
-      // told the customer they'd hired and paid when neither API call ever
-      // ran, and the resulting "hired" card linked to Track Provider with an
-      // empty job id.
-      appAlert.show('error', 'Something Went Wrong', "Couldn't hire this applicant — please go back and try again.");
-      return;
-    }
-    setHiringId(applicationId);
-    try {
-      const hireResult = await hireApplicant(jobId, applicationId);
-      if (hireResult.status !== 'success') {
-        if (hireResult.status === 'error') appAlert.show('error', 'Hire Failed', hireResult.message);
-        return;
-      }
-      // Hiring itself has no payment step anymore (bidding is retired) — pay
-      // the inspection fee right away, on the same screen, so the provider
-      // can be asked for the inspection OTP as soon as they arrive. Folded
-      // into the same success modal below rather than a competing alert —
-      // silently succeeding with zero feedback looked indistinguishable from
-      // nothing having happened at all.
-      // A job priced up front (per night, per hour…): book it — pay the
-      // agreed total into escrow — instead of a visiting fee.
-      if (paysUpfront) {
-        // Book it in the checkout — offers, promo code and the bill first.
-        setHiredIds(prev => [...prev, applicationId]);
-        setLastHiredName(name);
-        setBookingOpen(true);
-        return;
-      }
-      const feeResult = await payInspectionFee(jobId);
-      if (feeResult.status === 'pending') {
-        // Charged, just slow to confirm — "failed" would be actively wrong
-        // here and could push the customer into an unnecessary retry.
-        setFeeStatusMessage(feeResult.message);
-      } else if (feeResult.status === 'error') {
-        setFeeStatusMessage(`Visiting fee payment failed: ${feeResult.message}`);
-        // Hire already succeeded — don't leave the customer thinking it
-        // didn't happen just because the fee payment needs a retry.
-      } else if (feeResult.status === 'cancelled') {
-        setFeeStatusMessage("You'll need to pay the visiting fee from the Track Provider screen before the provider can start inspecting.");
-      } else if (feeResult.charged) {
-        setFeeStatusMessage(`$${feeResult.amount.toFixed(2)} visiting fee charged and held in escrow.`);
-      } else {
-        setFeeStatusMessage('This provider has no visiting fee.');
-      }
+    setLastHiredName(name);                   // for the "Hired" message the flow shows
+    const outcome = await hireFlow.hire(applicationId);
+    if (outcome.hired) {
       setHiredIds(prev => [...prev, applicationId]);
-      setLastHiredName(name);
-      setShowSuccessModal(true);
-    } finally {
-      setHiringId(null);
+    } else if (outcome.message) {
+      appAlert.show('error', 'Hire Failed', outcome.message);
+      // e.g. they withdrew at that very moment: show the list as it is now.
+      loadApplicants();
     }
   };
 
@@ -586,7 +525,7 @@ export default function ApplicantsScreen() {
             item={item}
             index={index}
             isHired={hiredIds.includes(item.id)}
-            isHiring={hiringId === ((item as any).applicationId ?? item.id)}
+            isHiring={hireFlow.hiringId === ((item as any).applicationId ?? item.id)}
             jobId={jobId}
             onHire={() => handleHire((item as any).applicationId ?? item.id, item.name)}
             onReject={() => handleReject((item as any).applicationId ?? item.id)}
@@ -618,11 +557,11 @@ export default function ApplicantsScreen() {
       </View>
 
       <AppAlert
-        visible={showSuccessModal}
+        visible={hireFlow.doneVisible}
         type="success"
         title="Hired Successfully!"
-        message={`You have hired ${lastHiredName} for your requirement.${feeStatusMessage ? `\n\n${feeStatusMessage}` : ''}`}
-        onDismiss={() => setShowSuccessModal(false)}
+        message={`You have hired ${lastHiredName} for your requirement.${hireFlow.doneMessage ? `\n\n${hireFlow.doneMessage}` : ''}`}
+        onDismiss={hireFlow.closeDone}
         buttons={[{ text: 'Got it' }]}
       />
       {jobId && (
@@ -642,7 +581,7 @@ export default function ApplicantsScreen() {
           }}
         />
       )}
-      {!!jobId && <BookingCheckout visible={bookingOpen} jobId={jobId} onBook={bookHired} onClose={skipBooking} />}
+      {!!jobId && <BookingCheckout visible={hireFlow.checkoutOpen} jobId={jobId} onBook={hireFlow.book} onClose={hireFlow.skipCheckout} />}
       {appAlert.element}
     </ThemedView>
   );

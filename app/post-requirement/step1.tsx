@@ -8,7 +8,6 @@ import { SkoFyApi } from '@/services/api';
 import { Image } from 'expo-image';
 import { File } from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
-import * as ImagePicker from 'expo-image-picker';
 import { usePhotoPicker } from '@/components/photo-picker';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
@@ -17,9 +16,7 @@ import {
   CheckCircle2,
   ChevronRight,
   MapPin,
-  PlayCircle,
   Sparkles,
-  Video,
   X,
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -29,6 +26,10 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 import { fitBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 import AnimatedLogoMark from '@/components/animated-logo-mark';
+
+// The most a job's upload takes (POST /jobs/upload-media keeps the first 10)
+// — more were dropped there without a word.
+const MAX_PHOTOS = 10;
 
 interface AiResult {
   problem_summary: string;
@@ -66,37 +67,15 @@ export default function DescribeProblemScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const pickMedia = async (type: 'image' | 'video' | 'record') => {
-    // Photos: taken now or from the gallery, shrunk to send quickly.
-    if (type === 'image') {
-      const picked = await photoPicker.pickPhotos({ title: 'Add Photos', multiple: true });
-      if (picked.length) {
-        updateData({ media: [...data.media, ...picked.map((p) => ({ uri: p.uri, type: 'image' as const }))], problemSummary: '' });
-        setAiResult(null); // Reset AI result when new media added
-      }
-      return;
-    }
-    let result;
-    if (type === 'record') {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        appAlert.show('warning', 'Camera Permission Required', 'Please allow camera access in your device settings to record a video.');
-        return;
-      }
-      result = await ImagePicker.launchCameraAsync({ mediaTypes: ['videos'], quality: 0.8 });
-    } else {
-      result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['videos'],
-        allowsMultipleSelection: true,
-        quality: 0.8,
-      });
-    }
-    if (!result.canceled) {
-      const newMedia = result.assets.map(asset => ({
-        uri: asset.uri,
-        type: (asset.type === 'video' || asset.duration) ? 'video' as const : 'image' as const,
-      }));
-      updateData({ media: [...data.media, ...newMedia], problemSummary: '' });
+  // Photos only: taken now or from the gallery, shrunk to send quickly. The AI
+  // reads photos, not video — videos were slow to upload and told it nothing.
+  const room = MAX_PHOTOS - data.media.length;
+  const pickPhotos = async () => {
+    if (room <= 0) return;
+    const picked = await photoPicker.pickPhotos({ title: 'Add Photos', multiple: room });
+    if (picked.length) {
+      const added = picked.slice(0, room).map((p) => ({ uri: p.uri, type: 'image' as const }));
+      updateData({ media: [...data.media, ...added], problemSummary: '' });
       setAiResult(null); // Reset AI result when new media added
     }
   };
@@ -218,37 +197,30 @@ export default function DescribeProblemScreen() {
 
           {/* Media Upload */}
           <Animated.View entering={FadeInUp.delay(400)} style={styles.mediaContainer}>
-            <View style={styles.mediaGrid}>
-              <TouchableOpacity style={styles.mediaCard} onPress={() => pickMedia('image')}>
-                <View style={[styles.iconCircle, { backgroundColor: themeColors.inputFilled }]}>
-                  <Camera size={28} color={themeColors.textPrimary} />
-                </View>
-                <ThemedText style={styles.mediaLabel}>Upload Photos</ThemedText>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.mediaCard} onPress={() => pickMedia('video')}>
-                <View style={[styles.iconCircle, { backgroundColor: themeColors.inputFilled }]}>
-                  <Video size={28} color={themeColors.textPrimary} />
-                </View>
-                <ThemedText style={styles.mediaLabel}>Upload Videos</ThemedText>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.mediaCard} onPress={() => pickMedia('record')}>
-                <View style={[styles.iconCircle, { backgroundColor: '#FFF1F2' }]}>
-                  <PlayCircle size={28} color="#EF4444" />
-                </View>
-                <ThemedText style={styles.mediaLabel}>Record Video</ThemedText>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity style={[styles.photoCard, room <= 0 && { opacity: 0.6 }]} onPress={pickPhotos}
+              activeOpacity={0.8} disabled={room <= 0}>
+              <View style={[styles.iconCircle, { backgroundColor: '#FFF8E1' }]}>
+                <Camera size={24} color="#111827" />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <ThemedText style={styles.photoLabel}>
+                  {room <= 0 ? `${MAX_PHOTOS} photos added`
+                    : data.media.length > 0 ? `Add more photos · ${data.media.length} added` : 'Add photos'}
+                </ThemedText>
+                {/* handleAnalyze sends the first two (cost) — said, so nobody expects more read. */}
+                <ThemedText style={styles.photoHint}>
+                  {room <= 0 ? `That’s the most a job can have — remove one to add another.`
+                    : `Take one or choose from your gallery, up to ${MAX_PHOTOS}. AI looks at the first 2.`}
+                </ThemedText>
+              </View>
+              {room > 0 && <ChevronRight size={20} color={themeColors.textMuted} />}
+            </TouchableOpacity>
 
             {data.media.length > 0 && (
               <ScrollView keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaPreviewList}>
                 {data.media.map((item, index) => (
                   <View key={index} style={styles.previewCard}>
                     <Image source={{ uri: item.uri }} style={styles.previewImage} contentFit="cover" />
-                    {item.type === 'video' && (
-                      <View style={styles.videoBadge}><Video size={10} color="#FFF" /></View>
-                    )}
                     <TouchableOpacity style={styles.removeMediaButton} onPress={() => removeMedia(index)}>
                       <X size={12} color="#FFF" />
                     </TouchableOpacity>
@@ -382,7 +354,9 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   backButton: { position: 'absolute', left: 0, padding: 8 },
   titleSection: { alignItems: 'center', marginBottom: 32 },
-  title: { fontSize: 26, fontFamily: Fonts.poppinsBold, color: t.textPrimary, textAlign: 'center' },
+  // Its own line height: the default one is shorter than this size, and
+  // Android cut off the tops of the letters.
+  title: { fontSize: 26, lineHeight: 36, fontFamily: Fonts.poppinsBold, color: t.textPrimary, textAlign: 'center' },
   subtitle: {
     fontSize: 14,
     fontFamily: Fonts.poppins,
@@ -412,23 +386,21 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     borderStyle: 'dashed',
     marginBottom: 20,
   },
-  mediaGrid: {
+  // The one way in: photos (the AI reads photos, not video).
+  photoCard: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 14,
     padding: 16,
     backgroundColor: t.card,
     borderRadius: 22,
   },
-  mediaCard: { flex: 1, alignItems: 'center', gap: 8 },
-  iconCircle: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center' },
-  mediaLabel: { fontSize: 12, fontFamily: Fonts.poppinsSemiBold, color: t.textPrimary, textAlign: 'center' },
+  iconCircle: { width: 52, height: 52, borderRadius: 26, justifyContent: 'center', alignItems: 'center' },
+  photoLabel: { fontSize: 15, lineHeight: 21, fontFamily: Fonts.poppinsSemiBold, color: t.textPrimary },
+  photoHint: { fontSize: 12, lineHeight: 17, fontFamily: Fonts.poppins, color: t.textSecondary },
   mediaPreviewList: { paddingHorizontal: 16, paddingBottom: 16, gap: 12 },
   previewCard: { width: 100, height: 100, borderRadius: 12, overflow: 'hidden', backgroundColor: t.inputFilled },
   previewImage: { width: '100%', height: '100%' },
-  videoBadge: {
-    position: 'absolute', top: 6, left: 6,
-    backgroundColor: 'rgba(0,0,0,0.5)', padding: 4, borderRadius: 4,
-  },
   removeMediaButton: {
     position: 'absolute', top: 6, right: 6,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -436,7 +408,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   inputWrapper: { padding: 16, borderTopWidth: 1, borderTopColor: t.inputFilled },
-  textInput: { fontSize: 15, fontFamily: Fonts.poppins, minHeight: 90, color: t.textPrimary },
+  textInput: { fontSize: 15, lineHeight: 22, fontFamily: Fonts.poppins, minHeight: 90, color: t.textPrimary },
   voiceButton: {
     flexDirection: 'row',
     alignItems: 'center',

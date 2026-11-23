@@ -421,11 +421,11 @@ export default function PickupDropScreen() {
     if (y != null) scrollRef.current?.scrollTo({ y: Math.max(0, y - 16), animated: true });
   };
 
-  // A photo of the item: taken now or from the gallery (videos too, from
-  // the gallery), in the app's own popup. Photos are shrunk to send quickly.
+  // A photo of the item: taken now or from the gallery, in the app's own
+  // popup, shrunk to send quickly. Photos only — as everywhere a job is posted.
   const pickMedia = async () => {
     if (media.length >= 3) return;
-    const picked = await photoPicker.pickPhotos({ title: 'Add a Photo', videos: true, multiple: 3 - media.length });
+    const picked = await photoPicker.pickPhotos({ title: 'Add a Photo', multiple: 3 - media.length });
     if (picked.length) {
       setMedia(prev => [...prev, ...picked.map((p) => ({ uri: p.uri, type: (p.kind === 'video' ? 'video' : 'image') as MediaItem['type'] }))].slice(0, 3));
     }
@@ -872,7 +872,7 @@ export default function PickupDropScreen() {
           </TouchableOpacity>
 
           <View style={s.fieldWrap}>
-            <Text style={s.fieldLabel}>Add photos or a video (optional)</Text>
+            <Text style={s.fieldLabel}>Add photos (optional)</Text>
             <View style={s.mediaRow}>
               {media.map((item, i) => (
                 <View key={i} style={s.mediaThumb}>

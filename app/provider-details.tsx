@@ -7,7 +7,9 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ProfessionIcon } from '@/components/profession-icon';
 import { SkoFyApi } from '@/services/api';
 import { NAME_AFTER_HIRING, providerInitial, providerShortTitle, providerTitle, isNameHidden } from '@/services/providerName';
-import { useHirePayment } from '@/hooks/use-hire-payment';
+import { useHireFlow } from '@/hooks/use-hire-flow';
+import { BookingCheckout } from '@/components/booking-checkout';
+import { useJobEvents } from '@/hooks/use-job-events';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Video, ResizeMode } from 'expo-av';
@@ -82,16 +84,26 @@ export default function ProviderDetailsScreen() {
   }>();
   const isViewOnly = viewOnly === 'true';
   const appAlert = useAppAlert();
-  const { hireApplicant, payInspectionFee } = useHirePayment();
 
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<'About' | 'Work Proof' | 'Reviews'>('About');
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [feeStatusMessage, setFeeStatusMessage] = useState('');
-  const [hiring, setHiring] = useState(false);
+
+  // Live: this applicant withdrew (or the list changed) while their profile
+  // is open — told at once and taken back to the list, not left to tap Hire.
+  const leftNoticeShown = useRef(false);
+  useJobEvents(isViewOnly || !id ? undefined : jobId, (type) => {
+    if (type !== 'applicants_changed' || leftNoticeShown.current) return;
+    SkoFyApi.jobs.get(jobId!).then((job: any) => {
+      const stillHere = (job?.applicants ?? []).some((a: any) => a.application_id === id && a.status !== 'WITHDRAWN');
+      if (stillHere || leftNoticeShown.current) return;
+      leftNoticeShown.current = true;
+      appAlert.show('info', 'No longer available', 'This applicant has withdrawn — choose someone else.',
+        undefined, undefined, () => router.back());
+    }).catch(() => {});
+  });
 
   const [profile, setProfile] = useState<any>(null);
   const [workProof, setWorkProof] = useState<WorkProofItem[]>([]);
@@ -112,6 +124,9 @@ export default function ProviderDetailsScreen() {
   // How the job is priced: quoted work is priced by the invoice after the
   // inspection, so the hourly rate isn't what it costs.
   const [jobUnit, setJobUnit] = useState<string | null>(null);
+  // Priced up front (per hour/day/night): hiring books and pays the total.
+  const [paysUpfront, setPaysUpfront] = useState(false);
+  const hireFlow = useHireFlow(jobId, paysUpfront);
   const NOT_HIREABLE_STATUSES = ['COMPLETED', 'CANCELLED', 'DISPUTED', 'EXPIRED', 'ACCEPTED', 'INSPECTING', 'INVOICE_PENDING', 'IN_PROGRESS'];
 
   // Bumped by "Try again" on the error screen to re-run the load below.
@@ -154,6 +169,7 @@ export default function ProviderDetailsScreen() {
         setProfile(profileData);
         setJobStatus((jobData as any)?.status ?? null);
         setJobUnit((jobData as any)?.shape?.pricing_unit ?? null);
+        setPaysUpfront(((jobData as any)?.steps ?? []).includes('PAY_UPFRONT'));
         setWorkProof((Array.isArray(docsData) ? docsData : []).map((d: any) => ({
           id: d.id,
           type: d.media_type === 'VIDEO' ? 'video' : 'image',
@@ -212,48 +228,18 @@ export default function ProviderDetailsScreen() {
   };
 
   const handleHire = async () => {
-    if (!jobId || !id) {
-      appAlert.show('error', 'Cannot Hire', 'Missing job or application reference.');
-      return;
-    }
     // Defense in depth — the footer button is already hidden for these
     // statuses, but guard the action itself too in case of a stale render.
     if (jobStatus && NOT_HIREABLE_STATUSES.includes(jobStatus)) {
       appAlert.show('error', 'Cannot Hire', 'This job is no longer open for hiring.');
       return;
     }
-    setHiring(true);
-    try {
-      const hireResult = await hireApplicant(jobId, id);
-      if (hireResult.status !== 'success') {
-        if (hireResult.status === 'error') appAlert.show('error', 'Hire Failed', hireResult.message);
-        return;
-      }
-      // Hiring itself has no payment step anymore (bidding is retired) — pay
-      // the inspection fee right away, on the same screen. Folded into the
-      // same success modal below rather than a competing alert — silently
-      // succeeding with zero feedback looked indistinguishable from nothing
-      // having happened at all.
-      const feeResult = await payInspectionFee(jobId);
-      if (feeResult.status === 'pending') {
-        // Charged, just slow to confirm — "failed" would be actively wrong
-        // here and could push the customer into an unnecessary retry.
-        setFeeStatusMessage(feeResult.message);
-      } else if (feeResult.status === 'error') {
-        setFeeStatusMessage(`Visiting fee payment failed: ${feeResult.message}`);
-        // Hire already succeeded — don't leave the customer thinking it
-        // didn't happen just because the fee payment needs a retry.
-      } else if (feeResult.status === 'cancelled') {
-        setFeeStatusMessage("You'll need to pay the visiting fee from the Track Provider screen before the provider can start inspecting.");
-      } else if (feeResult.charged) {
-        setFeeStatusMessage(`$${feeResult.amount.toFixed(2)} visiting fee charged and held in escrow.`);
-      } else {
-        setFeeStatusMessage('This provider has no visiting fee.');
-      }
-      setShowSuccessModal(true);
-    } finally {
-      setHiring(false);
-    }
+    // The same flow as the applicants list: a job priced up front opens its
+    // checkout; anything else pays the visiting fee.
+    const outcome = await hireFlow.hire(id ?? '');
+    // Hired: the footer stops offering Hire (it would only be refused now).
+    if (outcome.hired) setJobStatus('ACCEPTED');
+    else if (outcome.message) appAlert.show('error', 'Hire Failed', outcome.message);
   };
 
   // Offline with nothing loaded: the shared page; reloads when back online.
@@ -687,23 +673,23 @@ export default function ProviderDetailsScreen() {
         </View>
       ) : !isViewOnly && (
         <View style={[styles.footer, { bottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 20) + 12 }]}>
-          <TouchableOpacity style={styles.hireButton} onPress={handleHire} disabled={hiring}>
+          <TouchableOpacity style={styles.hireButton} onPress={handleHire} disabled={!!hireFlow.hiringId}>
             <ThemedText style={styles.hireButtonText}>
-              {hiring ? 'Hiring...' : nameHidden ? 'Hire' : `Hire ${providerShortTitle(profile.name)}`}
+              {hireFlow.hiringId ? 'Hiring...' : nameHidden ? 'Hire' : `Hire ${providerShortTitle(profile.name)}`}
             </ThemedText>
           </TouchableOpacity>
         </View>
       )}
 
       <AppAlert
-        visible={showSuccessModal}
+        visible={hireFlow.doneVisible}
         type="success"
         title="Hired Successfully!"
         message={(nameHidden
           ? `You have hired this ${profession.toLowerCase()} for your requirement. You'll see their name in My Jobs.`
           : `You have hired ${PROVIDER_DATA.name} for your requirement.`)
-          + (feeStatusMessage ? `\n\n${feeStatusMessage}` : '')}
-        onDismiss={() => setShowSuccessModal(false)}
+          + (hireFlow.doneMessage ? `\n\n${hireFlow.doneMessage}` : '')}
+        onDismiss={hireFlow.closeDone}
         buttons={[{
           text: 'Got it',
           // push, not replace — replacing left track-provider with nothing
@@ -712,6 +698,8 @@ export default function ProviderDetailsScreen() {
           onPress: () => router.push({ pathname: '/track-provider', params: { jobId: jobId ?? '' } }),
         }]}
       />
+      {/* Priced up front: booked here, as from the applicants list. */}
+      {!!jobId && <BookingCheckout visible={hireFlow.checkoutOpen} jobId={jobId} onBook={hireFlow.book} onClose={hireFlow.skipCheckout} />}
       {appAlert.element}
     </ThemedView>
   );

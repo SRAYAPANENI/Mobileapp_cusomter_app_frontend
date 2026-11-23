@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   Clock,
   DollarSign,
+  Globe,
   MapPin,
   Mic,
   Package,
@@ -60,6 +61,9 @@ const URGENCY_LABELS: Record<string, string> = {
 const URGENCY_COLORS: Record<string, string> = {
   Urgent: '#EF4444', 'Booked Slot': '#10B981', Normal: '#F59E0B',
 };
+
+// A job's photos: as many as posting allows (post-requirement/step1.tsx).
+const MAX_JOB_PHOTOS = 10;
 
 function isVideoUrl(url: string): boolean {
   return /\.(mp4|mov|m4v|webm)(\?|$)/i.test(url);
@@ -225,8 +229,10 @@ export default function JobDetailsScreen() {
 
   const handleAddPhoto = async () => {
     if (!jobId || uploadingPhoto) return;
-    // Photos are shrunk to send quickly; videos go as they are.
-    const picked = await photoPicker.pickPhotos({ title: 'Add Photos', videos: true, multiple: true });
+    // Photos only, shrunk to send quickly — as when posting, and up to the same 10.
+    const room = MAX_JOB_PHOTOS - (job?.images?.length ?? 0);
+    if (room <= 0) return;
+    const picked = (await photoPicker.pickPhotos({ title: 'Add Photos', multiple: room })).slice(0, room);
     if (picked.length === 0) return;
 
     setUploadingPhoto(true);
@@ -297,7 +303,15 @@ export default function JobDetailsScreen() {
   }
 
   const scheduledLabel = formatScheduledAt(job.scheduled_at);
-  const radiusMi = job.search_radius_km != null ? kmToMiles(job.search_radius_km) : null;
+  // How far it was really sent (the server's matching.reach_km): online work
+  // has no distance — it reaches providers anywhere, by skill alone. Work at
+  // the provider's place goes to those who host within that distance.
+  const venue = job.shape?.venue ?? (job.service_mode === 'REMOTE' ? 'ONLINE' : 'CUSTOMER_PLACE');
+  const isOnline = venue === 'ONLINE';
+  const radiusMi = !isOnline && job.search_radius_km != null ? kmToMiles(job.search_radius_km) : null;
+  const reachLabel = radiusMi == null ? null
+    : venue === 'PROVIDER_PLACE' ? `Sent to hosts within ${radiusMi.toFixed(0)} mi`
+    : `Posted within ${radiusMi.toFixed(0)} mi`;
   const canEditDetails = job.status === 'POSTED' || job.status === 'DISTRIBUTED';
   const urgencyLabel = URGENCY_LABELS[job.urgency] ?? job.urgency;
   const urgencyColor = URGENCY_COLORS[urgencyLabel] ?? '#F59E0B';
@@ -462,12 +476,20 @@ export default function JobDetailsScreen() {
                 </ThemedText>
               </View>
             )}
-            {radiusMi != null && (
+            {reachLabel && (
               <View style={styles.metaRow}>
                 <View style={[styles.metaIconCircle, { backgroundColor: '#FFFBEB' }]}>
                   <MapPin size={16} color="#B45309" />
                 </View>
-                <ThemedText style={styles.metaText}>Posted within {radiusMi.toFixed(0)} mi</ThemedText>
+                <ThemedText style={styles.metaText}>{reachLabel}</ThemedText>
+              </View>
+            )}
+            {isOnline && (
+              <View style={styles.metaRow}>
+                <View style={[styles.metaIconCircle, { backgroundColor: '#F5F3FF' }]}>
+                  <Globe size={16} color="#7C3AED" />
+                </View>
+                <ThemedText style={styles.metaText}>Online — open to providers anywhere</ThemedText>
               </View>
             )}
           </View>
@@ -475,7 +497,10 @@ export default function JobDetailsScreen() {
 
         <View style={styles.mainCard}>
           <View style={styles.photosHeaderRow}>
-            <ThemedText style={[styles.sectionLabel, { marginTop: 0 }]}>Photos & Videos</ThemedText>
+            {/* A job posted before photos-only may still hold a video — said only then. */}
+            <ThemedText style={[styles.sectionLabel, { marginTop: 0 }]}>
+              {(job.images || []).some((u: string) => isVideoUrl(u)) ? 'Photos & Videos' : 'Photos'}
+            </ThemedText>
             {!canEditPhotos && (
               <ThemedText style={styles.lockedNote}>
                 {job.status === 'CANCELLED' ? 'Locked — the job was cancelled'
@@ -512,7 +537,7 @@ export default function JobDetailsScreen() {
                 )}
               </View>
             ))}
-            {canEditPhotos && (
+            {canEditPhotos && (job.images || []).length < MAX_JOB_PHOTOS && (
               <TouchableOpacity style={styles.addPhotoThumb} onPress={handleAddPhoto} disabled={uploadingPhoto}>
                 {uploadingPhoto ? (
                   <ActivityIndicator size="small" color={themeColors.brand} />

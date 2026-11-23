@@ -940,7 +940,7 @@ export function VoicePostModal({
     }
   };
 
-  // ── Photo/video picker — both camera and gallery support either media type ──
+  // ── Photo picker — camera or gallery. Photos only: the AI reads photos, not video ──
   // Returns whether media was actually added (vs. cancelled) — the in-
   // conversation photo prompt needs this to know which follow-up message
   // to send the assistant.
@@ -959,11 +959,11 @@ export function VoicePostModal({
             : undefined);
         return false;
       }
-      // Full quality in, photos shrunk once after (services/photo.ts); videos as they are.
+      // Full quality in, photos shrunk once after (services/photo.ts).
       const result = source === 'camera'
-        ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images', 'videos'], quality: 1 })
+        ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1 })
         : await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images', 'videos'], quality: 1, allowsMultipleSelection: true,
+            mediaTypes: ['images'], quality: 1, allowsMultipleSelection: true,
             preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
           });
       if (!result.canceled) {
@@ -1243,9 +1243,9 @@ export function VoicePostModal({
                   <Text style={s.confirmDesc}>{jobData!.description}</Text>
                 )}
 
-                {/* Photos & videos */}
+                {/* Photos */}
                 <View style={s.photoSection}>
-                  <Text style={s.confirmLabel}>Photos & videos (optional)</Text>
+                  <Text style={s.confirmLabel}>Photos (optional)</Text>
                   <View style={s.photoRow}>
                     {photos.map((p, i) => (
                       <View key={i} style={s.photoThumb}>

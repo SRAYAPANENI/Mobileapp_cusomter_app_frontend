@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { Alert } from 'react-native';
 import { AlertButton, AlertType, AppAlert } from './app-alert';
 
 // The app's one dialog, callable from anywhere: screens, components and
@@ -64,12 +63,6 @@ function toButtons(buttons?: NativeStyleButton[]): AlertButton[] | undefined {
 
 /** Shows the app's dialog, the way Alert.alert would. */
 export function showDialog(title: string, message?: string, buttons?: NativeStyleButton[], options?: Options): void {
-  if (!present) {
-    // Not mounted yet (the very first moments of launch): the system dialog
-    // rather than nothing.
-    Alert.alert(title, message, buttons);
-    return;
-  }
   const next: Pending = {
     type: options?.type ?? guessType(title, buttons),
     title,
@@ -77,7 +70,11 @@ export function showDialog(title: string, message?: string, buttons?: NativeStyl
     buttons: toButtons(buttons),
     dismissable: options?.cancelable !== false,
   };
-  present(next);
+  // Not mounted yet (launch, while the root layout waits on fonts — the call
+  // manager's permission prompts land here): it waits and shows as soon as
+  // the host mounts, in the app's dialog, never the phone's grey system box.
+  if (present) present(next);
+  else waiting.push(next);
 }
 
 /** Mounted once, at the root. One dialog at a time; others wait their turn. */
@@ -89,6 +86,9 @@ export function AlertHost() {
       if (cur) { waiting.push(a); return cur; }
       return a;
     });
+    // Anything asked for before the host was mounted.
+    const first = waiting.shift();
+    if (first) present(first);
     return () => { present = null; };
   }, []);
 

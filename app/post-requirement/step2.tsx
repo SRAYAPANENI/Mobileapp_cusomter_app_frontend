@@ -21,6 +21,7 @@ import {
   Zap
 } from 'lucide-react-native';
 import { SkoFyApi } from '@/services/api';
+import { CatalogSkill, ProfessionMatch, searchProfessions, SKILLS_SHOWN } from '@/services/profession-search';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Dimensions, FlatList, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
@@ -29,7 +30,7 @@ import Animated, { FadeIn, FadeInUp, SlideInUp } from 'react-native-reanimated';
 import { fitBottom, padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 import AnimatedLogoMark from '@/components/animated-logo-mark';
 
-import { Popup } from '@/components/popup';
+import { Popup, SheetBottomFill } from '@/components/popup';
 const { width } = Dimensions.get('window');
 
 // Offline fallback when the backend is unreachable — real list always comes from GET /skills/professions
@@ -79,6 +80,8 @@ export default function VerifyProblemScreen() {
 
   // Backend skills for current profession
   const [backendSkills, setBackendSkills] = useState<{ id: string; name: string }[]>([]);
+  // While they load, the picker says nothing rather than "couldn't load".
+  const [skillsLoading, setSkillsLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,6 +89,7 @@ export default function VerifyProblemScreen() {
       setBackendSkills([]);
       return;
     }
+    setSkillsLoading(true);
     SkoFyApi.skills.list(data.profession)
       .then((list: any) => {
         if (!cancelled && Array.isArray(list) && list.length > 0) {
@@ -97,7 +101,8 @@ export default function VerifyProblemScreen() {
       .catch((err) => {
         console.error('Failed to fetch skills list:', err);
         if (!cancelled) setBackendSkills([]);
-      });
+      })
+      .finally(() => { if (!cancelled) setSkillsLoading(false); });
     return () => { cancelled = true; };
   }, [data.profession]);
 
@@ -134,9 +139,36 @@ export default function VerifyProblemScreen() {
 
   const problemText = data.problemSummary.trim() || data.description.trim();
 
-  const filteredProfessions = allProfessions.filter(p =>
-    p.toLowerCase().includes(searchQuery.toLowerCase())
+  // Every skill with its profession, read the first time the picker opens —
+  // so typing a skill ("appointment companion") finds its profession too.
+  const [catalogSkills, setCatalogSkills] = useState<CatalogSkill[]>([]);
+  const catalogAsked = React.useRef(false);
+  useEffect(() => {
+    if (!showProfessionModal || catalogAsked.current) return;
+    catalogAsked.current = true;
+    SkoFyApi.skills.list()
+      .then((list: any) => {
+        if (Array.isArray(list)) {
+          setCatalogSkills(list.map((s: any) => ({ id: s.id, name: s.name, profession: s.profession })));
+        }
+      })
+      .catch(() => { catalogAsked.current = false; });   // offline: professions alone, asked again next time
+  }, [showProfessionModal]);
+
+  const professionMatches = useMemo(
+    () => searchProfessions(searchQuery, allProfessions, catalogSkills),
+    [searchQuery, allProfessions, catalogSkills],
   );
+
+  // A profession picked — and, if it was found through one skill, that skill with it.
+  const chooseProfession = (match: ProfessionMatch) => {
+    const only = match.skills.length === 1 ? match.skills[0] : null;
+    updateData(only
+      ? { profession: match.profession, skills: [only.name], skill_id: only.id, skill_ids: [only.id] }
+      : { profession: match.profession, skills: [], skill_id: null, skill_ids: [] });
+    setShowProfessionModal(false);
+    setSearchQuery('');
+  };
 
   const toggleSkill = (skillName: string, skillId?: string) => {
     const currentSkills = [...data.skills];
@@ -366,23 +398,34 @@ export default function VerifyProblemScreen() {
             </View>
 
             <FlatList keyboardShouldPersistTaps="handled"
-              data={filteredProfessions}
-              keyExtractor={item => item}
+              data={professionMatches}
+              keyExtractor={item => item.profession}
               renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.listItem}
-                  onPress={() => {
-                    updateData({ profession: item, skills: [], skill_id: null, skill_ids: [] });
-                    setShowProfessionModal(false);
-                    setSearchQuery('');
-                  }}
-                >
-                  <ThemedText style={styles.listItemText}>{item}</ThemedText>
+                <TouchableOpacity style={styles.listItem} onPress={() => chooseProfession(item)}>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <ThemedText style={styles.listItemText}>{item.profession}</ThemedText>
+                    {item.skills.length > 0 && (
+                      <ThemedText style={styles.listItemMatch} numberOfLines={1}>
+                        {item.skills.slice(0, SKILLS_SHOWN).map(s => s.name).join(', ')}
+                        {item.skills.length > SKILLS_SHOWN ? ` and ${item.skills.length - SKILLS_SHOWN} more` : ''}
+                      </ThemedText>
+                    )}
+                  </View>
                   <ChevronRight size={18} color={themeColors.border} />
                 </TouchableOpacity>
               )}
+              ListEmptyComponent={
+                <View style={styles.noMatch}>
+                  <Search size={28} color={themeColors.textMuted} />
+                  <ThemedText style={styles.noMatchTitle}>Nothing found for “{searchQuery.trim()}”</ThemedText>
+                  <ThemedText style={styles.noMatchText}>
+                    Try a shorter or different word — the kind of work, like “cleaning”, “tutor” or “repair”.
+                  </ThemedText>
+                </View>
+              }
               style={{ maxHeight: 300 }}
             />
+            <SheetBottomFill color={themeColors.modalBackground} />
           </Animated.View>
         </KeyboardAvoidingView>
       </Popup>
@@ -400,6 +443,16 @@ export default function VerifyProblemScreen() {
 
             <ThemedText style={styles.modalSubtitle}>Select required skills for {data.profession}</ThemedText>
 
+            {displaySkills.length === 0 && !skillsLoading && (
+              <View style={styles.noMatch}>
+                <ThemedText style={styles.noMatchTitle}>No skills to choose from yet</ThemedText>
+                <ThemedText style={styles.noMatchText}>
+                  Couldn’t load the skills for {data.profession}. Check your connection, or choose the profession again.
+                </ThemedText>
+              </View>
+            )}
+            {/* Scrolls, so a long list never pushes "Update Skills" off a small screen. */}
+            <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps="handled">
             <View style={styles.modalChipsContainer}>
               {displaySkills.map(skill => {
                 const isSelected = data.skills.includes(skill.name);
@@ -416,6 +469,7 @@ export default function VerifyProblemScreen() {
                 );
               })}
             </View>
+            </ScrollView>
 
             <TouchableOpacity
               style={[styles.doneButton, { backgroundColor: themeColors.brand }]}
@@ -423,6 +477,7 @@ export default function VerifyProblemScreen() {
             >
               <ThemedText style={styles.doneButtonText}>Update Skills</ThemedText>
             </TouchableOpacity>
+            <SheetBottomFill color={themeColors.modalBackground} />
           </Animated.View>
         </View>
       </Popup>
@@ -808,6 +863,33 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textPrimary,
   },
+  // The skill a search found this profession through.
+  listItemMatch: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: Fonts.poppins,
+    color: t.textMuted,
+  },
+  noMatch: {
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 28,
+    paddingHorizontal: 12,
+  },
+  noMatchTitle: {
+    fontSize: 15,
+    lineHeight: 21,
+    fontFamily: Fonts.poppinsSemiBold,
+    color: t.textPrimary,
+    textAlign: 'center',
+  },
+  noMatchText: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontFamily: Fonts.poppins,
+    color: t.textMuted,
+    textAlign: 'center',
+  },
   modalChipsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -827,12 +909,14 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     fontFamily: Fonts.poppinsSemiBold,
     color: t.textSecondary,
   },
+  // Space above it, none below: the sheet's own padding is the gap under it
+  // (a margin here too left an empty band at the bottom).
   doneButton: {
     height: 56,
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    marginTop: 16,
   },
   doneButtonText: {
     fontSize: 16,

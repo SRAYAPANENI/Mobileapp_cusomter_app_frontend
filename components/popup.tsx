@@ -74,6 +74,18 @@ export function PopupCard(props: ViewProps) {
   return <View onStartShouldSetResponder={() => true} {...props} />;
 }
 
+/**
+ * Put inside a bottom sheet's card, last: the card's colour carried on below
+ * its bottom edge, so the sheet always meets the bottom of the screen. On
+ * Android a sheet could stop short of it — the navigation bar's room left
+ * out, or a keyboard's lift kept after it closed — and the page behind showed
+ * through in a strip under the sheet. Behind an open keyboard it's unseen.
+ */
+export function SheetBottomFill({ color }: { color: string }) {
+  return <View pointerEvents="none" style={[styles.bottomFill, { backgroundColor: color }]} />;
+}
+
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  bottomFill: { position: 'absolute', top: '100%', left: 0, right: 0, height: 400 },
 });
