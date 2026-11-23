@@ -23,6 +23,12 @@ export function markRatingSubmitted(jobId: string) {
   handledThisSession.add(jobId);
 }
 
+/** The server already has this rating: done, not a failure. */
+export function alreadyRated(err: unknown): boolean {
+  const e = err as { error_code?: string; message?: string } | null;
+  return e?.error_code === 'CONFLICT' || /already submitted/i.test(e?.message ?? '');
+}
+
 export function isRatingSkipped(jobId: string): boolean {
   return handledThisSession.has(jobId);
 }

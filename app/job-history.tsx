@@ -1,4 +1,5 @@
 import { RatingModal, RatingDimensions } from '@/components/ui/rating-modal';
+import { alreadyRated, markRatingSubmitted } from '@/services/ratingReminders';
 import { useOfflinePage } from '@/components/offline-gate';
 import { NoInternetState } from '@/components/no-internet-state';
 import type { OffAppAnswer } from '@/components/off-app-question';
@@ -144,7 +145,13 @@ export default function JobHistoryScreen() {
 
   const handleRatingSubmit = async (ratings: RatingDimensions, comment: string, offApp: OffAppAnswer) => {
     if (!ratingTarget) throw new Error('No job selected');
-    await SkoFyApi.jobs.submitReview(ratingTarget.jobId, { ...ratings, comment, ...offApp });
+    // Rated already (another screen): done, not a failure.
+    try {
+      await SkoFyApi.jobs.submitReview(ratingTarget.jobId, { ...ratings, comment, ...offApp });
+    } catch (err) {
+      if (!alreadyRated(err)) throw err;
+    }
+    markRatingSubmitted(ratingTarget.jobId);
     fetchHistory();
   };
 

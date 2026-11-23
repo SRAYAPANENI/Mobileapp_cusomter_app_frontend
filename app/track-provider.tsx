@@ -44,7 +44,7 @@ import { ExtraWorkCard } from '@/components/extra-work-card';
 import { TipSheet } from '@/components/tip-sheet';
 import { QuoteGuide } from '@/components/price-guide-note';
 import type { OffAppAnswer } from '@/components/off-app-question';
-import { isRatingSkipped, markRatingSkipped, markRatingSubmitted } from '@/services/ratingReminders';
+import { alreadyRated, isRatingSkipped, markRatingSkipped, markRatingSubmitted } from '@/services/ratingReminders';
 import { CheckoutSheet } from '@/components/checkout-sheet';
 import { GoodsHoldCard, PickupCodeEditor, goodsReceiptLine } from '@/components/pickup-tracking';
 import { useHirePayment } from '@/hooks/use-hire-payment';
@@ -1104,7 +1104,12 @@ export default function TrackProviderScreen() {
     if (!jobId) throw new Error('Missing job reference.');
     // Throws on failure — RatingModal awaits this and shows the error
     // inline instead of silently closing as if it succeeded.
-    await SkoFyApi.jobs.submitReview(jobId, { ...ratings, comment, ...offApp });
+    // Rated already (the chat, another screen): done, not a failure.
+    try {
+      await SkoFyApi.jobs.submitReview(jobId, { ...ratings, comment, ...offApp });
+    } catch (err) {
+      if (!alreadyRated(err)) throw err;
+    }
     markRatingSubmitted(jobId);
   };
 

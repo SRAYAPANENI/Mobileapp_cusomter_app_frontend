@@ -150,6 +150,14 @@ function ApplicantCard({
               </ThemedText>
             </View>
           )}
+          {(item as any).unavailable && (
+            <View style={styles.vehicleRow}>
+              <AlertTriangle size={12} color="#B45309" />
+              <ThemedText style={[styles.vehicleText, { color: '#B45309' }]} numberOfLines={2}>
+                Booked on another job at this time — can be hired once free
+              </ThemedText>
+            </View>
+          )}
           <View style={styles.ratingRow}>
             <Star size={12} color="#F59E0B" fill="#F59E0B" />
             <ThemedText style={styles.ratingText}>
@@ -246,8 +254,12 @@ function ApplicantCard({
           </TouchableOpacity>
         ) : (
           <>
-            <TouchableOpacity style={styles.hireButton} onPress={onHire} disabled={isHiring}>
-              {isHiring ? <ActivityIndicator size="small" color="#fff" /> : <ThemedText style={styles.hireButtonText}>Hire</ThemedText>}
+            <TouchableOpacity
+              style={[styles.hireButton, (item as any).unavailable && { opacity: 0.45 }]}
+              onPress={onHire}
+              disabled={isHiring || (item as any).unavailable}
+            >
+              {isHiring ? <ActivityIndicator size="small" color="#fff" /> : <ThemedText style={styles.hireButtonText}>{(item as any).unavailable ? 'Not free now' : 'Hire'}</ThemedText>}
             </TouchableOpacity>
             <TouchableOpacity style={styles.rejectButton} onPress={onReject} disabled={isHiring}>
               <ThemedText style={styles.rejectButtonText}>Reject</ThemedText>
@@ -304,6 +316,8 @@ function mapApiApplicant(a: any): Applicant & { applicationId: string; providerI
     vehicle: a.vehicle ?? null,
     vehicleType: a.vehicle_type ?? null,
     vehicleMissing: !!a.vehicle_missing,
+    // Booked on another job at this time: not hireable until they're free.
+    unavailable: !!a.unavailable,
   } as any;
 }
 

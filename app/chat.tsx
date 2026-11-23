@@ -31,7 +31,7 @@ import { useAppConfig } from '@/services/queries/app-config';
 import Animated, { FadeInLeft, FadeInRight } from 'react-native-reanimated';
 import { Audio } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { isRatingSkipped, markRatingSkipped, markRatingSubmitted } from '@/services/ratingReminders';
+import { alreadyRated, isRatingSkipped, markRatingSkipped, markRatingSubmitted } from '@/services/ratingReminders';
 import { SkoFyApi, TokenStore, getFreshAccessToken } from '@/services/api';
 // The call's audio — through our own media server (docs/CALL_RECORDING_DESIGN.md).
 import { CallMedia, CallMediaEnded } from '@/services/call/callMedia';
@@ -1285,7 +1285,12 @@ export default function ChatScreen() {
                     });
                     markRatingSubmitted(jobId);
                     setRatingVisible(false);
-                  } catch {
+                  } catch (err) {
+                    if (alreadyRated(err)) {
+                      markRatingSubmitted(jobId);
+                      setRatingVisible(false);
+                      return;
+                    }
                     appAlert.show('error', 'Error', 'Failed to submit rating. Please try again.');
                   } finally {
                     setRatingSubmitting(false);

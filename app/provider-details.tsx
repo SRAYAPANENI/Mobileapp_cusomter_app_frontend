@@ -99,6 +99,7 @@ export default function ProviderDetailsScreen() {
     SkoFyApi.jobs.get(jobId!).then((job: any) => {
       const now = (job?.applicants ?? []).find((a: any) => a.application_id === id && a.status !== 'WITHDRAWN');
       // Still here — and still them: a business can change who it would send.
+      setUnavailable(!!now?.unavailable);
       const changed = !!now && !!providerId && now.provider_id !== providerId;
       if ((now && !changed) || leftNoticeShown.current) return;
       leftNoticeShown.current = true;
@@ -130,6 +131,8 @@ export default function ProviderDetailsScreen() {
   const [jobUnit, setJobUnit] = useState<string | null>(null);
   // Priced up front (per hour/day/night): hiring books and pays the total.
   const [paysUpfront, setPaysUpfront] = useState(false);
+  // Booked on another job at this one's time: not hireable until they're free.
+  const [unavailable, setUnavailable] = useState(false);
   // Online work: no visit, so no visiting fee — neither shown nor charged.
   const [jobOnline, setJobOnline] = useState(false);
   const hireFlow = useHireFlow(jobId, paysUpfront, jobOnline);
@@ -174,6 +177,7 @@ export default function ProviderDetailsScreen() {
         ]);
         setProfile(profileData);
         setJobStatus((jobData as any)?.status ?? null);
+        setUnavailable(!!((jobData as any)?.applicants ?? []).find((a: any) => a.application_id === id)?.unavailable);
         setJobUnit((jobData as any)?.shape?.pricing_unit ?? null);
         setPaysUpfront(((jobData as any)?.steps ?? []).includes('PAY_UPFRONT'));
         setJobOnline(((jobData as any)?.shape?.venue
@@ -681,9 +685,13 @@ export default function ProviderDetailsScreen() {
         </View>
       ) : !isViewOnly && (
         <View style={[styles.footer, { bottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 20) + 12 }]}>
-          <TouchableOpacity style={styles.hireButton} onPress={handleHire} disabled={!!hireFlow.hiringId}>
+          <TouchableOpacity
+            style={[styles.hireButton, unavailable && { opacity: 0.45 }]}
+            onPress={handleHire}
+            disabled={!!hireFlow.hiringId || unavailable}
+          >
             <ThemedText style={styles.hireButtonText}>
-              {hireFlow.hiringId ? 'Hiring...' : nameHidden ? 'Hire' : `Hire ${providerShortTitle(profile.name)}`}
+              {unavailable ? 'Booked on another job at this time' : hireFlow.hiringId ? 'Hiring...' : nameHidden ? 'Hire' : `Hire ${providerShortTitle(profile.name)}`}
             </ThemedText>
           </TouchableOpacity>
         </View>

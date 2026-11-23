@@ -3,7 +3,7 @@ import type { OffAppAnswer } from '@/components/off-app-question';
 import { TipSheet } from '@/components/tip-sheet';
 import { useAppAlert } from '@/components/app-alert';
 import { SkoFyApi } from '@/services/api';
-import { isRatingSkipped, markRatingSkipped, markRatingSubmitted, nextPendingRating, PendingRating } from '@/services/ratingReminders';
+import { alreadyRated, isRatingSkipped, markRatingSkipped, markRatingSubmitted, nextPendingRating, PendingRating } from '@/services/ratingReminders';
 import { useIsFocused } from '@react-navigation/native';
 import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useState } from 'react';
@@ -51,7 +51,12 @@ export function RatingReminder() {
   if (!pending || !isFocused || isRatingSkipped(pending.job_id)) return tipSheet;
 
   const submit = async (ratings: RatingDimensions, comment: string, offApp: OffAppAnswer) => {
-    await SkoFyApi.jobs.submitReview(pending.job_id, { ...ratings, comment, ...offApp });
+    // Rated already (another screen): done, not a failure.
+    try {
+      await SkoFyApi.jobs.submitReview(pending.job_id, { ...ratings, comment, ...offApp });
+    } catch (err) {
+      if (!alreadyRated(err)) throw err;
+    }
     markRatingSubmitted(pending.job_id);
   };
 
