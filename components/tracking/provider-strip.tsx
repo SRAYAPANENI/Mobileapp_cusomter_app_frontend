@@ -58,7 +58,7 @@ export function ProviderStrip({ provider, vehicle, onOpenProfile, onCall, onChat
             <Star size={12} color="#F59E0B" fill="#F59E0B" />
             <ThemedText style={[s.metaStrong, { color: t.textPrimary }]}>{(provider?.rating ?? 0).toFixed(1)}</ThemedText>
             {!!provider?.role && (
-              <ThemedText style={[s.metaText, { color: t.textSecondary }]} numberOfLines={1}> · {provider.role}</ThemedText>
+              <ThemedText style={[s.metaText, s.shrink, { color: t.textSecondary }]} numberOfLines={1}>· {provider.role}</ThemedText>
             )}
           </View>
           {vehicle && (
@@ -108,13 +108,15 @@ function RoundButton({ label, onPress, background, children }: {
 
 const s = StyleSheet.create({
   wrap: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  who: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  who: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatar: { width: 52, height: 52, borderRadius: 26 },
   verified: {
     position: 'absolute', right: -2, bottom: -2, width: 20, height: 20, borderRadius: 10,
     backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center', borderWidth: 2,
   },
-  info: { flex: 1, gap: 1 },
+  info: { flex: 1, minWidth: 0, gap: 1 },
+  // Cut short with … rather than running under the buttons.
+  shrink: { flexShrink: 1 },
   name: { fontSize: 16, lineHeight: 22, fontFamily: Fonts.poppinsBold },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   metaStrong: { fontSize: 12.5, lineHeight: 17, fontFamily: Fonts.poppinsSemiBold },
@@ -122,6 +124,6 @@ const s = StyleSheet.create({
   vehicle: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
   plate: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: 5, borderWidth: 1.5, borderColor: '#111827', backgroundColor: '#FFFFFF' },
   plateText: { fontSize: 11, lineHeight: 15, fontFamily: Fonts.poppinsBold, color: '#111827', letterSpacing: 0.8 },
-  actions: { flexDirection: 'row', gap: 8 },
+  actions: { flexDirection: 'row', gap: 8, flexShrink: 0 },
   round: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
 });

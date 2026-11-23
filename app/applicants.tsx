@@ -404,7 +404,7 @@ export default function ApplicantsScreen() {
       })
       .catch((err) => {
         console.error('Failed to fetch applicants:', err);
-        setApplicants([]);
+        // What's on screen stays through a failed reload.
         // NOT_FOUND/FORBIDDEN mean the job is permanently gone or was never
         // this customer's — usually a stale notification tap after the job
         // expired/got deleted. "Pull down to retry" is actively wrong there.
@@ -428,6 +428,16 @@ export default function ApplicantsScreen() {
   // Live: someone applied or withdrew — the list follows at once, so a
   // withdrawn applicant is gone before anyone taps Hire on them.
   useJobEvents(jobId, (type) => { if (type === 'applicants_changed') loadApplicants(); });
+
+  // Someone's booked elsewhere: their Hire comes back once they're free.
+  const someoneBusy = applicants.some((a: any) => a.unavailable);
+  useFocusEffect(
+    React.useCallback(() => {
+      if (!someoneBusy) return;
+      const timer = setInterval(() => loadApplicants(), 20_000);
+      return () => clearInterval(timer);
+    }, [someoneBusy, loadApplicants])
+  );
 
   const handleHire = async (applicationId: string, name: string, providerId?: string) => {
     setLastHiredName(name);                   // for the "Hired" message the flow shows

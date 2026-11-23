@@ -36,7 +36,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { PanResponder, Platform, ScrollView, Share, StatusBar, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import Animated, { SlideInDown } from 'react-native-reanimated';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SheetToggleHandle } from '@/components/sheet-toggle-handle';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RatingModal, RatingDimensions } from '@/components/ui/rating-modal';
@@ -1205,6 +1205,12 @@ export default function TrackProviderScreen() {
   const [minimized, setMinimized] = useState(false);
   // Something to do appears: the sheet opens to show it.
   useEffect(() => { if (stage.needsAction) setMinimized(false); }, [stage.key, stage.needsAction]);
+  // Slid in by a transform, not an entering animation: that one held the panel
+  // at its first height while the provider's row loaded into it, leaving the
+  // row outside the white.
+  const sheetY = useSharedValue(windowHeight);
+  useEffect(() => { sheetY.value = withTiming(0, { duration: 500, easing: Easing.out(Easing.cubic) }); }, [sheetY]);
+  const sheetIn = useAnimatedStyle(() => ({ transform: [{ translateY: sheetY.value }] }));
   const sheetPan = React.useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 8 && Math.abs(g.dy) > Math.abs(g.dx),
     onPanResponderRelease: (_, g) => {
@@ -1433,7 +1439,9 @@ export default function TrackProviderScreen() {
     if (!destination) {
       return (
         <View style={[styles.map, { backgroundColor: themeColors.inputFilled, justifyContent: 'center', alignItems: 'center' }]}>
-          <ThemedText style={{ color: themeColors.textSecondary }}>Loading job details…</ThemedText>
+          <ThemedText style={{ color: themeColors.textSecondary }}>
+            {jobLoaded ? 'The map isn’t available for this job' : 'Loading job details…'}
+          </ThemedText>
         </View>
       );
     }
@@ -1542,7 +1550,7 @@ export default function TrackProviderScreen() {
           KeyboardAvoidingView: the counter-offer input sits deep in here,
           and Android's resize doesn't lift an absolutely placed sheet. */}
       <KeyboardAvoidingView style={styles.bottomSheetKeyboardWrapper} behavior="padding">
-      <Animated.View entering={SlideInDown.duration(500)} style={styles.bottomSheet}>
+      <Animated.View style={[styles.bottomSheet, sheetIn]}>
         <View style={styles.handleArea} {...sheetPan.panHandlers}>
           {/* An arrow, not a bare line: it says the card can be folded (components/sheet-toggle-handle.tsx). */}
           <SheetToggleHandle

@@ -2,7 +2,7 @@ import { DatePickerModal } from '@/components/date-picker-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TimePickerModal } from '@/components/time-picker-modal';
-import { fromParts, isPickable } from '@/services/schedule-slots';
+import { fromParts, hasPassed, isPickable } from '@/services/schedule-slots';
 import { Colors, Fonts } from '@/constants/theme';
 import { usePostRequirement } from '@/context/PostRequirementContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -21,6 +21,7 @@ import {
   Zap
 } from 'lucide-react-native';
 import { SkoFyApi } from '@/services/api';
+import { PRICING_RULES, SkillPricing } from '@/services/job-shape';
 import { CatalogSkill, ProfessionMatch, searchProfessions, SKILLS_SHOWN } from '@/services/profession-search';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Dimensions, FlatList, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
@@ -79,7 +80,7 @@ export default function VerifyProblemScreen() {
   }, []);
 
   // Backend skills for current profession
-  const [backendSkills, setBackendSkills] = useState<{ id: string; name: string }[]>([]);
+  const [backendSkills, setBackendSkills] = useState<{ id: string; name: string; pricing?: SkillPricing | null }[]>([]);
   // While they load, the picker says nothing rather than "couldn't load".
   const [skillsLoading, setSkillsLoading] = useState(false);
 
@@ -93,7 +94,7 @@ export default function VerifyProblemScreen() {
     SkoFyApi.skills.list(data.profession)
       .then((list: any) => {
         if (!cancelled && Array.isArray(list) && list.length > 0) {
-          setBackendSkills(list.map((s: any) => ({ id: s.id, name: s.name })));
+          setBackendSkills(list.map((s: any) => ({ id: s.id, name: s.name, pricing: s.pricing ?? null })));
         } else if (!cancelled) {
           setBackendSkills([]);
         }
@@ -200,6 +201,29 @@ export default function VerifyProblemScreen() {
   const timeStillAhead = (dateISO: string | null) =>
     data.time === 'Select Time'
     || isPickable(fromParts(dateISO, { hour: data.timeHour, minute: data.timeMinute, period: data.timePeriod as 'AM' | 'PM' }), new Date());
+
+  // Urgent needs its deadline and Book Slot its time. Normal has none: as
+  // soon as a provider can. It used to go on (and post) without one.
+  const [timeProblem, setTimeProblem] = useState<string | null>(null);
+  // Booked by the hour, night or day: its dates are chosen on the next screen.
+  const mainPricing = (backendSkills.find((s) => s.id === data.skill_ids[0]) ?? backendSkills[0])?.pricing;
+  const datesNext = data.jobKind !== 'PICKUP_DROPOFF' && !!mainPricing && PRICING_RULES[mainPricing].howLong !== 'ONCE';
+  const needsTime = data.jobType !== 'Normal' && !datesNext;
+  const goToSummary = () => {
+    if (needsTime && data.time === 'Select Time') {
+      setTimeProblem(data.jobType === 'Urgent' ? 'Set your deadline to continue.' : 'Pick a time to continue.');
+      setShowTimePicker(true);
+      return;
+    }
+    if (needsTime && hasPassed(
+      fromParts(data.dateISO, { hour: data.timeHour, minute: data.timeMinute, period: data.timePeriod as 'AM' | 'PM' }), new Date())) {
+      updateData({ time: 'Select Time' });
+      setTimeProblem('That time has passed — pick a later one.');
+      setShowTimePicker(true);
+      return;
+    }
+    router.replace('/post-requirement/summary');
+  };
 
   return (
     <ThemedView style={styles.container}>
@@ -313,7 +337,7 @@ export default function VerifyProblemScreen() {
               ].map((type) => (
                 <TouchableOpacity
                   key={type.label}
-                  onPress={() => updateData({ jobType: type.label as any })}
+                  onPress={() => { setTimeProblem(null); updateData({ jobType: type.label as any }); }}
                   style={[
                     styles.jobTypeCard,
                     data.jobType === type.label && { backgroundColor: '#FFFBEB', borderColor: themeColors.brand }
@@ -330,7 +354,7 @@ export default function VerifyProblemScreen() {
 
           {/* Schedule - visible for Book Slot (when the work should happen)
               and Urgent (the deadline providers need to respond/arrive by) */}
-          {(data.jobType === 'Book Slot' || data.jobType === 'Urgent') && (
+          {needsTime && (
             <Animated.View entering={FadeIn.duration(400)} style={styles.section}>
               <ThemedText style={styles.sectionTitle}>
                 {data.jobType === 'Urgent' ? 'Set Your Deadline' : 'Schedule Your Slot'}
@@ -349,7 +373,7 @@ export default function VerifyProblemScreen() {
                   <ThemedText style={styles.scheduleText}>{data.date}</ThemedText>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={styles.schedulePicker}
+                  style={[styles.schedulePicker, !!timeProblem && { borderColor: '#EF4444' }]}
                   onPress={() => setShowTimePicker(true)}
                 >
                   <Clock size={18} color={themeColors.brand} />
@@ -358,7 +382,17 @@ export default function VerifyProblemScreen() {
                   </ThemedText>
                 </TouchableOpacity>
               </View>
+              {!!timeProblem && <ThemedText style={styles.timeProblem}>{timeProblem}</ThemedText>}
             </Animated.View>
+          )}
+          {datesNext ? (
+            <ThemedText style={[styles.scheduleSubtitle, { marginTop: 8 }]}>
+              You’ll choose when it starts and ends on the next screen.
+            </ThemedText>
+          ) : data.jobType === 'Normal' && (
+            <ThemedText style={[styles.scheduleSubtitle, { marginTop: 8 }]}>
+              No set time — a provider starts as soon as they can. Choose Book Slot for a certain time.
+            </ThemedText>
           )}
 
         </ScrollView>
@@ -368,7 +402,7 @@ export default function VerifyProblemScreen() {
           <TouchableOpacity
             style={[styles.summaryButton, { backgroundColor: themeColors.brand }, !data.profession && { opacity: 0.5 }]}
             disabled={!data.profession}
-            onPress={() => router.replace('/post-requirement/summary')}
+            onPress={goToSummary}
           >
             <ThemedText style={styles.summaryButtonText}>View Job Summary</ThemedText>
           </TouchableOpacity>
@@ -504,6 +538,7 @@ export default function VerifyProblemScreen() {
         onConfirm={(label, hour, minute, period, day) => {
           // The sheet can move the day (Today / Tomorrow / "Tomorrow 9 AM").
           updateData({ time: label, timeHour: hour, timeMinute: minute, timePeriod: period, date: day.label, dateISO: day.iso });
+          setTimeProblem(null);
           setShowTimePicker(false);
         }}
       />
@@ -594,6 +629,7 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   sectionTitleSpaced: {
     marginBottom: 12,
   },
+  timeProblem: { fontSize: 12.5, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: '#EF4444', marginTop: 8 },
   scheduleSubtitle: {
     fontSize: 12,
     lineHeight: 18,

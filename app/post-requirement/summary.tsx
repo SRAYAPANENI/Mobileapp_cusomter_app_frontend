@@ -136,6 +136,13 @@ export default function JobSummaryScreen() {
     const when = ordinary && data.jobChoice.howLong !== 'ONCE' && data.jobChoice.startISO
       ? new Date(data.jobChoice.startISO)
       : scheduledFor();
+    // Urgent's deadline, Book Slot's time (step 2 asks; a stay has its own start).
+    if (!when && data.jobType !== 'Normal') {
+      alert.show('error', data.jobType === 'Urgent' ? 'Set Your Deadline' : 'Pick a Time',
+        data.jobType === 'Urgent' ? 'Say by when you need this done.' : 'Say when you want the provider to arrive.',
+        [{ text: 'Choose', onPress: () => router.replace('/post-requirement/step2') }]);
+      return;
+    }
     if (when && hasPassed(when, new Date())) {
       alert.show('error', 'That Time Has Passed', 'Go back and pick a later time.');
       return;
@@ -283,20 +290,23 @@ export default function JobSummaryScreen() {
                 color="#8B5CF6"
               />
             )}
+            {/* By the hour, night or day: its dates are below, with how long. */}
+            {!(ordinary && data.jobChoice.howLong !== 'ONCE') && (<>
             <SummaryItem
               styles={styles}
               icon={Calendar}
               label="Date"
-              value={data.date}
+              value={data.jobType === 'Normal' ? 'As soon as possible' : data.date}
               color="#10B981"
             />
             <SummaryItem
               styles={styles}
               icon={Clock}
               label="Time Slot"
-              value={data.time}
+              value={data.jobType === 'Normal' ? 'No set time' : data.time === 'Select Time' ? 'Not chosen yet' : data.time}
               color="#F59E0B"
             />
+            </>)}
             {data.serviceMode === 'REMOTE' ? (
               <SummaryItem
                 styles={styles}

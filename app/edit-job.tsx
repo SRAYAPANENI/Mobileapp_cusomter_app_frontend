@@ -233,6 +233,14 @@ export default function EditJobScreen() {
         return;
       }
     }
+    // Changed to Urgent or Book Slot: those go out with a time. (A job already
+    // posted without one keeps its other details editable.)
+    const before = job?.urgency === 'EMERGENCY' ? 'HIGH' : (job?.urgency ?? 'MEDIUM');
+    if (urgency !== before && urgency !== 'MEDIUM' && !timeLabel) {
+      alert.show('error', urgency === 'HIGH' ? 'Set Your Deadline' : 'Pick a Time',
+        urgency === 'HIGH' ? 'Say by when you need this done.' : 'Say when you want the provider to arrive.');
+      return;
+    }
     if (scheduledAt && !wasExpired && hasPassed(new Date(scheduledAt), new Date())) {
       alert.show('error', 'Pick a New Time', 'This job’s time has passed — pick a later one.');
       return;
