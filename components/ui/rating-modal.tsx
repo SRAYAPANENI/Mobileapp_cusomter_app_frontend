@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View, TouchableOpacity } from 'react-native';
+import { ScrollView, StyleSheet, View, TouchableOpacity } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { ThemedText } from '../themed-text';
@@ -8,6 +8,7 @@ import { Star, CheckCircle2 } from 'lucide-react-native';
 import { NO_OFF_APP_ANSWER, OffAppAnswer, OffAppQuestion } from '@/components/off-app-question';
 import Animated, { SlideInDown, FadeIn } from 'react-native-reanimated';
 
+import { useIsFocused } from '@react-navigation/native';
 import { Popup } from '@/components/popup';
 export interface RatingDimensions {
   skill_rating: number;
@@ -36,7 +37,13 @@ const DIMENSIONS: { key: keyof RatingDimensions; label: string; hint: string }[]
   { key: 'communication_rating', label: 'Communication', hint: 'Responsiveness and clarity' },
 ];
 
+// The customer's rating of a provider, whatever kind of job it was — the one
+// form for tracking, the chat, Job History and the home reminder. Give it
+// `key={jobId}` where it's reused for several jobs. Only the screen in view
+// shows it: a popup covers everything, so a screen underneath would put a
+// second one on top.
 export function RatingModal({ visible, onClose, onSubmit, providerName, onSkip, onTip }: RatingModalProps) {
+  const inView = useIsFocused();
   const [ratings, setRatings] = useState<RatingDimensions>({
     skill_rating: 0,
     punctuality_rating: 0,
@@ -72,10 +79,17 @@ export function RatingModal({ visible, onClose, onSubmit, providerName, onSkip, 
   };
 
   return (
-    <Popup closeOn={submitting ? 'none' : 'back'} visible={visible} transparent animationType="fade" onClose={isSubmitted ? onClose : onSkip}>
+    <Popup closeOn={submitting ? 'none' : 'back'} visible={visible && inView} transparent animationType="fade" onClose={isSubmitted ? onClose : onSkip}>
       <KeyboardAvoidingView style={styles.overlay} behavior="padding" automaticOffset>
         {!isSubmitted ? (
           <Animated.View entering={SlideInDown.duration(260)} style={styles.card}>
+            {/* Taller than a small phone, or with the keyboard up: it scrolls. */}
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={styles.scrollContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
             <ThemedText style={styles.title}>Rate Your Experience</ThemedText>
             <ThemedText style={styles.subtitle}>
               How was your service with {providerName}?
@@ -138,6 +152,7 @@ export function RatingModal({ visible, onClose, onSubmit, providerName, onSkip, 
             <TouchableOpacity style={styles.skipButton} onPress={onSkip} disabled={submitting}>
               <ThemedText style={styles.skipButtonText}>Maybe later</ThemedText>
             </TouchableOpacity>
+            </ScrollView>
           </Animated.View>
         ) : (
           <Animated.View entering={FadeIn.duration(200)} style={styles.successCard}>
@@ -177,8 +192,11 @@ const styles = StyleSheet.create({
     padding: 24,
     width: '100%',
     maxWidth: 400,
+    maxHeight: '100%',
     alignItems: 'center',
   },
+  scroll: { width: '100%', flexGrow: 0 },
+  scrollContent: { alignItems: 'center' },
   title: {
     fontSize: 24, lineHeight: 30,
     fontFamily: Fonts.poppinsBold,

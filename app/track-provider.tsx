@@ -448,6 +448,10 @@ export default function TrackProviderScreen() {
   // A notification for this job, tapped while this screen is open, mustn't
   // stack a second copy of it (services/openScreens.ts).
   const isFocused = useIsFocused();
+  // Back from a screen where it was answered (the chat): not asked again.
+  useEffect(() => {
+    if (isFocused && jobId && isRatingSkipped(jobId)) setShowRatingModal(false);
+  }, [isFocused, jobId]);
   const { height: windowHeight } = useWindowDimensions();
   useOpenScreen('/track-provider', jobId, { jobId });
 
@@ -1776,7 +1780,7 @@ export default function TrackProviderScreen() {
       )}
 
       <RatingModal
-        visible={showRatingModal && isFocused}
+        visible={showRatingModal}
         providerName={provider?.name ?? 'Provider'}
         onClose={handleRatingModalClose}
         onTip={() => { setShowRatingModal(false); setTipJobId(jobId ?? null); }}

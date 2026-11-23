@@ -397,6 +397,7 @@ export default function JobHistoryScreen() {
       />
 
       <RatingModal
+        key={ratingTarget?.jobId ?? 'none'}
         visible={!!ratingTarget}
         providerName={ratingTarget?.providerName ?? ''}
         onClose={() => setRatingTarget(null)}

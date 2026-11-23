@@ -14,14 +14,14 @@ import {
   Phone,
   Receipt,
   Send,
-  Star,
   XCircle
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, FlatList, Keyboard, Linking, Platform, ScrollView, StyleSheet, TouchableOpacity, Vibration, View } from 'react-native';
-import { Text, TextInput } from '@/components/scaled-text';
+import { ActivityIndicator, BackHandler, FlatList, Keyboard, Linking, Platform, StyleSheet, TouchableOpacity, Vibration, View } from 'react-native';
+import { TextInput } from '@/components/scaled-text';
 import { OffAppNote } from '@/components/off-app-note';
-import { NO_OFF_APP_ANSWER, OffAppAnswer, OffAppQuestion } from '@/components/off-app-question';
+import type { OffAppAnswer } from '@/components/off-app-question';
+import { RatingDimensions, RatingModal } from '@/components/ui/rating-modal';
 // The keyboard-controller version: works with KeyboardProvider (app/_layout.tsx)
 // on Android — React Native's own one shifted the layout as the keyboard
 // closed, so a tap meant for a button could miss it.
@@ -31,6 +31,7 @@ import { useAppConfig } from '@/services/queries/app-config';
 import Animated, { FadeInLeft, FadeInRight } from 'react-native-reanimated';
 import { Audio } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useIsFocused } from '@react-navigation/native';
 import { alreadyRated, isRatingSkipped, markRatingSkipped, markRatingSubmitted } from '@/services/ratingReminders';
 import { SkoFyApi, TokenStore, getFreshAccessToken } from '@/services/api';
 // The call's audio — through our own media server (docs/CALL_RECORDING_DESIGN.md).
@@ -40,10 +41,7 @@ import { CallOverlay } from '@/components/call-overlay';
 import InCallManager from 'react-native-incall-manager';
 import { answerIosRing, claimOutgoingCall, markCallEnded, releaseOutgoingCall, startInAppRingtone, stopInAppRingtone, cancelIncomingCallNotification, endIosCallSession, forgetCallScreen, takeAcceptRequest, endIosRingForHangUp, markIosCallConnected, registerAcceptHandler, registerDeclineHandler, showIosIncomingCall, registerHangupHandler, registerMuteHandler, registerSpeakerHandler, setActiveChatJob, setChatCallActive, startIosOutgoingCall, startOngoingCallNotification, stopOngoingCallNotification, updateOngoingCallControls } from '@/services/callManager';
 import { useOpenScreen } from '@/services/openScreens';
-import { padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 
-import { Popup } from '@/components/popup';
-import { useButtonRowFit } from '@/hooks/use-button-row-fit';
 // No-answer cutoff — like a real phone call, ringing/calling shouldn't go on forever.
 // The server ends an unanswered call after 45s and says why; this is only
 // the fallback if that message never arrives.
@@ -111,8 +109,6 @@ function endedLabelFor(reason: string | undefined, state: CallState): string | n
 }
 
 export default function ChatScreen() {
-  const ratingFit = useButtonRowFit();
-  const bottomInset = useBottomInset();
   const { jobId, id, name: paramName, profileImage: paramProfileImage, profession: paramProfession, autoAnswer, autoCall, callId: callIdParam, returnOnEnd } = useLocalSearchParams<{
     jobId: string;
     id: string;
@@ -264,10 +260,20 @@ export default function ChatScreen() {
 
   // Rating modal — shown once per session when opening a COMPLETED job chat
   const [ratingVisible, setRatingVisible] = useState(false);
-  const [ratings, setRatings] = useState({ behaviour: 0, skill: 0, punctuality: 0, communication: 0 });
-  const [ratingComment, setRatingComment] = useState('');
-  const [ratingOffApp, setRatingOffApp] = useState<OffAppAnswer>(NO_OFF_APP_ANSWER);
-  const [ratingSubmitting, setRatingSubmitting] = useState(false);
+  const inView = useIsFocused();
+  // Back from a screen where it was answered: not asked again.
+  useEffect(() => {
+    if (inView && isRatingSkipped(jobId)) setRatingVisible(false);
+  }, [inView, jobId]);
+  const submitRating = async (ratings: RatingDimensions, comment: string, offApp: OffAppAnswer) => {
+    // Rated already (another screen): done, not a failure.
+    try {
+      await SkoFyApi.jobs.submitReview(jobId, { ...ratings, comment, ...offApp });
+    } catch (err) {
+      if (!alreadyRated(err)) throw err;
+    }
+    markRatingSubmitted(jobId);
+  };
 
   // The other person's presence in the call's room (see onMediaEvent).
   const peerPresentRef = useRef(false);
@@ -1231,78 +1237,14 @@ export default function ChatScreen() {
       )}
       {appAlert.element}
 
-      {/* Mutual rating modal — shown once when opening a completed job chat */}
-      <Popup closeOn={ratingSubmitting ? 'none' : 'back'} statusBarTranslucent navigationBarTranslucent visible={ratingVisible} transparent animationType="fade" onClose={() => { markRatingSkipped(jobId); setRatingVisible(false); }}>
-        <KeyboardAvoidingView style={styles.ratingOverlay} behavior="padding" automaticOffset>
-          <View style={padBottom(styles.ratingSheet, bottomInset)}>
-            <Text style={styles.ratingTitle}>Rate your experience</Text>
-            <Text style={styles.ratingSubtitle}>How did the service go?</Text>
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ width: '100%' }}>
-              {(['behaviour', 'skill', 'punctuality', 'communication'] as const).map((dim) => (
-                <View key={dim} style={styles.ratingRow}>
-                  <Text style={styles.ratingDimLabel}>{dim.charAt(0).toUpperCase() + dim.slice(1)}</Text>
-                  <View style={styles.starsRow}>
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <TouchableOpacity key={star} onPress={() => setRatings(r => ({ ...r, [dim]: star }))} style={styles.starBtn}>
-                        <Star size={28} color={ratings[dim] >= star ? '#FFCE48' : '#D1D5DB'} fill={ratings[dim] >= star ? '#FFCE48' : 'transparent'} />
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              ))}
-              <TextInput
-                style={styles.ratingCommentInput}
-                placeholder="Add a comment (optional)"
-                placeholderTextColor="#9CA3AF"
-                value={ratingComment}
-                onChangeText={setRatingComment}
-                multiline
-                numberOfLines={3}
-              />
-              <OffAppQuestion providerName={name || 'the provider'} value={ratingOffApp} onChange={setRatingOffApp} />
-            </ScrollView>
-            <View style={[styles.ratingActions, ratingFit.row]}>
-              <TouchableOpacity style={[styles.ratingSkipBtn, ratingFit.button]} onPress={() => { markRatingSkipped(jobId); setRatingVisible(false); }}>
-                <Text onTextLayout={ratingFit.onLabelLayout} style={styles.ratingSkipText}>Skip</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[[styles.ratingSubmitBtn, ratingSubmitting && { opacity: 0.6 }], ratingFit.button]}
-                disabled={ratingSubmitting}
-                onPress={async () => {
-                  if (Object.values(ratings).some(v => v === 0)) {
-                    appAlert.show('info', 'Incomplete', 'Please rate all dimensions before submitting.');
-                    return;
-                  }
-                  setRatingSubmitting(true);
-                  try {
-                    await SkoFyApi.jobs.submitReview(jobId, {
-                      behaviour_rating: ratings.behaviour,
-                      skill_rating: ratings.skill,
-                      punctuality_rating: ratings.punctuality,
-                      communication_rating: ratings.communication,
-                      comment: ratingComment,
-                      ...ratingOffApp,
-                    });
-                    markRatingSubmitted(jobId);
-                    setRatingVisible(false);
-                  } catch (err) {
-                    if (alreadyRated(err)) {
-                      markRatingSubmitted(jobId);
-                      setRatingVisible(false);
-                      return;
-                    }
-                    appAlert.show('error', 'Error', 'Failed to submit rating. Please try again.');
-                  } finally {
-                    setRatingSubmitting(false);
-                  }
-                }}
-              >
-                <Text onTextLayout={ratingFit.onLabelLayout} style={styles.ratingSubmitText}>{ratingSubmitting ? 'Submitting…' : 'Submit Rating'}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Popup>
+      {/* Asked once when opening a finished job's chat that isn't rated */}
+      <RatingModal
+        visible={ratingVisible}
+        providerName={name || 'the provider'}
+        onSubmit={submitRating}
+        onClose={() => setRatingVisible(false)}
+        onSkip={() => { markRatingSkipped(jobId); setRatingVisible(false); }}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -1513,50 +1455,5 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: t.inputFilled,
-  },
-  ratingOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end', alignItems: 'center',
-  },
-  ratingSheet: {
-    width: '100%', backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 24, paddingBottom: 40, alignItems: 'center', maxHeight: '85%',
-  },
-  ratingTitle: {
-    fontSize: 20, fontFamily: Fonts.poppinsBold, color: '#111827', marginBottom: 4,
-  },
-  ratingSubtitle: {
-    fontSize: 14, fontFamily: Fonts.poppins, color: '#6B7280', marginBottom: 20,
-  },
-  ratingRow: {
-    width: '100%', flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', marginBottom: 16,
-  },
-  ratingDimLabel: {
-    fontSize: 14, fontFamily: Fonts.poppinsMedium, color: '#374151', width: 110,
-  },
-  starsRow: { flexDirection: 'row', gap: 4 },
-  starBtn: { padding: 2 },
-  ratingCommentInput: {
-    width: '100%', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
-    padding: 12, fontSize: 14, fontFamily: Fonts.poppins, color: '#111827',
-    minHeight: 72, textAlignVertical: 'top', marginBottom: 20,
-  },
-  ratingActions: {
-    flexDirection: 'row', gap: 12, width: '100%',
-  },
-  ratingSkipBtn: {
-    flex: 1, paddingVertical: 14, borderRadius: 12, borderWidth: 1,
-    borderColor: '#E5E7EB', alignItems: 'center',
-  },
-  ratingSkipText: {
-    fontSize: 15, fontFamily: Fonts.poppinsMedium, color: '#6B7280',
-  },
-  ratingSubmitBtn: {
-    flex: 2, paddingVertical: 14, borderRadius: 12,
-    backgroundColor: '#FFCE48', alignItems: 'center',
-  },
-  ratingSubmitText: {
-    fontSize: 15, fontFamily: Fonts.poppinsBold, color: '#111827',
   },
 }); }
