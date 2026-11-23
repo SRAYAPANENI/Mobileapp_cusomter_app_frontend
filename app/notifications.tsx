@@ -20,6 +20,7 @@ import {
   Phone,
   Star,
   UserPlus,
+  Video,
   X,
   XCircle,
 } from 'lucide-react-native';
@@ -66,6 +67,8 @@ function getIcon(type: string) {
       return { icon: Phone, color: '#10B981', bg: '#ECFDF5' };
     case 'review':
       return { icon: Star, color: '#F59E0B', bg: '#FFFBEB' };
+    case 'meeting_link':
+      return { icon: Video, color: '#7C3AED', bg: '#F5F3FF' };
     case 'hired':
     case 'new_job':
       return { icon: Briefcase, color: '#FFCE48', bg: '#FFFDE7' };

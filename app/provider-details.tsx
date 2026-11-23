@@ -97,10 +97,14 @@ export default function ProviderDetailsScreen() {
   useJobEvents(isViewOnly || !id ? undefined : jobId, (type) => {
     if (type !== 'applicants_changed' || leftNoticeShown.current) return;
     SkoFyApi.jobs.get(jobId!).then((job: any) => {
-      const stillHere = (job?.applicants ?? []).some((a: any) => a.application_id === id && a.status !== 'WITHDRAWN');
-      if (stillHere || leftNoticeShown.current) return;
+      const now = (job?.applicants ?? []).find((a: any) => a.application_id === id && a.status !== 'WITHDRAWN');
+      // Still here — and still them: a business can change who it would send.
+      const changed = !!now && !!providerId && now.provider_id !== providerId;
+      if ((now && !changed) || leftNoticeShown.current) return;
       leftNoticeShown.current = true;
-      appAlert.show('info', 'No longer available', 'This applicant has withdrawn — choose someone else.',
+      appAlert.show('info', changed ? 'A different person' : 'No longer available',
+        changed ? 'This business would send someone else now — see who in your applicants.'
+          : 'This applicant has withdrawn — choose someone else.',
         undefined, undefined, () => router.back());
     }).catch(() => {});
   });
@@ -126,7 +130,9 @@ export default function ProviderDetailsScreen() {
   const [jobUnit, setJobUnit] = useState<string | null>(null);
   // Priced up front (per hour/day/night): hiring books and pays the total.
   const [paysUpfront, setPaysUpfront] = useState(false);
-  const hireFlow = useHireFlow(jobId, paysUpfront);
+  // Online work: no visit, so no visiting fee — neither shown nor charged.
+  const [jobOnline, setJobOnline] = useState(false);
+  const hireFlow = useHireFlow(jobId, paysUpfront, jobOnline);
   const NOT_HIREABLE_STATUSES = ['COMPLETED', 'CANCELLED', 'DISPUTED', 'EXPIRED', 'ACCEPTED', 'INSPECTING', 'INVOICE_PENDING', 'IN_PROGRESS'];
 
   // Bumped by "Try again" on the error screen to re-run the load below.
@@ -170,6 +176,8 @@ export default function ProviderDetailsScreen() {
         setJobStatus((jobData as any)?.status ?? null);
         setJobUnit((jobData as any)?.shape?.pricing_unit ?? null);
         setPaysUpfront(((jobData as any)?.steps ?? []).includes('PAY_UPFRONT'));
+        setJobOnline(((jobData as any)?.shape?.venue
+          ?? ((jobData as any)?.service_mode === 'REMOTE' ? 'ONLINE' : null)) === 'ONLINE');
         setWorkProof((Array.isArray(docsData) ? docsData : []).map((d: any) => ({
           id: d.id,
           type: d.media_type === 'VIDEO' ? 'video' : 'image',
@@ -236,7 +244,7 @@ export default function ProviderDetailsScreen() {
     }
     // The same flow as the applicants list: a job priced up front opens its
     // checkout; anything else pays the visiting fee.
-    const outcome = await hireFlow.hire(id ?? '');
+    const outcome = await hireFlow.hire(id ?? '', providerId);
     // Hired: the footer stops offering Hire (it would only be refused now).
     if (outcome.hired) setJobStatus('ACCEPTED');
     else if (outcome.message) appAlert.show('error', 'Hire Failed', outcome.message);
@@ -454,8 +462,8 @@ export default function ProviderDetailsScreen() {
 
               <ThemedText style={[styles.sectionTitle, { marginTop: 20 }]}>Pricing</ThemedText>
               <View style={styles.priceRow}>
-                {/* A job priced up front (a trip, nights, hours) has no visiting fee. */}
-                {(!jobUnit || jobUnit === 'QUOTE') && (
+                {/* A job priced up front (a trip, nights, hours) has no visiting fee — nor does online work. */}
+                {(!jobUnit || jobUnit === 'QUOTE') && !jobOnline && (
                 <View style={[styles.priceCard, { flex: 1 }]}>
                   <View>
                     <ThemedText style={styles.priceValue}>

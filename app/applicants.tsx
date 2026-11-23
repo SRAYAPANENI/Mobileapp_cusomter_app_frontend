@@ -336,9 +336,11 @@ export default function ApplicantsScreen() {
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   // Priced up front (per hour/day/night): hiring books and pays the total.
   const [paysUpfront, setPaysUpfront] = useState(false);
+  // Online work: no visit, so no visiting fee after hiring.
+  const [jobOnline, setJobOnline] = useState(false);
   // Hire, then the checkout (priced up front) or the visiting fee — shared
   // with an applicant's profile (hooks/use-hire-flow.ts).
-  const hireFlow = useHireFlow(jobId, paysUpfront);
+  const hireFlow = useHireFlow(jobId, paysUpfront, jobOnline);
   const [refreshing, setRefreshing] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
 
@@ -373,6 +375,7 @@ export default function ApplicantsScreen() {
       .then((job: any) => {
         setJobStatus(job?.status ?? null);
         setPaysUpfront((job?.steps ?? []).includes('PAY_UPFRONT'));
+        setJobOnline((job?.shape?.venue ?? (job?.service_mode === 'REMOTE' ? 'ONLINE' : null)) === 'ONLINE');
         const data = job?.applicants;
         // A real empty array (genuinely zero applicants yet) or a fetch
         // failure both used to fall back to DUMMY_APPLICANTS — fake, named
@@ -412,9 +415,9 @@ export default function ApplicantsScreen() {
   // withdrawn applicant is gone before anyone taps Hire on them.
   useJobEvents(jobId, (type) => { if (type === 'applicants_changed') loadApplicants(); });
 
-  const handleHire = async (applicationId: string, name: string) => {
+  const handleHire = async (applicationId: string, name: string, providerId?: string) => {
     setLastHiredName(name);                   // for the "Hired" message the flow shows
-    const outcome = await hireFlow.hire(applicationId);
+    const outcome = await hireFlow.hire(applicationId, providerId);
     if (outcome.hired) {
       setHiredIds(prev => [...prev, applicationId]);
     } else if (outcome.message) {
@@ -527,7 +530,7 @@ export default function ApplicantsScreen() {
             isHired={hiredIds.includes(item.id)}
             isHiring={hireFlow.hiringId === ((item as any).applicationId ?? item.id)}
             jobId={jobId}
-            onHire={() => handleHire((item as any).applicationId ?? item.id, item.name)}
+            onHire={() => handleHire((item as any).applicationId ?? item.id, item.name, (item as any).providerId)}
             onReject={() => handleReject((item as any).applicationId ?? item.id)}
           />
         )}

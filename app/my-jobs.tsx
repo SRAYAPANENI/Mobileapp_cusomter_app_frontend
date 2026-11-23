@@ -249,7 +249,7 @@ function JobCard({
             <TouchableOpacity
               style={[styles.actionButton, hasApplicants && { backgroundColor: '#10B981', borderColor: '#10B981' }]}
               onPress={() => {
-                if (item.actionLabel === 'Track Provider') {
+                if (item.actionLabel === 'Track Provider' || item.actionLabel === 'Open Session') {
                   router.push({ pathname: '/track-provider', params: { jobId: item.id } });
                 } else if (item.actionLabel === 'View Job') {
                   router.push({ pathname: '/job-details', params: { jobId: item.id } });
@@ -289,10 +289,11 @@ function mapApiJob(j: any): Job {
     EXPIRED:     { status: 'Expired',   label: 'Deadline Passed',  color: '#6B7280' },
   };
   const mapped = statusMap[j.status] ?? { status: 'Open', label: j.status, color: '#9CA3AF' };
-  // Disputed: support is deciding — nothing to track. Online: no map.
+  // Disputed: support is deciding — nothing to track. Online: its session.
   const actionLabel =
     mapped.status === 'Open' && j.applicant_count > 0 ? 'View Applicants' :
-    j.status === 'DISPUTED' || (mapped.status === 'Ongoing' && j.service_mode === 'REMOTE') ? 'View Job' :
+    j.status === 'DISPUTED' ? 'View Job' :
+    mapped.status === 'Ongoing' && j.service_mode === 'REMOTE' ? 'Open Session' :
     mapped.status === 'Ongoing' ? 'Track Provider' : undefined;
   const postedAt = j.created_at
     ? `Posted ${new Date(j.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`

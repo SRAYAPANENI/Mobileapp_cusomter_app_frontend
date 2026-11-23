@@ -27,8 +27,12 @@ async function describeJob(job: any): Promise<ActiveJobBanner | null> {
       message = 'Book and pay to confirm your provider';
     } else {
       const code = await SkoFyApi.jobs.checkInCode(job.id).catch(() => null);
-      message = code?.code ? 'Your check-in code is ready — tap to view' : 'Booked — see you at the start';
+      message = code?.code ? 'Your check-in code is ready — tap to view'
+        : job.service_mode === 'REMOTE' ? 'Booked — tap to join your session' : 'Booked — see you at the start';
     }
+  } else if (job.status === 'ACCEPTED' && (job.shape?.venue ?? (job.service_mode === 'REMOTE' ? 'ONLINE' : null)) === 'ONLINE') {
+    // Online: no visit, so no visiting fee or code — the price comes next.
+    message = 'Waiting for your provider’s price';
   } else if (job.status === 'ACCEPTED') {
     const feeStatus = await SkoFyApi.payments.getStatus(job.id, 'INSPECTION_FEE').catch(() => null);
     if (feeStatus?.status !== 'HELD') {
@@ -40,7 +44,7 @@ async function describeJob(job: any): Promise<ActiveJobBanner | null> {
         ? 'Your inspection code is ready — tap to view'
         : job.shape?.venue === 'PROVIDER_PLACE'
           ? "Head to your provider's place — they'll ask for your code there"
-          : 'Waiting for your provider to arrive';
+          : 'Waiting for your provider';
     }
   } else if (job.status === 'INSPECTING') {
     message = 'Your provider is inspecting the job';

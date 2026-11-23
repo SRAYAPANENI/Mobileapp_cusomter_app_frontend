@@ -622,6 +622,8 @@ const JOB_UPDATE_ROUTES: Record<string, JobUpdateRoute> = {
   care_update: '/track-provider',
   // Hired but not paid: book before the provider is freed (MONEY_RULES §14).
   booking_pay: '/track-provider',
+  // An online job's meeting link added or changed, or its session about to start.
+  meeting_link: '/track-provider',
   // Admin published new Terms & Conditions (AppConfigService.admin_update) —
   // straight to the Terms screen, which always reads the current server
   // config live, never a stale cached version.

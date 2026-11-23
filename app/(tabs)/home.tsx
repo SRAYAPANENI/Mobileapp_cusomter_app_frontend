@@ -505,6 +505,8 @@ export default function HomeScreen() {
 
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [etaMap, setEtaMap] = useState<Record<string, string>>({});
+  // Hired but not on the way yet.
+  const [notSetOff, setNotSetOff] = useState<Record<string, boolean>>({});
   const etaPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // All actionable jobs sorted by urgency (IN_PROGRESS → ACCEPTED → applicants → waiting)
@@ -548,6 +550,7 @@ export default function HomeScreen() {
       await Promise.all(hiredJobs.map(async (j) => {
         try {
           const t = await SkoFyApi.tracking.track(j.id);
+          setNotSetOff(prev => (!!prev[j.id] === (t.set_off === false) ? prev : { ...prev, [j.id]: t.set_off === false }));
           if (t.eta_minutes != null) {
             updates[j.id] = `${t.eta_minutes} min${t.eta_minutes === 1 ? '' : 's'}`;
           } else if (t.job_status === 'IN_PROGRESS') {
@@ -1076,7 +1079,9 @@ export default function HomeScreen() {
     let statusLabel = isWaiting ? 'Waiting for providers' : `${job.applicantCount} Provider${job.applicantCount === 1 ? '' : 's'} Applied`;
     if (job.rawStatus === 'INSPECTING') statusLabel = 'Inspecting the job';
     else if (job.rawStatus === 'INVOICE_PENDING') statusLabel = 'Invoice ready';
-    else if (isOngoing) statusLabel = 'Provider on the way';
+    // Online: nobody travels — hired, then the work.
+    else if (isOngoing && job.serviceMode === 'REMOTE') statusLabel = job.rawStatus === 'IN_PROGRESS' ? 'Work in progress' : 'Hired · online';
+    else if (isOngoing) statusLabel = notSetOff[job.id] ? 'Booked' : 'Provider on the way';
     // Neutral wording — this card covers both "you cancelled after hiring"
     // and "the provider backed out and no one else was available"; the API
     // doesn't currently distinguish who initiated it.
@@ -1085,17 +1090,14 @@ export default function HomeScreen() {
 
     const isRemote = job.serviceMode === 'REMOTE';
     let ctaLabel = isWaiting ? 'View Job' : 'View Applicants';
-    if (isOngoing) ctaLabel = isRemote ? 'View Job' : 'Track Provider';
+    if (isOngoing) ctaLabel = isRemote ? 'Open Session' : 'Track Provider';
     if (isDisputed) ctaLabel = 'View Job';
 
     const handleCta = () => {
       if (isDisputed) {
         router.push({ pathname: '/job-details', params: { jobId: job.id } } as any);
-      } else if (isOngoing && isRemote) {
-        // A remote job has no physical location to track — there's nothing
-        // for the map-based track-provider screen to show.
-        router.push({ pathname: '/job-details', params: { jobId: job.id } } as any);
       } else if (isOngoing) {
+        // Online too: there it's the session — its meeting, price and progress.
         // push, not replace — replacing the Home tab itself left
         // track-provider with nothing behind it in the stack, so the
         // hardware back button exited the app instead of returning here.

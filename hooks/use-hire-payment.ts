@@ -145,9 +145,9 @@ export function useHirePayment() {
     return { status: 'success' };
   };
 
-  const hireApplicant = async (jobId: string, applicationId: string): Promise<PaymentResult> => {
+  const hireApplicant = async (jobId: string, applicationId: string, providerId?: string): Promise<PaymentResult> => {
     try {
-      await SkoFyApi.jobs.hireApplicant(jobId, applicationId);
+      await SkoFyApi.jobs.hireApplicant(jobId, applicationId, providerId);
       return { status: 'success' };
     } catch (err: any) {
       if (PAYMENT_ELIGIBILITY_CODES.has(err?.error_code)) {

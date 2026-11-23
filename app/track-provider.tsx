@@ -12,7 +12,8 @@ import { DisputeModal } from '@/components/dispute-modal';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { SkoFyApi, BASE_URL, getFreshAccessToken } from '@/services/api';
+import { SkoFyApi, BASE_URL, getFreshAccessToken, MeetingInfo } from '@/services/api';
+import { MeetingCard } from '@/components/meeting-card';
 import { InspectionReport, InspectionReportCard } from '@/components/inspection-report-card';
 import { kmToMiles } from '@/services/units';
 import { GOOGLE_PLACES_API_KEY } from '@/services/google-places';
@@ -28,6 +29,7 @@ import {
   LocateFixed,
   Receipt,
   ShieldCheck,
+  Video,
 } from 'lucide-react-native';
 import { VehicleIcon } from '@/components/vehicle-icon';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
@@ -372,6 +374,14 @@ export default function TrackProviderScreen() {
   // front is paid at booking and run by CarePanel — no visiting fee or
   // inspection code.
   const [steps, setSteps] = useState<string[]>([]);
+  // Online work (docs/ONLINE_JOBS_DESIGN.md): no map, no trip, no visit — the
+  // session, and its meeting link, in their place.
+  const [setOff, setSetOff] = useState(true);
+  const [online, setOnline] = useState(false);
+  const [meeting, setMeeting] = useState<MeetingInfo | null>(null);
+  const [sessionAt, setSessionAt] = useState<string | null>(null);
+  const [sessionTitle, setSessionTitle] = useState('');
+  const meetingRefreshRef = useRef<(() => void) | null>(null);
   const paysUpfront = steps.includes('PAY_UPFRONT');
   // A pickup can go ahead: a trip's fare booked, or a quoted pickup's visiting fee held.
   const pickupPaid = paysUpfront ? bookingPaid : inspectionFeeStatus === 'HELD';
@@ -525,6 +535,10 @@ export default function TrackProviderScreen() {
       setJobStatus(j.status);
       setJobKind(j.job_type === 'PICKUP_DROPOFF' ? 'PICKUP_DROPOFF' : 'STANDARD');
       setSteps((j as any).steps ?? []);
+      setOnline(((j as any).shape?.venue ?? (j.service_mode === 'REMOTE' ? 'ONLINE' : null)) === 'ONLINE');
+      setMeeting((j as any).meeting ?? null);
+      setSessionAt(j.scheduled_at ?? null);
+      setSessionTitle(j.title ?? '');
       applyPickupFields(j);
       setJobLoaded(true);
     }).catch((err) => {
@@ -562,7 +576,10 @@ export default function TrackProviderScreen() {
       ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
-          if (msg.type === 'handover_code') {
+          if (msg.type === 'meeting_changed') {
+            // The other side added, changed or removed the meeting link.
+            meetingRefreshRef.current?.();
+          } else if (msg.type === 'handover_code') {
             pollNowRef.current?.();
             careReloadRef.current?.();
           } else if (msg.type === 'trip') {
@@ -608,6 +625,7 @@ export default function TrackProviderScreen() {
         const t = await SkoFyApi.tracking.track(jobId);
         if (cancelled) return;
         setJobStatus(t.job_status);
+        setSetOff(t.set_off !== false);
         // Use HTTP location when WS is down OR when WS is open but has gone
         // silent (provider killed app — WS stays connected to backend but no
         // messages arrive). 3 s without a WS location = treat as stale.
@@ -712,6 +730,28 @@ export default function TrackProviderScreen() {
   // On-site inspection + invoice — separate, lower-frequency poll (the
   // lightweight /track endpoint above doesn't carry this data). Only runs
   // while it's actually relevant, not once the job is under way.
+  // Online: the meeting link and the session time as they change — the job's
+  // stamp every 5 s, the job only when it moved, and at once when the server
+  // says the link changed (meeting_changed, above).
+  useEffect(() => {
+    if (!jobId || !online) return;
+    let cancelled = false;
+    let lastStamp = '';
+    const refresh = async (force = false) => {
+      const stamp = await SkoFyApi.jobs.stamp(jobId).then((r) => r?.stamp ?? '').catch(() => '');
+      if (!force && stamp && stamp === lastStamp) return;
+      const job: any = await SkoFyApi.jobs.get(jobId).catch(() => null);
+      if (cancelled || !job) return;
+      lastStamp = stamp;
+      setMeeting(job.meeting ?? null);
+      setSessionAt(job.scheduled_at ?? null);
+      setInvoice(job.invoice ?? null);
+    };
+    meetingRefreshRef.current = () => { void refresh(true); };
+    const timer = setInterval(() => { void refresh(); }, 5000);
+    return () => { cancelled = true; clearInterval(timer); meetingRefreshRef.current = null; };
+  }, [jobId, online]);
+
   useEffect(() => {
     if (!jobId) return;
     const deliveryOnItsWay = jobStatus === 'IN_PROGRESS' && jobKind === 'PICKUP_DROPOFF';
@@ -756,7 +796,8 @@ export default function TrackProviderScreen() {
       if (inFlight) return;
       inFlight = true;
       try {
-        if (jobStatus === 'ACCEPTED') {
+        // Online: no visiting fee and no arrival code to ask for.
+        if (jobStatus === 'ACCEPTED' && !online) {
           // A trip has no visiting fee: its fare is booked (bookingPaid).
           if (!paysUpfront) {
             const feeStatus = await SkoFyApi.payments.getStatus(jobId, 'INSPECTION_FEE').catch(() => null);
@@ -828,7 +869,7 @@ export default function TrackProviderScreen() {
     poll();
     const interval = setInterval(poll, 3000);
     return () => { cancelled = true; clearInterval(interval); pollNowRef.current = null; };
-  }, [jobId, jobStatus, jobKind, inspectionTick, paysUpfront]);
+  }, [jobId, jobStatus, jobKind, inspectionTick, paysUpfront, online]);
 
   const handlePayInspectionFee = async () => {
     if (!jobId) return;
@@ -1121,6 +1162,7 @@ export default function TrackProviderScreen() {
     isCompleted,
     delivery: isDelivery,
     travels,
+    setOff,
     paysUpfront,
     upfrontPaid,
     feeHeld: inspectionFeeStatus === 'HELD',
@@ -1134,6 +1176,7 @@ export default function TrackProviderScreen() {
     invoiceStatus: invoice?.status ?? null,
     recipientName,
     hostedAtTheirPlace: steps.includes('CHECK_IN_CODE'),
+    online,
   });
   const stage: typeof stageNow = ready ? stageNow
     : { ...stageNow, key: 'on_the_way', title: 'Getting the latest…', subtitle: '', needsAction: false, moving: false };
@@ -1351,6 +1394,23 @@ export default function TrackProviderScreen() {
   );
 
   const renderMap = () => {
+    // Online: nothing to show on a map — the session, in its place.
+    if (online) {
+      return (
+        <View style={[styles.map, styles.onlineBackdrop, { backgroundColor: themeColors.inputFilled, paddingTop: insets.top + 88 }]}>
+          <View style={styles.onlineIcon}><Video size={30} color="#111827" /></View>
+          <ThemedText style={[styles.onlineTitle, { color: themeColors.textPrimary }]}>Online session</ThemedText>
+          <ThemedText style={[styles.onlineLine, { color: themeColors.textSecondary }]}>
+            {sessionAt
+              ? new Date(sessionAt).toLocaleString([], { weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+              : 'No travel — you meet over video'}
+          </ThemedText>
+          <ThemedText style={[styles.onlineHint, { color: themeColors.textMuted }]}>
+            Join from your phone, or a computer to share screens.
+          </ThemedText>
+        </View>
+      );
+    }
     if (mapError || !MapView) {
       return (
         <View style={[styles.map, { backgroundColor: themeColors.inputFilled, justifyContent: 'center', alignItems: 'center' }]}>
@@ -1533,8 +1593,15 @@ export default function TrackProviderScreen() {
                 <CarePanel jobId={jobId} care={care} onMessage={(kind, title, message) => appAlert.show(kind, title, message)} />
               )}
 
-              {/* Quoted: the visiting / delivery fee, before the provider sets off. */}
-              {jobStatus === 'ACCEPTED' && !paysUpfront && feeChecked && inspectionFeeStatus !== 'HELD' && (
+              {/* Online: the meeting — join here, or on a computer by its short address. */}
+              {online && jobId && ['ACCEPTED', 'INVOICE_PENDING', 'IN_PROGRESS'].includes(jobStatus) && (
+                <MeetingCard jobId={jobId} meeting={meeting} sessionAt={sessionAt} title={sessionTitle} viewer="customer"
+                  onChanged={setMeeting}
+                  onMessage={(kind, title, message) => appAlert.show(kind, title, message)} />
+              )}
+
+              {/* Quoted: the visiting / delivery fee, before the provider sets off. Online: none. */}
+              {jobStatus === 'ACCEPTED' && !paysUpfront && !online && feeChecked && inspectionFeeStatus !== 'HELD' && (
                 <View style={styles.inspectionCard}>
                   <ThemedText style={styles.inspectionCardBody}>
                     {jobKind === 'PICKUP_DROPOFF'
@@ -1642,7 +1709,7 @@ export default function TrackProviderScreen() {
               {/* ── The fine print, one tap away ─────────────────────────── */}
               {hasTripDetails && (
                 <View style={styles.detailsBox}>
-                  <Disclosure label="Trip details" icon={<Receipt size={18} color={themeColors.textSecondary} />}>
+                  <Disclosure label={online ? 'Booking details' : 'Trip details'} icon={<Receipt size={18} color={themeColors.textSecondary} />}>
                     {paysUpfront && <CareTripDetails care={care} />}
                     {vehicle && (
                       <View style={styles.vehicleDetail}>
@@ -1740,6 +1807,15 @@ export default function TrackProviderScreen() {
 function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: t.card },
   map: { ...StyleSheet.absoluteFillObject },
+  // Online: the session where the map would be, in the space above the sheet.
+  onlineBackdrop: { alignItems: 'center', paddingHorizontal: 32, gap: 6 },
+  onlineIcon: {
+    width: 72, height: 72, borderRadius: 36, backgroundColor: '#FFCE48',
+    alignItems: 'center', justifyContent: 'center', marginBottom: 10,
+  },
+  onlineTitle: { fontSize: 22, lineHeight: 30, fontFamily: Fonts.poppinsBold, textAlign: 'center' },
+  onlineLine: { fontSize: 15, lineHeight: 21, fontFamily: Fonts.poppinsSemiBold, textAlign: 'center' },
+  onlineHint: { fontSize: 13, lineHeight: 19, fontFamily: Fonts.poppins, textAlign: 'center' },
   bottomSheetKeyboardWrapper: {
     position: 'absolute',
     bottom: 0,

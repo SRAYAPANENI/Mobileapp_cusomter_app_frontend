@@ -553,6 +553,16 @@ export interface JobTabCounts {
 
 // ─── JOB SHAPE ───────────────────────────────────────────────────────────────
 // Mirrors the backend's JobShapeIn (app/schemas/job.py).
+/** An online job's meeting (skofy-backend app/services/meeting_service.py):
+ * the link, and the short address that opens it in a laptop's browser. */
+export interface MeetingInfo {
+  url: string;
+  code: string;
+  /** Null when the server has no public address set — no "on a computer" then. */
+  short_link: string | null;
+  set_by: 'customer' | 'provider' | null;
+}
+
 export interface JobShapePayload {
   venue: 'CUSTOMER_PLACE' | 'PROVIDER_PLACE' | 'ROUTE' | 'ONLINE';
   timing: 'ONCE' | 'WINDOW' | 'STAY' | 'RECURRING';
@@ -1253,6 +1263,11 @@ export const SkoFyApi = {
      * — an open job screen polls this and reloads the job only when it changes. */
     stamp: async (jobId: string): Promise<{ stamp: string }> =>
       request(`/jobs/${jobId}/stamp`),
+    /** An online job's meeting link (Zoom, Meet, Teams, Webex) — set or replace it. */
+    setMeeting: async (jobId: string, url: string): Promise<MeetingInfo> =>
+      request(`/jobs/${jobId}/meeting`, { method: 'PUT', body: JSON.stringify({ url }) }),
+    clearMeeting: async (jobId: string): Promise<{ message: string }> =>
+      request(`/jobs/${jobId}/meeting`, { method: 'DELETE' }),
 
     /** Before posting a Pickup & Delivery job: its miles and what nearby
      * providers charge (each one's exact fare shows on their application). */
@@ -1292,10 +1307,11 @@ export const SkoFyApi = {
       return (job as any)?.applicants ?? [];
     },
 
-    hireApplicant: async (jobId: string, applicationId: string) =>
+    /** `providerId`: who the customer saw — refused if a business changed the person since. */
+    hireApplicant: async (jobId: string, applicationId: string, providerId?: string) =>
       request(`/jobs/${jobId}/hire`, {
         method: 'POST',
-        body: JSON.stringify({ application_id: applicationId }),
+        body: JSON.stringify({ application_id: applicationId, provider_id: providerId }),
       }),
 
     rejectApplicant: async (jobId: string, applicationId: string) =>
@@ -1473,6 +1489,8 @@ export const SkoFyApi = {
       eta_minutes: number | null;
       /** The provider's own figures (their navigation screen), not an estimate. */
       figures_from_provider?: boolean;
+      /** They've set off (missing from an older server: taken as yes). */
+      set_off?: boolean;
       /** Set once the job is cancelled — shown to the customer (e.g. a refused pickup). */
       cancellation_reason?: string | null;
     }> => request(`/jobs/${jobId}/track`),

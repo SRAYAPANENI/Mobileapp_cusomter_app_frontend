@@ -11,10 +11,12 @@ export type HireOutcome = { hired: true } | { hired: false; message?: string };
  *  - priced up front (the job's steps include PAY_UPFRONT): its checkout opens
  *    (offers, the bill, then Book) — render <BookingCheckout> with
  *    `checkoutOpen`, `book` and `skipCheckout`;
+ *  - online and quoted: nothing now — the provider sends a price, paid
+ *    before any work starts (no visit, so no visiting fee);
  *  - otherwise: the provider's visiting fee, charged straight away.
  * Then `doneVisible` — show the screen's "Hired" message with `doneMessage`.
  */
-export function useHireFlow(jobId: string | undefined, paysUpfront: boolean) {
+export function useHireFlow(jobId: string | undefined, paysUpfront: boolean, online = false) {
   const { hireApplicant, payInspectionFee, payBooking } = useHirePayment();
   const [hiringId, setHiringId] = useState<string | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -26,19 +28,23 @@ export function useHireFlow(jobId: string | undefined, paysUpfront: boolean) {
     setDoneVisible(true);
   };
 
-  const hire = async (applicationId: string): Promise<HireOutcome> => {
+  const hire = async (applicationId: string, providerId?: string): Promise<HireOutcome> => {
     if (!jobId || !applicationId) {
       // A stale or malformed link landed here without what it needs: nothing was hired.
       return { hired: false, message: "Couldn't hire this applicant — please go back and try again." };
     }
     setHiringId(applicationId);
     try {
-      const result = await hireApplicant(jobId, applicationId);
+      const result = await hireApplicant(jobId, applicationId, providerId);
       if (result.status !== 'success') {
         return { hired: false, message: result.status === 'error' ? result.message : undefined };
       }
       if (paysUpfront) {
         setCheckoutOpen(true);              // booked in the checkout — offers and the bill first
+        return { hired: true };
+      }
+      if (online) {
+        finish('They’ll send their price here — you pay it before any work starts. Add or join the meeting from the job.');
         return { hired: true };
       }
       const fee = await payInspectionFee(jobId);
