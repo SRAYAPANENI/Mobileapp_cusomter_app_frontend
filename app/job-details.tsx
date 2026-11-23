@@ -6,6 +6,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SkoFyApi } from '@/services/api';
+import { openDirections } from '@/services/directions';
 import { kmToMiles } from '@/services/units';
 import { Image } from 'expo-image';
 import { usePhotoPicker } from '@/components/photo-picker';
@@ -19,6 +20,7 @@ import {
   Globe,
   MapPin,
   Mic,
+  Navigation,
   Package,
   Pencil,
   Plus,
@@ -374,6 +376,23 @@ export default function JobDetailsScreen() {
                 {job.job_type === 'PICKUP_DROPOFF' ? 'Pickup: ' : ''}{job.full_address || resolvedAddress}
               </ThemedText>
             </View>
+          )}
+          {/* Work at the provider's place: sent once booked, until it's over —
+              kept here too while the job is under review (no tracking then). */}
+          {(!!job.host_address || job.host_lat != null) && (
+            <TouchableOpacity
+              style={[styles.metaRow, { marginTop: 8 }]}
+              onPress={() => openDirections(job.host_address ?? null, job.host_lat, job.host_lng).catch(() =>
+                alert.show('error', 'No maps app', 'We couldn’t open directions on this phone.'))}
+              accessibilityRole="link"
+            >
+              <View style={[styles.metaIconCircle, { backgroundColor: '#F5F3FF' }]}>
+                <Navigation size={16} color="#7C3AED" />
+              </View>
+              <ThemedText style={styles.metaText} numberOfLines={3}>
+                {job.host_address ? `Provider's place: ${job.host_address}` : "Provider's place"} · Get directions
+              </ThemedText>
+            </TouchableOpacity>
           )}
           {job.job_type === 'PICKUP_DROPOFF' && (job.dropoff_lat != null || job.dropoff_address || resolvedDropoffAddress) && (
             <View style={[styles.metaRow, { marginTop: 8 }]}>

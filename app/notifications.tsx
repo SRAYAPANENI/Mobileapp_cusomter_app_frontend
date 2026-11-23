@@ -16,6 +16,7 @@ import {
   Clock,
   FileText,
   KeyRound,
+  MapPin,
   MessageSquare,
   Phone,
   Star,
@@ -69,6 +70,8 @@ function getIcon(type: string) {
       return { icon: Star, color: '#F59E0B', bg: '#FFFBEB' };
     case 'meeting_link':
       return { icon: Video, color: '#7C3AED', bg: '#F5F3FF' };
+    case 'host_visit':
+      return { icon: MapPin, color: '#7C3AED', bg: '#F5F3FF' };
     case 'hired':
     case 'new_job':
       return { icon: Briefcase, color: '#FFCE48', bg: '#FFFDE7' };

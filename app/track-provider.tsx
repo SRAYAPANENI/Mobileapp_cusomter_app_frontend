@@ -1155,6 +1155,11 @@ export default function TrackProviderScreen() {
   const care = useCareJob(jobId, paysUpfront);
   careReloadRef.current = paysUpfront ? care.reload : null;
   const careJob = care.job;
+  // At the provider's place the customer travels: its pin, not the provider's
+  // position (sent once booked, until collected — backend domain/host_place.py).
+  const hostTrip = careJob?.shape?.venue === 'PROVIDER_PLACE';
+  const mapPin = destination ?? (hostTrip && careJob.host_lat != null && careJob.host_lng != null
+    ? { latitude: careJob.host_lat, longitude: careJob.host_lng } : null);
   const upfrontPaid = careJob ? careJob.payment_status === 'HELD' || careJob.payment_status === 'PAID' : bookingPaid;
   const isDelivery = jobKind === 'PICKUP_DROPOFF';
   // The detail poll runs for these (its effect, above): until its first round
@@ -1181,6 +1186,7 @@ export default function TrackProviderScreen() {
     invoiceStatus: invoice?.status ?? null,
     recipientName,
     hostedAtTheirPlace: steps.includes('CHECK_IN_CODE'),
+    inCare: steps.includes('HANDBACK_CODE'),
     online,
   });
   const stage: typeof stageNow = ready ? stageNow
@@ -1436,19 +1442,19 @@ export default function TrackProviderScreen() {
       );
     }
 
-    if (!destination) {
+    if (!mapPin) {
       return (
         <View style={[styles.map, { backgroundColor: themeColors.inputFilled, justifyContent: 'center', alignItems: 'center' }]}>
           <ThemedText style={{ color: themeColors.textSecondary }}>
-            {jobLoaded ? 'The map isn’t available for this job' : 'Loading job details…'}
+            {jobLoaded ? (hostTrip && !upfrontPaid ? 'You’ll see where to go once you’ve booked' : 'The map isn’t available for this job') : 'Loading job details…'}
           </ThemedText>
         </View>
       );
     }
 
     const region = polledLoc
-      ? { latitude: (polledLoc.latitude + destination.latitude) / 2, longitude: (polledLoc.longitude + destination.longitude) / 2, latitudeDelta: 0.02, longitudeDelta: 0.02 }
-      : { ...destination, latitudeDelta: 0.01, longitudeDelta: 0.01 };
+      ? { latitude: (polledLoc.latitude + mapPin.latitude) / 2, longitude: (polledLoc.longitude + mapPin.longitude) / 2, latitudeDelta: 0.02, longitudeDelta: 0.02 }
+      : { ...mapPin, latitudeDelta: 0.01, longitudeDelta: 0.01 };
 
     return (
       <MapView
@@ -1481,9 +1487,9 @@ export default function TrackProviderScreen() {
             to be, and which is why it used to swim during a pinch-zoom
             gesture). Static content, so no rotation/heading needed here —
             just the vehicle icon below has that. */}
-        {destination && (
+        {mapPin && (
           <Marker
-            coordinate={destination}
+            coordinate={mapPin}
             image={require('@/assets/images/destination-pin.png')}
             anchor={{ x: 0.5, y: 1.0 }}
           />

@@ -28,6 +28,7 @@ async function describeJob(job: any): Promise<ActiveJobBanner | null> {
     } else {
       const code = await SkoFyApi.jobs.checkInCode(job.id).catch(() => null);
       message = code?.code ? 'Your check-in code is ready — tap to view'
+        : job.shape?.venue === 'PROVIDER_PLACE' ? 'Booked — tap for directions'
         : job.service_mode === 'REMOTE' ? 'Booked — tap to join your session' : 'Booked — see you at the start';
     }
   } else if (job.status === 'ACCEPTED' && (job.shape?.venue ?? (job.service_mode === 'REMOTE' ? 'ONLINE' : null)) === 'ONLINE') {

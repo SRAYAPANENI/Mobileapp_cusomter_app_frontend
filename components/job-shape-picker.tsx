@@ -38,15 +38,17 @@ interface Props {
   pricing?: SkillPricing | null;
   /** Where the skill is done ("C,P,O") — only those places are offered. */
   venues?: string | null;
+  /** Work at the provider's place is open (App Settings). */
+  hosting?: boolean;
 }
 
 // Three plain questions instead of a form (docs/JOB_SHAPE_DESIGN.md): where,
 // how long, and what's left with the provider. The price unit follows from
 // them (services/job-shape.ts) and is explained in one line.
-export function JobShapePicker({ value, onChange, pricing, venues }: Props) {
-  const set = (patch: Partial<JobChoice>) => onChange(normalize({ ...value, ...patch }, pricing, venues));
+export function JobShapePicker({ value, onChange, pricing, venues, hosting = true }: Props) {
+  const set = (patch: Partial<JobChoice>) => onChange(normalize({ ...value, ...patch }, pricing, venues, hosting));
   const rules = pricing ? PRICING_RULES[pricing] : null;
-  const wheres = wheresFor(pricing, venues);
+  const wheres = wheresFor(pricing, venues, hosting);
   const [picking, setPicking] = useState<{ field: 'startISO' | 'endISO'; step: 'day' | 'time'; dayISO?: string } | null>(null);
   const isDays = value.howLong === 'DAYS';
 

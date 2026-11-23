@@ -5,11 +5,12 @@ import { useHirePayment } from '@/hooks/use-hire-payment';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { CareJob } from '@/hooks/use-care-job';
 import { BookingSummary, SkoFyApi } from '@/services/api';
+import { openDirections } from '@/services/directions';
 import { BookingCheckout } from '@/components/booking-checkout';
 import { Image } from 'expo-image';
 import { usePhotoViewer } from '@/components/photo-viewer';
 import * as Location from 'expo-location';
-import { Camera, Clock, DoorOpen, KeyRound, MapPin, Timer } from 'lucide-react-native';
+import { Camera, Clock, DoorOpen, KeyRound, MapPin, Navigation, Timer } from 'lucide-react-native';
 import React, { useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
@@ -54,6 +55,18 @@ export function CarePanel({ jobId, care, onMessage }: Props) {
   const toPay = booking ? booking.pay : price ? price.total + (wait?.hold ?? 0) : 0;
   const paid = job.payment_status === 'HELD' || job.payment_status === 'PAID';
   const atTheirPlace = steps.includes('CHECK_IN_CODE');
+  // Sent by the server only while there's a trip there to make
+  // (skofy-backend app/domain/host_place.py): before check-in, then to collect.
+  const hasPlace = !!job.host_address || job.host_lat != null;
+  const inCare = steps.includes('HANDBACK_CODE');
+  const visitTimes = job.status === 'ACCEPTED'
+    ? [job.scheduled_at && `${inCare ? 'Drop-off' : 'Be there'} ${when(job.scheduled_at)}`,
+       job.shape?.ends_at && `${inCare ? 'Pick-up' : 'Ends'} ${when(job.shape.ends_at)}`].filter(Boolean).join('  ·  ')
+    : job.shape?.ends_at ? `Pick-up ${when(job.shape.ends_at)}` : '';
+  const directions = () => {
+    openDirections(job.host_address ?? null, job.host_lat, job.host_lng)
+      .catch(() => onMessage('error', 'No maps app', 'We couldn’t open directions on this phone.'));
+  };
   // Pickup & Delivery: nobody meets at the start — the code is the drop-off's.
   const delivery = steps.includes('PICKUP_PROOF');
 
@@ -165,14 +178,21 @@ export function CarePanel({ jobId, care, onMessage }: Props) {
       )}
 
       {/* Bring it to them: where and when — what this booking needs from the customer. */}
-      {job.status === 'ACCEPTED' && paid && atTheirPlace && (job.host_address || job.scheduled_at) && (
+      {atTheirPlace && (hasPlace || (job.status === 'ACCEPTED' && paid && !!job.scheduled_at)) && (
         <View style={[s.card, { backgroundColor: t.card, borderColor: t.border }]}>
-          {!!job.host_address && <InfoRow icon={<MapPin size={16} color={t.textPrimary} />} text={job.host_address} />}
-          {!!job.scheduled_at && (
-            <InfoRow
-              icon={<Clock size={16} color={t.textPrimary} />}
-              text={`Drop-off ${when(job.scheduled_at)}${job.shape?.ends_at ? `  ·  Pick-up ${when(job.shape.ends_at)}` : ''}`}
-            />
+          {!!job.host_address && (
+            <TouchableOpacity onPress={directions} accessibilityRole="link" accessibilityLabel={`${job.host_address}. Get directions`}>
+              <InfoRow icon={<MapPin size={16} color={t.textPrimary} />} text={job.host_address} />
+            </TouchableOpacity>
+          )}
+          {!!visitTimes && <InfoRow icon={<Clock size={16} color={t.textPrimary} />} text={visitTimes} />}
+          {hasPlace && (
+            <TouchableOpacity style={s.primary} onPress={directions} accessibilityRole="button">
+              <View style={s.warnRow}>
+                <Navigation size={17} color="#111827" />
+                <ThemedText style={s.primaryText}>Get directions</ThemedText>
+              </View>
+            </TouchableOpacity>
           )}
         </View>
       )}

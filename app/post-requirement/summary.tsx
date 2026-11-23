@@ -1,5 +1,6 @@
 import { ThemedText } from '@/components/themed-text';
 import { PriceGuideNote } from '@/components/price-guide-note';
+import { useAppConfig } from '@/services/queries/app-config';
 import { JobShapePicker } from '@/components/job-shape-picker';
 import { CareSheetForm } from '@/components/care-sheet-form';
 import { careSheetPayload, careSheetProblem } from '@/services/care-sheet';
@@ -69,6 +70,8 @@ export default function JobSummaryScreen() {
 
   // How the chosen skill is priced (one standard way per profession) — only
   // the questions it needs are asked, and the job is posted that way.
+  const { data: appConfig } = useAppConfig();
+  const hosting = appConfig?.modules.hosting !== false;
   const [pricing, setPricing] = useState<SkillPricing | null>(null);
   const [venues, setVenues] = useState<string | null>(null);
   useEffect(() => {
@@ -84,12 +87,12 @@ export default function JobSummaryScreen() {
         setPricing(found);
         setVenues(places);
         // Through changeChoice, so on-site / remote follows the place.
-        if (found || places) changeChoice(normalize(data.jobChoice, found, places));
+        if (found || places || !hosting) changeChoice(normalize(data.jobChoice, found, places, hosting));
       })
       .catch(() => {});
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ordinary, data.profession, data.skill_ids[0]]);
+  }, [ordinary, data.profession, data.skill_ids[0], hosting]);
 
   const changeChoice = (next: JobChoice) => updateData({
     jobChoice: next, serviceMode: next.where === 'ONLINE' ? 'REMOTE' : 'ON_SITE',
@@ -140,6 +143,12 @@ export default function JobSummaryScreen() {
     if (!when && data.jobType !== 'Normal') {
       alert.show('error', data.jobType === 'Urgent' ? 'Set Your Deadline' : 'Pick a Time',
         data.jobType === 'Urgent' ? 'Say by when you need this done.' : 'Say when you want the provider to arrive.',
+        [{ text: 'Choose', onPress: () => router.replace('/post-requirement/step2') }]);
+      return;
+    }
+    // Someone has to be in to receive them (the server refuses without a time).
+    if (!when && ordinary && data.jobChoice.where === 'THEIR_PLACE') {
+      alert.show('error', 'Pick a Time', 'Choose Book Slot and say when you’ll come, so the provider is there.',
         [{ text: 'Choose', onPress: () => router.replace('/post-requirement/step2') }]);
       return;
     }
@@ -348,7 +357,7 @@ export default function JobSummaryScreen() {
         {/* --- Where, how long, in care — the last decision before posting --- */}
         <Animated.View entering={FadeInUp.delay(900)} style={styles.rangeSection}>
           <ThemedText style={styles.sectionTitle}>How should this be done?</ThemedText>
-          {ordinary && <JobShapePicker value={data.jobChoice} onChange={changeChoice} pricing={pricing} venues={venues} />}
+          {ordinary && <JobShapePicker value={data.jobChoice} onChange={changeChoice} pricing={pricing} venues={venues} hosting={hosting} />}
           {ordinary && (
             <CareSheetForm
               custody={data.jobChoice.inCare}

@@ -39,7 +39,8 @@ export interface TrackingInput {
   inspectionConfirmed: boolean;
   invoiceStatus: string | null;
   recipientName: string | null;
-  hostedAtTheirPlace: boolean; // the customer brings it to the provider
+  hostedAtTheirPlace: boolean; // the customer goes to the provider
+  inCare: boolean;             // something is left with the provider
   online: boolean;             // done online: nobody travels, nothing visited (a meeting instead)
 }
 
@@ -140,7 +141,7 @@ function bookedStage(i: TrackingInput): TrackingStage {
         'Give your provider the code below.', { needsAction: true });
     }
     if (!i.travels) {
-      return stage(i, 'booked', 1, 'Booked', i.hostedAtTheirPlace ? 'Bring it at the time below.' : 'You’re all set.');
+      return stage(i, 'booked', 1, 'Booked', i.hostedAtTheirPlace ? (i.inCare ? 'Bring it at the time below.' : 'Go there at the time below.') : 'You’re all set.');
     }
     if (!i.setOff) return notSetOff(i);
     return stage(i, 'on_the_way', 1, 'On the way', 'Your provider is heading to you.', { moving: true });
@@ -148,7 +149,8 @@ function bookedStage(i: TrackingInput): TrackingStage {
   if (i.jobStatus === 'IN_PROGRESS') {
     if (i.delivered) return stage(i, 'delivered', 3, 'Handed back', 'All good? Mark it complete.', { needsAction: true });
     if (i.hasCode) return stage(i, 'code', 2, 'Hand-back', 'Give your provider the code below when you get it back.', { needsAction: true });
-    return stage(i, 'working', 2, 'In progress', 'Mark it complete when it’s done.');
+    return stage(i, 'working', 2, 'In progress',
+      i.hostedAtTheirPlace && i.inCare ? 'Collect it at the pick-up time below.' : 'Mark it complete when it’s done.');
   }
   return stage(i, 'booked', 1, 'Booked', '');
 }
