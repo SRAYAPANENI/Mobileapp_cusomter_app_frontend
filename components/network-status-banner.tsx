@@ -4,13 +4,15 @@ import { queryClient } from '@/services/query-client';
 import { checkNow, useServerReachable } from '@/services/server-status';
 import { CloudOff, Wifi, WifiOff } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet } from 'react-native';
-import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from './themed-text';
 
-// The app's one connection banner, mounted once in app/_layout.tsx:
+// The app's one connection label — a small pill floating over the top of the
+// screen, never a strip pushing or covering it: what's under and beside it
+// stays tappable. Mounted once in app/_layout.tsx:
 //  - "No internet connection": the phone is offline — everything on screen
 //    stays usable; hidden while a screen shows its full-page
 //    NoInternetState, so the two never appear together;
@@ -21,9 +23,9 @@ import { ThemedText } from './themed-text';
 // It replaced two banners that both showed when offline. The same file is in
 // both apps: keep them identical.
 const CONFIG = {
-  offline: { bg: '#FEF2F2', color: '#EF4444', icon: WifiOff, text: 'No internet connection' },
-  server: { bg: '#0F172A', color: '#FFFFFF', icon: CloudOff, text: 'Can’t reach Dodorez right now' },
-  online: { bg: '#ECFDF5', color: '#10B981', icon: Wifi, text: 'Back online' },
+  offline: { bg: '#DC2626', icon: WifiOff, text: 'No internet connection' },
+  server: { bg: '#0F172A', icon: CloudOff, text: 'Can’t reach Dodorez right now' },
+  online: { bg: '#047857', icon: Wifi, text: 'Back online' },
 };
 
 export function NetworkStatusBanner() {
@@ -58,44 +60,56 @@ export function NetworkStatusBanner() {
   const cfg = CONFIG[status];
   const Icon = cfg.icon;
   return (
+    <View style={[styles.layer, { top: insets.top + 6 }]} pointerEvents="box-none">
     <Animated.View
       key={status}
-      entering={FadeInDown}
+      entering={FadeInUp.springify().damping(16)}
       exiting={FadeOutUp}
-      style={[styles.banner, { top: insets.top, backgroundColor: cfg.bg, borderBottomColor: cfg.color }]}
+      pointerEvents={status === 'server' ? 'auto' : 'none'}
+      style={[styles.pill, { backgroundColor: cfg.bg }]}
       accessibilityRole="alert"
       accessibilityLiveRegion="polite"
     >
-      <Icon size={15} color={cfg.color} />
-      <ThemedText style={[styles.text, { color: cfg.color }]} numberOfLines={1}>{cfg.text}</ThemedText>
+      <Icon size={17} color="#FFFFFF" strokeWidth={2.4} />
+      <ThemedText style={styles.text} numberOfLines={1}>{cfg.text}</ThemedText>
       {status === 'server' && (
         <Pressable onPress={retry} disabled={checking} hitSlop={8} accessibilityRole="button" accessibilityLabel="Try again">
           {checking ? <ActivityIndicator size="small" color="#FFCE48" /> : <ThemedText style={styles.retry}>Retry</ThemedText>}
         </Pressable>
       )}
     </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  banner: {
+  layer: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
+    left: 24,
+    right: 24,
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderBottomWidth: 2,
     zIndex: 9999,
     elevation: 9999,
   },
+  pill: {
+    maxWidth: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
   text: {
     flexShrink: 1,
-    fontSize: 13, lineHeight: 17,
+    fontSize: 13.5, lineHeight: 19,
     fontFamily: Fonts.poppinsBold,
+    color: '#FFFFFF',
   },
   retry: { fontSize: 13, lineHeight: 17, fontFamily: Fonts.poppinsBold, color: '#FFCE48' },
 });

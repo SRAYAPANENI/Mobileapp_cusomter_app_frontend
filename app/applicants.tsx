@@ -330,6 +330,9 @@ export default function ApplicantsScreen() {
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const insets = useSafeAreaInsets();
   const [applicants, setApplicants] = useState<(Applicant & { applicationId?: string })[]>([]);
+  // Turned down by the customer: kept here to undo.
+  const [rejected, setRejected] = useState<(Applicant & { applicationId?: string })[]>([]);
+  const [undoing, setUndoing] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [hiredIds, setHiredIds] = useState<string[]>([]);
   // Offline with nothing loaded: the shared page; reloads when back online.
@@ -401,6 +404,7 @@ export default function ApplicantsScreen() {
         setApplicants(Array.isArray(data)
           ? data.filter((a: any) => a.status !== 'WITHDRAWN').map(mapApiApplicant)
           : []);
+        setRejected((Array.isArray(job?.rejected_applicants) ? job.rejected_applicants : []).map(mapApiApplicant));
       })
       .catch((err) => {
         console.error('Failed to fetch applicants:', err);
@@ -456,8 +460,23 @@ export default function ApplicantsScreen() {
     try {
       await SkoFyApi.jobs.rejectApplicant(jobId, applicationId);
       setApplicants(prev => prev.filter(a => (a as any).applicationId !== applicationId));
+      loadApplicants();   // they move to Rejected, where it can be undone
     } catch (err: any) {
       appAlert.show('error', 'Reject Failed', err?.message ?? 'Failed to reject applicant.');
+    }
+  };
+
+  const handleUndoReject = async (applicationId: string) => {
+    if (!jobId || undoing) return;
+    setUndoing(applicationId);
+    try {
+      const result = await SkoFyApi.jobs.undoRejectApplicant(jobId, applicationId);
+      if (!result.restored) appAlert.show('info', 'Invited Again', result.message);
+    } catch (err: any) {
+      appAlert.show('error', 'Not Undone', err?.message ?? 'Please try again.');
+    } finally {
+      setUndoing(null);
+      loadApplicants();
     }
   };
 
@@ -564,6 +583,26 @@ export default function ApplicantsScreen() {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => loadApplicants(true)} colors={['#FFCE48']} tintColor="#FFCE48" />
         }
+        ListFooterComponent={rejected.length > 0 ? (
+          <View style={styles.rejectedBox}>
+            <ThemedText style={styles.rejectedTitle}>Rejected ({rejected.length})</ThemedText>
+            {rejected.map((r) => {
+              const id = (r as any).applicationId ?? r.id;
+              return (
+                <View key={id} style={styles.rejectedRow}>
+                  <View style={{ flex: 1 }}>
+                    <ThemedText style={styles.rejectedName} numberOfLines={1}>{r.name}</ThemedText>
+                    <ThemedText style={styles.rejectedSub} numberOfLines={1}>{r.profession}</ThemedText>
+                  </View>
+                  <TouchableOpacity style={styles.undoButton} onPress={() => handleUndoReject(id)} disabled={!!undoing}
+                    accessibilityRole="button" accessibilityLabel={`Undo rejecting ${r.name}`}>
+                    {undoing === id ? <ActivityIndicator size="small" color="#111827" /> : <ThemedText style={styles.undoText}>Undo</ThemedText>}
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
         ListEmptyComponent={
           <View style={{ padding: 40, alignItems: 'center' }}>
             <ThemedText style={{ color: loadError ? '#EF4444' : '#9CA3AF', fontSize: 16 }}>
@@ -647,6 +686,13 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   headerSpacer: {
     width: 40,
   },
+  rejectedBox: { marginTop: 8, marginBottom: 24, padding: 16, borderRadius: 20, backgroundColor: t.card, borderWidth: 1, borderColor: t.borderSubtle, gap: 12 },
+  rejectedTitle: { fontSize: 14, lineHeight: 19, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary },
+  rejectedRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  rejectedName: { fontSize: 14.5, lineHeight: 20, fontFamily: Fonts.poppinsSemiBold, color: t.textPrimary },
+  rejectedSub: { fontSize: 12, lineHeight: 17, fontFamily: Fonts.poppins, color: t.textMuted },
+  undoButton: { minWidth: 72, alignItems: 'center', paddingVertical: 9, paddingHorizontal: 14, borderRadius: 18, borderWidth: 1, borderColor: t.border },
+  undoText: { fontSize: 13, lineHeight: 18, fontFamily: Fonts.poppinsSemiBold, color: t.textPrimary },
   listContent: {
     padding: 16,
     paddingBottom: 100,

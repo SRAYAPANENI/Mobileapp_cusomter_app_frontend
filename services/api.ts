@@ -1336,6 +1336,10 @@ export const SkoFyApi = {
     rejectApplicant: async (jobId: string, applicationId: string) =>
       request(`/jobs/${jobId}/applications/${applicationId}/reject`, { method: 'POST' }),
 
+    /** Takes back a rejection. `restored` false: the time changed since, so they were asked to apply again. */
+    undoRejectApplicant: async (jobId: string, applicationId: string): Promise<{ restored: boolean; message: string }> =>
+      request(`/jobs/${jobId}/applications/${applicationId}/undo-reject`, { method: 'POST' }),
+
     dismiss: async (jobId: string) =>
       request(`/jobs/${jobId}/dismiss`, { method: 'POST' }),
 
