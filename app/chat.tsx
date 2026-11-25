@@ -41,6 +41,8 @@ import { CallOverlay } from '@/components/call-overlay';
 import InCallManager from 'react-native-incall-manager';
 import { answerIosRing, claimOutgoingCall, markCallEnded, releaseOutgoingCall, startInAppRingtone, stopInAppRingtone, cancelIncomingCallNotification, endIosCallSession, forgetCallScreen, takeAcceptRequest, endIosRingForHangUp, markIosCallConnected, registerAcceptHandler, registerDeclineHandler, showIosIncomingCall, registerHangupHandler, registerMuteHandler, registerSpeakerHandler, setActiveChatJob, setChatCallActive, startIosOutgoingCall, startOngoingCallNotification, stopOngoingCallNotification, updateOngoingCallControls } from '@/services/callManager';
 import { useOpenScreen } from '@/services/openScreens';
+import { TypingBubble } from '@/components/typing-bubble';
+import { useTypingScroll, useTypingSender, useTypingShown } from '@/hooks/use-typing';
 
 // No-answer cutoff — like a real phone call, ringing/calling shouldn't go on forever.
 // The server ends an unanswered call after 45s and says why; this is only
@@ -305,6 +307,14 @@ export default function ChatScreen() {
   // silently swallowing every message/call notification for this job while
   // the user was actually looking at something else.
   const [socketOpen, setSocketOpen] = useState(false);
+  // "typing…", both ways, over the job's socket (nothing is stored).
+  const { onText: onTypingText, sent: sentTyping, stop: stopTyping } = useTypingSender((typing) => {
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'typing', typing }));
+  });
+  const { shown: otherTyping, set: setOtherTyping } = useTypingShown();
+  const showTyping = otherTyping && contactOpen;
+  const typingScroll = useTypingScroll(showTyping, messages.length);
 
   // Only while this screen's socket is actually connected: being the active
   // chat makes callManager skip the incoming-call notification, trusting
@@ -735,6 +745,7 @@ export default function ChatScreen() {
         if (wsRef.current === ws) wsRef.current = null;
         setSocketOpen(false);
         setIsOtherOnline(false);
+        setOtherTyping(false);
         // 4403/4404: not a party to this job / no such job — retrying can't help.
         // 4401: the server closed it because this account signed in on another
         // phone (or the login expired). Ask once: signed out → the app's
@@ -798,6 +809,12 @@ export default function ChatScreen() {
           if (data.type === 'chat_message') {
             setMessages(prev => [...prev, data.payload]);
             if (data.payload?.message_type === 'SYSTEM') refreshJobStatusRef.current();
+            // What they were typing is here (a business's owner writing in is someone else).
+            else if (!data.payload?.sender_label) setOtherTyping(false);
+            return;
+          }
+          if (data.type === 'typing') {
+            setOtherTyping(data.typing === true);
             return;
           }
           if (data.type === 'call_offer') {
@@ -940,6 +957,7 @@ export default function ChatScreen() {
         if (wsRef.current === old) wsRef.current = null;
       }
       setSocketOpen(false);
+      setOtherTyping(false);
       reconnectDelay = 1000;
       connect();
     });
@@ -981,6 +999,7 @@ export default function ChatScreen() {
   const handleSendMessage = async () => {
     const text = inputText.trim();
     if (text === '' || !jobId) return;
+    sentTyping();
     setInputText('');
     Keyboard.dismiss();
     try {
@@ -988,6 +1007,7 @@ export default function ChatScreen() {
       setMessages(prev => [...prev, sent]);
     } catch (err) {
       console.error('Failed to send chat message:', err);
+      stopTyping();
       // Restore what they typed instead of losing it — silently clearing on
       // failure meant a dropped network request looked identical to a
       // successful send, with no way to tell the message never went anywhere.
@@ -1144,8 +1164,8 @@ export default function ChatScreen() {
           </View>
           <View>
             <ThemedText style={styles.userName}>{name}</ThemedText>
-            <ThemedText style={[styles.userStatus, !isOtherOnline && styles.userStatusOffline]}>
-              {isOtherOnline ? 'Online' : profession}
+            <ThemedText style={[styles.userStatus, !isOtherOnline && !showTyping && styles.userStatusOffline]}>
+              {showTyping ? 'typing…' : isOtherOnline ? 'Online' : profession}
             </ThemedText>
           </View>
         </View>
@@ -1193,15 +1213,18 @@ export default function ChatScreen() {
         keyExtractor={item => item.id}
         contentContainerStyle={styles.messageList}
         onContentSizeChange={() => {
+          const follows = typingScroll.follows();
           if (isPrependingRef.current) {
             isPrependingRef.current = false;
             return;
           }
+          if (!follows) return;
           flatListRef.current?.scrollToEnd({ animated: true });
         }}
         onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
         keyboardDismissMode="on-drag"
         onScroll={({ nativeEvent }) => {
+          typingScroll.onScroll(nativeEvent);
           if (nativeEvent.contentOffset.y < 60) loadMoreMessages();
         }}
         scrollEventThrottle={200}
@@ -1209,6 +1232,7 @@ export default function ChatScreen() {
         ListHeaderComponent={isLoadingMore ? (
           <ActivityIndicator style={{ paddingVertical: 12 }} color={themeColors.textSecondary} />
         ) : null}
+        ListFooterComponent={showTyping ? <TypingBubble name={name || 'Provider'} /> : null}
       />
       )}
 
@@ -1219,7 +1243,7 @@ export default function ChatScreen() {
             placeholder="Type a message..."
             placeholderTextColor="#9CA3AF"
             value={inputText}
-            onChangeText={setInputText}
+            onChangeText={(text) => { setInputText(text); onTypingText(text); }}
             multiline
           />
           <TouchableOpacity

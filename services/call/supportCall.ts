@@ -13,7 +13,7 @@ import {
 import { CallMedia, CallMediaEnded } from './callMedia';
 import { callSounds } from './callSounds';
 import type { TransportEvent } from './mediaTransport';
-import { openSupportCallLine } from './supportCallLine';
+import { openSupportCallLine, type SupportLine } from './supportCallLine';
 
 // A voice call with the agent handling this support ticket. This only
 // coordinates: the line (supportCallLine) brings call updates, callSounds
@@ -37,7 +37,13 @@ const STATUS_POLL_MS = 10000;
 // network, never joined), or our own connection not back: the call ends.
 const GONE_MS = 30000;
 
-export function useSupportCall(ticketId: string | undefined) {
+/** What else the ticket's line brings to the chat. */
+export interface SupportChatEvents {
+  onTyping: (typing: boolean) => void;
+  onMessage: () => void;
+}
+
+export function useSupportCall(ticketId: string | undefined, chat: SupportChatEvents) {
   const [status, setStatus] = useState<SupportCallStatus | null>(null);
   const [call, setCall] = useState<SupportCallView | null>(null);
   const [callState, setCallState] = useState<CallState>('idle');
@@ -48,6 +54,10 @@ export function useSupportCall(ticketId: string | undefined) {
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
+  const lineRef = useRef<SupportLine | null>(null);
+  // The latest handlers, without reopening the line each render.
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
   const mediaRef = useRef(new CallMedia(undefined, (id) => SkoFyApi.supportCalls.media(id)));
   const callRef = useRef<SupportCallView | null>(null);
   const endedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -202,8 +212,19 @@ export function useSupportCall(ticketId: string | undefined) {
 
   useEffect(() => {
     if (!ticketId) return;
-    return openSupportCallLine(ticketId, apply);
+    const line = openSupportCallLine(ticketId, {
+      onCall: apply,
+      onTyping: (typing) => chatRef.current.onTyping(typing),
+      onMessage: () => chatRef.current.onMessage(),
+    });
+    lineRef.current = line;
+    return () => {
+      lineRef.current = null;
+      line.close();
+    };
   }, [ticketId, apply]);
+
+  const sendTyping = useCallback((typing: boolean) => lineRef.current?.sendTyping(typing), []);
 
   useEffect(() => {
     if (!ticketId) return;
@@ -322,6 +343,6 @@ export function useSupportCall(ticketId: string | undefined) {
   return {
     status, call, callState, endedLabel, muted, speaker, recorded, duration, error,
     clearError: () => setError(null),
-    startCall, answer, end, toggleMute, toggleSpeaker,
+    startCall, answer, end, toggleMute, toggleSpeaker, sendTyping,
   };
 }
