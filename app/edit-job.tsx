@@ -5,6 +5,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TimePickerModal } from '@/components/time-picker-modal';
 import { fromParts, hasPassed, isPickable } from '@/services/schedule-slots';
+import { MAX_HOURS, endAfter, hoursText } from '@/services/job-shape';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SkoFyApi } from '@/services/api';
@@ -19,7 +20,7 @@ import {
   Users,
   Zap,
 } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
@@ -149,6 +150,43 @@ export default function EditJobScreen() {
   const applicants: number = job?.applicant_count ?? 0;
   // Providers priced these dates: moving them would make their prices wrong.
   const datesLocked = upfront && applicants > 0;
+  // Booked by the hour: a few hours, not days (the server's limit too).
+  const byTheHour = job?.shape?.timing === 'WINDOW';
+  const longestEnd = (startISO: string) =>
+    endAfter(startISO, byTheHour ? MAX_HOURS : (job?.shape?.custody === 'ITEM' ? 365 : 90) * 24);
+  // How long it's booked for, in hours: what's posted, or the end last picked.
+  const lengthRef = useRef<number | null>(null);
+  const hoursBetween = (from: string, to: string) => (new Date(to).getTime() - new Date(from).getTime()) / 3600000;
+  const startNow = () => computeScheduledAt(!!timeLabel, dateISO, timeHour, timeMinute, timePeriod) ?? null;
+
+  const showEnd = (iso: string) => {
+    const end = parseScheduledAt(iso);
+    if (!end) return;
+    setEndDateLabel(end.dateLabel);
+    setEndDateISO(end.dateISO);
+    setEndTimeLabel(end.timeLabel);
+    setEndHour(end.timeHour);
+    setEndMinute(end.timeMinute);
+    setEndPeriod(end.timePeriod);
+    setEndTouched(true);
+  };
+
+  // The start moved. Hours keep their length and move with it; a stay keeps
+  // its end unless that's now behind the start. The old end was left there,
+  // so the save was refused.
+  const moveEndWith = (newStart: string) => {
+    if (!hasEnd) return;
+    const end = computeScheduledAt(!!endTimeLabel, endDateISO, endHour, endMinute, endPeriod);
+    const length = lengthRef.current;
+    if (length === null || length <= 0) return;
+    const behind = !!end && hoursBetween(newStart, end) <= 0;
+    if (byTheHour || behind) showEnd(endAfter(newStart, length));
+  };
+  const endPicked = (endISO: string) => {
+    const start = startNow();
+    const length = start ? hoursBetween(start, endISO) : 0;
+    if (length > 0 && new Date(endISO).getTime() <= new Date(longestEnd(start!)).getTime()) lengthRef.current = length;
+  };
 
   useEffect(() => {
     if (!jobId) {
@@ -176,6 +214,7 @@ export default function EditJobScreen() {
         setDropoffNotes(job.dropoff_notes ?? '');
         const end = parseScheduledAt(job.shape?.ends_at);
         setHasEnd(!!end);
+        lengthRef.current = end && job.scheduled_at ? hoursBetween(job.scheduled_at, job.shape.ends_at) : null;
         if (end) {
           setEndDateLabel(end.dateLabel);
           setEndDateISO(end.dateISO);
@@ -225,11 +264,18 @@ export default function EditJobScreen() {
     const endsAt = hasEnd && endTouched
       ? computeScheduledAt(!!endTimeLabel, endDateISO, endHour, endMinute, endPeriod)
       : undefined;
-    if (hasEnd && (startTouched || endTouched)) {
+    if (hasEnd && (startTouched || endTouched || wasExpired)) {
       const start = computeScheduledAt(!!timeLabel, dateISO, timeHour, timeMinute, timePeriod);
       const end = computeScheduledAt(!!endTimeLabel, endDateISO, endHour, endMinute, endPeriod);
       if (start && end && new Date(end).getTime() <= new Date(start).getTime()) {
         alert.show('error', 'Check the times', 'It has to end after it starts.');
+        return;
+      }
+      if (start && end && new Date(end).getTime() > new Date(longestEnd(start)).getTime()) {
+        const hours = hoursBetween(start, end);
+        alert.show('error', 'Check the times', byTheHour
+          ? `This is booked by the hour, up to ${MAX_HOURS} hours at a time. Your times add up to ${hoursText(hours)} — choose an earlier end.`
+          : 'That’s longer than a stay can be — choose an earlier end.');
         return;
       }
     }
@@ -477,9 +523,11 @@ export default function EditJobScreen() {
           setDateISO(iso);
           setStartTouched(true);
           // A time the new date leaves behind now is cleared, not kept.
-          if (timeLabel && !isPickable(fromParts(iso, { hour: timeHour, minute: timeMinute, period: timePeriod as 'AM' | 'PM' }), new Date())) {
+          const moved = fromParts(iso, { hour: timeHour, minute: timeMinute, period: timePeriod as 'AM' | 'PM' });
+          if (timeLabel && !isPickable(moved, new Date())) {
             setTimeLabel(null);
           }
+          moveEndWith(moved.toISOString());
           setShowDatePicker(false);
         }}
       />
@@ -502,6 +550,7 @@ export default function EditJobScreen() {
           setDateLabel(day.label);
           setDateISO(day.iso);
           setStartTouched(true);
+          moveEndWith(fromParts(day.iso, { hour, minute, period: period as 'AM' | 'PM' }).toISOString());
           setShowTimePicker(false);
         }}
       />
@@ -510,10 +559,13 @@ export default function EditJobScreen() {
         visible={showEndDatePicker}
         onClose={() => setShowEndDatePicker(false)}
         selectedDateLabel={endDateLabel}
+        minISO={startNow()}
+        maxISO={startNow() ? longestEnd(startNow()!) : null}
         onSelect={(label, iso) => {
           setEndDateLabel(label);
           setEndDateISO(iso);
           setEndTouched(true);
+          endPicked(fromParts(iso, { hour: endHour, minute: endMinute, period: endPeriod as 'AM' | 'PM' }).toISOString());
           setShowEndDatePicker(false);
         }}
       />
@@ -535,6 +587,7 @@ export default function EditJobScreen() {
           setEndDateLabel(day.label);
           setEndDateISO(day.iso);
           setEndTouched(true);
+          endPicked(fromParts(day.iso, { hour, minute, period: period as 'AM' | 'PM' }).toISOString());
           setShowEndTimePicker(false);
         }}
       />

@@ -1,7 +1,7 @@
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Dimensions, StyleSheet, TouchableOpacity, View } from 'react-native';
 import Animated, { SlideInUp } from 'react-native-reanimated';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react-native';
@@ -18,16 +18,22 @@ interface DatePickerModalProps {
   onClose: () => void;
   selectedDateLabel: string | null;
   onSelect: (label: string, iso: string) => void;
+  /** Only days from / up to these (ISO) can be picked; opens on the first one's month. */
+  minISO?: string | null;
+  maxISO?: string | null;
 }
 
 // Shared by post-requirement/step2.tsx (creating a job) and edit-job.tsx
 // (editing one) so both offer the identical date-picking experience.
-export function DatePickerModal({ visible, onClose, selectedDateLabel, onSelect }: DatePickerModalProps) {
+export function DatePickerModal({ visible, onClose, selectedDateLabel, onSelect, minISO, maxISO }: DatePickerModalProps) {
   const bottomInset = useBottomInset();
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const styles = React.useMemo(() => makeStyles(themeColors), [colorScheme]);
   const [viewDate, setViewDate] = useState(new Date());
+  useEffect(() => {
+    if (visible && minISO) setViewDate(new Date(minISO));
+  }, [visible, minISO]);
 
   const calendarDays = useMemo(() => {
     const month = viewDate.getMonth();
@@ -55,7 +61,9 @@ export function DatePickerModal({ visible, onClose, selectedDateLabel, onSelect 
   const isDateDisabled = (date: Date) => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    return date < today;
+    if (date < today) return true;
+    const dayOf = (iso: string) => { const d = new Date(iso); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); };
+    return (!!minISO && date < dayOf(minISO)) || (!!maxISO && date > dayOf(maxISO));
   };
 
   const handleSelectDate = (date: Date) => {

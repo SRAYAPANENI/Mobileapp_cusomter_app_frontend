@@ -76,6 +76,28 @@ export function wheresFor(pricing?: SkillPricing | null, venues?: string | null,
   return both.length ? both : byPricing;
 }
 
+/** A skill as the form needs it. `pricing` as the server names it — it can
+ * be one this form doesn't book (TRIP), or one newer than this app. */
+export interface JobSkill { id: string; name: string; pricing: string | null; venues: string | null }
+
+/** The pricing, when this form knows how to ask for it. */
+export function formPricing(pricing: string | null | undefined): SkillPricing | null {
+  return pricing && Object.prototype.hasOwnProperty.call(PRICING_RULES, pricing) ? (pricing as SkillPricing) : null;
+}
+
+/** Why this skill can't be booked here at all, in words fit to show — said
+ * before anything is asked, instead of offering places the server refuses. */
+export function notBookable(
+  pricing: string | null | undefined, venues: string | null | undefined, hosting = true,
+): { text: string; pickup?: boolean } | null {
+  if (pricing === 'TRIP') return { text: 'Pick-up and delivery has its own form, priced by the trip.', pickup: true };
+  const done = (venues ?? '').split(',').map((c) => CODE_WHERE[c.trim()]).filter(Boolean);
+  if (!done.length || done.some((w) => w !== 'THEIR_PLACE')) return null;
+  if (!hosting) return { text: "This is done at the provider's place, and those jobs are turned off right now." };
+  if (pricing === 'QUOTE') return { text: "This is done at the provider's shop. Booking jobs at a shop is coming soon." };
+  return null;
+}
+
 /** The choices still allowed with this one changed — online work has nothing
  * in care and no stays; a home can only be looked after at your place. With
  * the skill's pricing known, it decides how long and what fits. */
@@ -98,6 +120,59 @@ export function normalize(choice: JobChoice, pricing?: SkillPricing | null, venu
   return next;
 }
 
+/** Work booked by the hour runs at most this long in one go (the server's
+ * limit: app/domain/job_shape.py _LONGEST). */
+export const MAX_HOURS = 24;
+/** One-tap lengths for it. */
+export const QUICK_HOURS = [1, 2, 3, 4, 8];
+const HOUR_MS = 3600000;
+
+/** How long it's booked for, in hours; null until both times make sense. */
+export function bookedHours(choice: Pick<JobChoice, 'startISO' | 'endISO'>): number | null {
+  if (!choice.startISO || !choice.endISO) return null;
+  const hours = (new Date(choice.endISO).getTime() - new Date(choice.startISO).getTime()) / HOUR_MS;
+  return hours > 0 ? hours : null;
+}
+
+/** "45 min", "3 hours", "2 h 30 min". */
+export function hoursText(hours: number): string {
+  const mins = Math.round(hours * 60);
+  const h = Math.floor(mins / 60), m = mins % 60;
+  if (h === 0) return `${m} min`;
+  return m ? `${h} h ${m} min` : h === 1 ? '1 hour' : `${h} hours`;
+}
+
+export function endAfter(startISO: string, hours: number): string {
+  return new Date(new Date(startISO).getTime() + hours * HOUR_MS).toISOString();
+}
+
+/** A new start. Work booked by the hour keeps its length and moves with it —
+ * an "until" left on the old day made it days long without anyone choosing
+ * that. One too long to be booked is chosen again. */
+export function withStart(choice: JobChoice, startISO: string): JobChoice {
+  if (choice.howLong !== 'HOURS') return { ...choice, startISO };
+  const hours = bookedHours(choice);
+  return { ...choice, startISO, endISO: hours !== null && hours <= MAX_HOURS ? endAfter(startISO, hours) : null };
+}
+
+/** The longest it can run, in hours. Things left in storage can stay up to a
+ * year; a pet or a home sit, 90 days (app/domain/job_shape.py _LONGEST). */
+export function longestHours(choice: Pick<JobChoice, 'howLong' | 'inCare'>): number {
+  return choice.howLong === 'HOURS' ? MAX_HOURS : (choice.inCare === 'ITEM' ? 365 : 90) * 24;
+}
+
+/** Too long to be booked: why, and what to do that's actually on screen
+ * ("Over days" is only offered when the skill's pricing doesn't decide). */
+export function tooLongProblem(choice: JobChoice, pricing?: SkillPricing | null): string | null {
+  const hours = bookedHours(choice);
+  if (choice.howLong === 'ONCE' || hours === null || hours <= longestHours(choice)) return null;
+  if (choice.howLong === 'DAYS') return `A stay can be up to ${longestHours(choice) / 24} days.`;
+  const fix = !pricing && choice.where !== 'ONLINE'
+    ? 'Choose an earlier “Until”, or “Over days”.'
+    : 'Choose an earlier “Until”. For more days, post each one separately.';
+  return `This is booked by the hour, up to ${MAX_HOURS} hours at a time. Your times add up to ${hoursText(hours)}. ${fix}`;
+}
+
 /** The shape to post, or what's missing — in words fit to show. The skill's
  * pricing sets the unit (the server checks it the same way). */
 export function shapeFor(
@@ -114,12 +189,8 @@ export function shapeFor(
   const end = new Date(choice.endISO);
   if (start.getTime() < now.getTime() - 2 * 60 * 1000) return { error: 'The start has already passed — choose a later one.' };
   if (end.getTime() <= start.getTime()) return { error: 'The end must be after the start.' };
-  // The server's limits (app/domain/job_shape.py _LONGEST).
-  const hours = (end.getTime() - start.getTime()) / 3600000;
-  if (choice.howLong === 'HOURS' && hours > 24) return { error: "A few hours can't run past a day — choose “Over days” instead." };
-  // Things left in storage can stay up to a year; a pet or a home sit, 90 days.
-  const longestDays = choice.inCare === 'ITEM' ? 365 : 90;
-  if (choice.howLong === 'DAYS' && hours > longestDays * 24) return { error: `A stay can be up to ${longestDays} days.` };
+  const tooLong = tooLongProblem(choice, pricing);
+  if (tooLong) return { error: tooLong };
   if (choice.howLong === 'HOURS') {
     return { shape: { venue, timing: 'WINDOW', custody: choice.inCare, pricing_unit: 'HOUR', ends_at: end.toISOString() } };
   }

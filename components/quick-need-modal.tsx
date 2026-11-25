@@ -57,7 +57,7 @@ export function QuickNeedModal({ visible, need, lat, lng, address, onClose, onPo
     setSkillId(null);
     try {
       const list = await SkoFyApi.skills.list(n.profession) as any;
-      const match = Array.isArray(list) ? list.find((s: any) => s.name === n.skillName) : null;
+      const match = Array.isArray(list) ? list.find((s: any) => s.name?.toLowerCase() === n.skillName.toLowerCase()) : null;
       if (match?.id) setSkillId(match.id);
       else setSkillResolveError(true);
     } catch {

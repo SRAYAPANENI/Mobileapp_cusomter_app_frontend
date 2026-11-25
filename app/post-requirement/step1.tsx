@@ -122,11 +122,14 @@ export default function DescribeProblemScreen() {
       // whatever is selected and let the customer choose.
       updateData({
         problemSummary: result.problem_summary ?? '',
-        ...(result.profession ? { profession: result.profession, skills: result.skills } : {}),
+        ...(result.profession ? {
+          profession: result.profession, skills: [], skill_id: null, skill_ids: [],
+          aiSkills: result.skills ?? [], aiSkillsPending: true,
+        } : {}),
         jobType: result.urgency === 'Urgent' ? 'Urgent' : 'Normal',
         // Work that can be done remotely starts as Remote (no address, no
         // distance limit); the customer can still switch on the summary.
-        serviceMode: result.venue === 'ONLINE' ? 'REMOTE' : 'ON_SITE',
+        startOnline: result.venue === 'ONLINE',
       });
     } catch (e: any) {
       const msg = e?.message || '';
@@ -302,7 +305,7 @@ export default function DescribeProblemScreen() {
               </View>
 
               <View>
-                <ThemedText style={styles.aiResultLabel}>Skills Needed</ThemedText>
+                <ThemedText style={styles.aiResultLabel}>Suggested Skills</ThemedText>
                 <View style={styles.skillsRow}>
                   {aiResult.skills.map((skill, i) => (
                     <View key={i} style={styles.skillChip}>

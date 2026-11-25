@@ -21,7 +21,8 @@ import {
   Zap
 } from 'lucide-react-native';
 import { SkoFyApi } from '@/services/api';
-import { PRICING_RULES, SkillPricing } from '@/services/job-shape';
+import { JobSkill, PRICING_RULES } from '@/services/job-shape';
+import { groupPricing, groupSkills } from '@/services/skill-groups';
 import { CatalogSkill, ProfessionMatch, searchProfessions, SKILLS_SHOWN } from '@/services/profession-search';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Dimensions, FlatList, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
@@ -80,7 +81,7 @@ export default function VerifyProblemScreen() {
   }, []);
 
   // Backend skills for current profession
-  const [backendSkills, setBackendSkills] = useState<{ id: string; name: string; pricing?: SkillPricing | null }[]>([]);
+  const [backendSkills, setBackendSkills] = useState<JobSkill[]>([]);
   // While they load, the picker says nothing rather than "couldn't load".
   const [skillsLoading, setSkillsLoading] = useState(false);
 
@@ -94,7 +95,7 @@ export default function VerifyProblemScreen() {
     SkoFyApi.skills.list(data.profession)
       .then((list: any) => {
         if (!cancelled && Array.isArray(list) && list.length > 0) {
-          setBackendSkills(list.map((s: any) => ({ id: s.id, name: s.name, pricing: s.pricing ?? null })));
+          setBackendSkills(list.map((s: any) => ({ id: s.id, name: s.name, pricing: s.pricing ?? null, venues: s.venues ?? null })));
         } else if (!cancelled) {
           setBackendSkills([]);
         }
@@ -107,27 +108,27 @@ export default function VerifyProblemScreen() {
     return () => { cancelled = true; };
   }, [data.profession]);
 
-  // AI analysis (step1) pre-fills data.skills with plain skill NAMES — it has
-  // no way to know the backend's skill UUIDs, and backendSkills above isn't
-  // loaded yet at that point. The chips below render these names as already-
-  // checked (CheckCircle2), but without a matching entry in skill_ids that's
-  // purely cosmetic — leaving them untouched and continuing used to submit
-  // the job against an arbitrary skillList[0] fallback in summary.tsx
-  // instead of whatever the user actually saw selected here. Backfills
-  // skill_ids/skill_id for any AI-suggested name that matches a real backend
-  // skill; never touches a name the user has since manually deselected,
-  // since toggleSkill already removes those from data.skills itself.
+  // Names chosen while the list couldn't load get their real ids, and the
+  // AI's suggestions (names of real skills, best first) become a choice. Only
+  // what costs nothing extra is chosen for the customer: the main skill, and
+  // — for quoted work, one quote either way — the other quoted ones. Priced
+  // up front, each extra skill adds to the price and narrows who can take
+  // it, so those stay suggestions to tap.
   useEffect(() => {
-    if (backendSkills.length === 0 || data.skills.length === 0) return;
-    const unresolved = data.skills
-      .map(name => backendSkills.find(s => s.name === name))
-      .filter((s): s is { id: string; name: string } => !!s && !data.skill_ids.includes(s.id));
-    if (unresolved.length === 0) return;
-    const newSkillIds = [...data.skill_ids, ...unresolved.map(s => s.id)];
-    updateData({
-      skill_ids: newSkillIds,
-      skill_id: data.skill_id ?? newSkillIds[0] ?? null,
-    });
+    if (backendSkills.length === 0) return;
+    const named = (name: string) => backendSkills.find(s => s.name.toLowerCase() === name.toLowerCase());
+    let chosen = data.skills.map(named).filter((s): s is JobSkill => !!s);
+    if (data.aiSkillsPending) {
+      const suggested = data.aiSkills.map(named).filter((s): s is JobSkill => !!s);
+      if (chosen.length === 0 && suggested.length > 0) {
+        chosen = suggested[0].pricing === 'QUOTE'
+          ? groupSkills(suggested.filter(s => s.pricing === 'QUOTE'))[0].skills
+          : [suggested[0]];
+      }
+    }
+    const ids = chosen.map(s => s.id);
+    if (!data.aiSkillsPending && ids.join() === data.skill_ids.join()) return;
+    updateData({ skills: chosen.map(s => s.name), skill_ids: ids, skill_id: ids[0] ?? null, aiSkillsPending: false });
   }, [backendSkills]);
 
   // Merged skill list — backend skills take priority, fallback to local names with empty id
@@ -165,8 +166,8 @@ export default function VerifyProblemScreen() {
   const chooseProfession = (match: ProfessionMatch) => {
     const only = match.skills.length === 1 ? match.skills[0] : null;
     updateData(only
-      ? { profession: match.profession, skills: [only.name], skill_id: only.id, skill_ids: [only.id] }
-      : { profession: match.profession, skills: [], skill_id: null, skill_ids: [] });
+      ? { profession: match.profession, skills: [only.name], skill_id: only.id, skill_ids: [only.id], aiSkills: [], aiSkillsPending: false }
+      : { profession: match.profession, skills: [], skill_id: null, skill_ids: [], aiSkills: [], aiSkillsPending: false });
     setShowProfessionModal(false);
     setSearchQuery('');
   };
@@ -206,10 +207,23 @@ export default function VerifyProblemScreen() {
   // soon as a provider can. It used to go on (and post) without one.
   const [timeProblem, setTimeProblem] = useState<string | null>(null);
   // Booked by the hour, night or day: its dates are chosen on the next screen.
-  const mainPricing = (backendSkills.find((s) => s.id === data.skill_ids[0]) ?? backendSkills[0])?.pricing;
-  const datesNext = data.jobKind !== 'PICKUP_DROPOFF' && !!mainPricing && PRICING_RULES[mainPricing].howLong !== 'ONCE';
+  // The chosen skills can make several jobs (services/skill-groups.ts): the
+  // time here is for those with none of their own.
+  const picked = data.skill_ids.map((id) => backendSkills.find((s) => s.id === id)).filter((s): s is JobSkill => !!s);
+  const jobs = data.jobKind === 'PICKUP_DROPOFF' ? [] : groupSkills(picked);
+  const hasOwnDates = (g: (typeof jobs)[number]) => {
+    const pricing = groupPricing(g);
+    return !!pricing && PRICING_RULES[pricing].howLong !== 'ONCE';
+  };
+  const someDatesNext = jobs.some(hasOwnDates);
+  const datesNext = jobs.length > 0 && jobs.every(hasOwnDates);
   const needsTime = data.jobType !== 'Normal' && !datesNext;
   const goToSummary = () => {
+    // Without one, the job went out under whichever skill came first.
+    if (!skillsLoading && backendSkills.length > 0 && picked.length === 0) {
+      setShowSkillsModal(true);
+      return;
+    }
     if (needsTime && data.time === 'Select Time') {
       setTimeProblem(data.jobType === 'Urgent' ? 'Set your deadline to continue.' : 'Pick a time to continue.');
       setShowTimePicker(true);
@@ -313,7 +327,11 @@ export default function VerifyProblemScreen() {
                   </TouchableOpacity>
                 );
               })}
-              {displaySkills.filter(s => !data.skills.includes(s.name)).slice(0, 3).map((skill) => (
+              {[...displaySkills]
+                .filter(s => !data.skills.includes(s.name))
+                // What the AI suggested first.
+                .sort((x, y) => Number(data.aiSkills.includes(y.name)) - Number(data.aiSkills.includes(x.name)))
+                .slice(0, 3).map((skill) => (
                 <TouchableOpacity
                   key={skill.name}
                   onPress={() => toggleSkill(skill.name, skill.id)}
@@ -388,6 +406,10 @@ export default function VerifyProblemScreen() {
           {datesNext ? (
             <ThemedText style={[styles.scheduleSubtitle, { marginTop: 8 }]}>
               You’ll choose when it starts and ends on the next screen.
+            </ThemedText>
+          ) : someDatesNext ? (
+            <ThemedText style={[styles.scheduleSubtitle, { marginTop: 8 }]}>
+              These will be posted as separate jobs. For the ones booked by time, you’ll choose when on the next screen.
             </ThemedText>
           ) : data.jobType === 'Normal' && (
             <ThemedText style={[styles.scheduleSubtitle, { marginTop: 8 }]}>
@@ -475,7 +497,7 @@ export default function VerifyProblemScreen() {
               </TouchableOpacity>
             </View>
 
-            <ThemedText style={styles.modalSubtitle}>Select required skills for {data.profession}</ThemedText>
+            <ThemedText style={styles.modalSubtitle}>{data.skills.length === 0 ? `Choose at least one skill for ${data.profession}` : `Select required skills for ${data.profession}`}</ThemedText>
 
             {displaySkills.length === 0 && !skillsLoading && (
               <View style={styles.noMatch}>

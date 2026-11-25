@@ -3,8 +3,10 @@ import { PriceGuideNote } from '@/components/price-guide-note';
 import { useAppConfig } from '@/services/queries/app-config';
 import { JobShapePicker } from '@/components/job-shape-picker';
 import { CareSheetForm } from '@/components/care-sheet-form';
-import { careSheetPayload, careSheetProblem } from '@/services/care-sheet';
-import { JobChoice, SkillPricing, deviceTimeZone, normalize, shapeFor } from '@/services/job-shape';
+import { CareSheet, EMPTY_CARE_SHEET, careSheetPayload, careSheetProblem } from '@/services/care-sheet';
+import { DEFAULT_CHOICE, JobChoice, deviceTimeZone, normalize, shapeFor } from '@/services/job-shape';
+import { SkillGroup, groupName, groupNotBookable, groupPriceNote, groupPricing, groupSkills, groupVenues } from '@/services/skill-groups';
+import { useJobSkills } from '@/hooks/use-job-skills';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { usePostRequirement } from '@/context/PostRequirementContext';
@@ -57,13 +59,6 @@ export default function JobSummaryScreen() {
   // and where it happens is a decision, not information the customer had to
   // have when they started describing the problem (JobShapePicker below).
 
-  // A REMOTE job never needs a location; an ON_SITE one does. Since the
-  // choice now happens on this screen, the "is a location required" gate
-  // moves here too (previously enforced on step1, before the customer had
-  // even said which mode they wanted).
-  const hasLocation = data.serviceMode === 'REMOTE'
-    ? true
-    : (data.lat != null && data.lng != null);
   // An ordinary job's where / how long / in care (services/job-shape.ts);
   // a pickup and delivery has its own flow.
   const ordinary = data.jobKind !== 'PICKUP_DROPOFF';
@@ -72,31 +67,47 @@ export default function JobSummaryScreen() {
   // the questions it needs are asked, and the job is posted that way.
   const { data: appConfig } = useAppConfig();
   const hosting = appConfig?.modules.hosting !== false;
-  const [pricing, setPricing] = useState<SkillPricing | null>(null);
-  const [venues, setVenues] = useState<string | null>(null);
-  useEffect(() => {
-    if (!ordinary || !data.profession) return;
-    let live = true;
-    SkoFyApi.skills.list(data.profession)
-      .then((list: any) => {
-        const skills: any[] = Array.isArray(list) ? list : [];
-        const main = skills.find((sk) => sk.id === data.skill_ids[0]) ?? skills[0];
-        const found = (main?.pricing ?? null) as SkillPricing | null;
-        const places = (main?.venues ?? null) as string | null;
-        if (!live) return;
-        setPricing(found);
-        setVenues(places);
-        // Through changeChoice, so on-site / remote follows the place.
-        if (found || places || !hosting) changeChoice(normalize(data.jobChoice, found, places, hosting));
-      })
-      .catch(() => {});
-    return () => { live = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ordinary, data.profession, data.skill_ids[0], hosting]);
+  const { state: skillsState, skills, retry: retrySkills } = useJobSkills(data.profession, ordinary);
+  // The jobs the chosen skills make: usually one; several when they can't
+  // share a price or a place (services/skill-groups.ts).
+  const groups = React.useMemo<SkillGroup[]>(() => {
+    if (!ordinary || skillsState !== 'ready') return [];
+    const chosen = data.skill_ids.map((id) => skills.find((sk) => sk.id === id)).filter((sk) => !!sk);
+    // Chosen by name while the list couldn't load. Never one they didn't choose.
+    for (const name of data.skill_ids.length ? [] : data.skills) {
+      const sk = skills.find((x) => x.name.toLowerCase() === name.toLowerCase());
+      if (sk) chosen.push(sk);
+    }
+    return groupSkills(chosen, hosting);
+  }, [ordinary, skillsState, skills, data.skill_ids, data.skills, hosting]);
+  const choiceOf = (g: SkillGroup): JobChoice =>
+    normalize(data.jobChoices[g.key] ?? { ...DEFAULT_CHOICE, where: data.startOnline ? 'ONLINE' : DEFAULT_CHOICE.where }, groupPricing(g), groupVenues(g), hosting);
+  const careOf = (g: SkillGroup): CareSheet => data.careSheets[g.key] ?? EMPTY_CARE_SHEET;
+  const changeChoice = (g: SkillGroup, next: JobChoice) => updateData({ jobChoices: { ...data.jobChoices, [g.key]: next } });
+  const changeCare = (g: SkillGroup, next: CareSheet) => updateData({ careSheets: { ...data.careSheets, [g.key]: next } });
 
-  const changeChoice = (next: JobChoice) => updateData({
-    jobChoice: next, serviceMode: next.where === 'ONLINE' ? 'REMOTE' : 'ON_SITE',
-  });
+  // Not wanted after all (the AI can suggest more skills than they meant).
+  const removeGroup = (g: SkillGroup) => {
+    const gone = g.skills.map((sk) => sk.id);
+    const ids = data.skill_ids.filter((id) => !gone.includes(id));
+    updateData({
+      skill_ids: ids, skill_id: ids[0] ?? null,
+      skills: data.skills.filter((name) => !g.skills.some((sk) => sk.name === name)),
+    });
+  };
+
+  // Those already posted: if one fails, trying again sends only the rest.
+  const [sentKeys, setSentKeys] = useState<string[]>([]);
+  const uploadedRef = useRef<string[] | null>(null);
+  const bookable = groups.filter((g) => !groupNotBookable(g, hosting));
+  const toPost = bookable.filter((g) => !sentKeys.includes(g.key));
+  const several = groups.length > 1;
+  const nothingToPost = ordinary && skillsState === 'ready' && groups.length > 0 && bookable.length === 0;
+  // An online job needs no location; anything else does.
+  const remote = ordinary && bookable.length > 0 && bookable.every((g) => choiceOf(g).where === 'ONLINE');
+  const hasLocation = remote || (data.lat != null && data.lng != null);
+  // A job with no times of its own goes by the date and time from step 2.
+  const usesStep2Time = !ordinary || bookable.some((g) => choiceOf(g).howLong === 'ONCE');
 
   const urgencyMap: Record<string, string> = {
     Urgent: 'HIGH',
@@ -123,36 +134,54 @@ export default function JobSummaryScreen() {
       alert.show('error', 'Choose a Profession', 'Go back and choose who you need for this job.');
       return;
     }
-    // Where / how long / in care, as the job's shape — or what's missing.
-    const shaped = ordinary ? shapeFor(data.jobChoice, new Date(), pricing) : null;
-    if (shaped && 'error' in shaped) {
-      alert.show('error', 'Almost there', shaped.error);
+    if (ordinary && skillsState !== 'ready') {
+      if (skillsState === 'failed') retrySkills();
+      alert.show('info', 'One Moment', 'We’re getting the details for this service. Please try again.');
       return;
     }
-    // What the provider needs to look after a pet or an item.
-    const careProblem = ordinary ? careSheetProblem(data.jobChoice.inCare, data.careSheet) : null;
-    if (careProblem) {
-      alert.show('error', 'Almost there', careProblem);
+    if (ordinary && groups.length === 0) {
+      alert.show('error', 'Choose a Skill', 'Choose at least one skill, so the job reaches the right people.',
+        [{ text: 'Choose', onPress: () => router.replace('/post-requirement/step2') }]);
       return;
     }
-    // The time may have gone by while they were deciding on this screen.
-    const when = ordinary && data.jobChoice.howLong !== 'ONCE' && data.jobChoice.startISO
-      ? new Date(data.jobChoice.startISO)
-      : scheduledFor();
+    if (ordinary && toPost.length === 0 && sentKeys.length > 0) {
+      setPosted(true);
+      router.replace('/my-jobs');
+      return;
+    }
+    // Every job is checked before any is sent.
+    type Ready = { group: SkillGroup | null; shape?: any; when: Date | null };
+    const ready: Ready[] = [];
+    for (const g of toPost) {
+      const choice = choiceOf(g);
+      const which = several ? `${groupName(g)}: ` : '';
+      // Where / how long / in care, as the job's shape — or what's missing.
+      const shaped = shapeFor(choice, new Date(), groupPricing(g));
+      // What the provider needs to look after a pet or an item.
+      const problem = 'error' in shaped ? shaped.error : careSheetProblem(choice.inCare, careOf(g));
+      if (problem || 'error' in shaped) {
+        alert.show('error', 'Almost there', `${which}${problem}`);
+        return;
+      }
+      const when = choice.howLong !== 'ONCE' && choice.startISO ? new Date(choice.startISO) : scheduledFor();
+      // Someone has to be in to receive them (the server refuses without a time).
+      if (!when && choice.where === 'THEIR_PLACE') {
+        alert.show('error', 'Pick a Time', 'Choose Book Slot and say when you’ll come, so the provider is there.',
+          [{ text: 'Choose', onPress: () => router.replace('/post-requirement/step2') }]);
+        return;
+      }
+      ready.push({ group: g, shape: { ...shaped.shape, care_sheet: careSheetPayload(choice.inCare, careOf(g)) }, when });
+    }
+    if (!ordinary) ready.push({ group: null, when: scheduledFor() });
     // Urgent's deadline, Book Slot's time (step 2 asks; a stay has its own start).
-    if (!when && data.jobType !== 'Normal') {
+    if (ready.some((r) => !r.when) && data.jobType !== 'Normal') {
       alert.show('error', data.jobType === 'Urgent' ? 'Set Your Deadline' : 'Pick a Time',
         data.jobType === 'Urgent' ? 'Say by when you need this done.' : 'Say when you want the provider to arrive.',
         [{ text: 'Choose', onPress: () => router.replace('/post-requirement/step2') }]);
       return;
     }
-    // Someone has to be in to receive them (the server refuses without a time).
-    if (!when && ordinary && data.jobChoice.where === 'THEIR_PLACE') {
-      alert.show('error', 'Pick a Time', 'Choose Book Slot and say when you’ll come, so the provider is there.',
-        [{ text: 'Choose', onPress: () => router.replace('/post-requirement/step2') }]);
-      return;
-    }
-    if (when && hasPassed(when, new Date())) {
+    // The time may have gone by while they were deciding on this screen.
+    if (ready.some((r) => r.when && hasPassed(r.when, new Date()))) {
       alert.show('error', 'That Time Has Passed', 'Go back and pick a later time.');
       return;
     }
@@ -161,25 +190,28 @@ export default function JobSummaryScreen() {
       return;
     }
     setIsPosting(true);
+    // Kept as we go: one that fails leaves the others posted.
+    const sent = [...sentKeys];
     try {
       // Use the full set of skills selected in step2 (real backend skill IDs)
       let skillIds = data.skill_ids;
 
-      // Fallback: resolve from API if user skipped skill selection entirely
-      if (skillIds.length === 0) {
+      // A pickup's profession has the one skill.
+      if (!ordinary && skillIds.length === 0) {
         const skillList: any[] = await SkoFyApi.skills.list(data.profession).catch(() => []);
         const fallbackId = skillList?.[0]?.id;
         if (fallbackId) skillIds = [fallbackId];
       }
-      if (skillIds.length === 0) throw new Error('Could not find a matching skill. Please go back and select a skill.');
+      if (!ordinary && skillIds.length === 0) throw new Error('Could not find a matching skill. Please go back and select a skill.');
 
       const title = data.skills.length > 0
         ? `${data.profession} – ${data.skills[0]}`
         : data.profession;
 
       // Upload any photos/videos the customer attached in step 1
-      let imageUrls: string[] = [];
-      if (Array.isArray(data.media) && data.media.length > 0) {
+      // Once for all the jobs, and not again on a retry.
+      let imageUrls: string[] = uploadedRef.current ?? [];
+      if (!uploadedRef.current && Array.isArray(data.media) && data.media.length > 0) {
         try {
           const files = data.media.map((m: any) => ({
             uri: m.uri,
@@ -187,6 +219,7 @@ export default function JobSummaryScreen() {
             name: m.uri.split('/').pop() || 'media.jpg',
           }));
           imageUrls = await SkoFyApi.jobs.uploadMedia(files);
+          uploadedRef.current = imageUrls;
         } catch (err: any) {
           // Not posted without them: the customer is told, the photos stay,
           // and they try again or remove them.
@@ -195,19 +228,20 @@ export default function JobSummaryScreen() {
         }
       }
 
+      for (const { group, shape, when } of ready) {
+      const groupIds = group ? group.skills.map((sk) => sk.id) : skillIds;
+      const online = group ? choiceOf(group).where === 'ONLINE' : false;
       await SkoFyApi.jobs.create({
-        title,
+        title: group && several ? `${data.profession} – ${group.skills[0].name}` : title,
         description: data.description || `${data.profession} service required.`,
-        skill_ids: skillIds,
+        skill_ids: groupIds,
         urgency: (urgencyMap[data.jobType] || 'MEDIUM') as any,
         lat: data.lat ?? undefined,
         lng: data.lng ?? undefined,
         scheduled_at: when?.toISOString(),
         images: imageUrls,
         posted_via: 'MANUAL',
-        shape: shaped && 'shape' in shaped
-          ? { ...shaped.shape, care_sheet: careSheetPayload(data.jobChoice.inCare, data.careSheet) }
-          : undefined,
+        shape,
         timezone: deviceTimeZone(),
         job_type: data.jobKind,
         dropoff_lat: data.jobKind === 'PICKUP_DROPOFF' ? (data.dropoffLat ?? undefined) : undefined,
@@ -217,15 +251,17 @@ export default function JobSummaryScreen() {
         // The store and the drop-off as the customer chose them (only pins were sent).
         pickup_address: data.jobKind === 'PICKUP_DROPOFF' ? (data.address?.slice(0, 300) || undefined) : undefined,
         dropoff_address: data.jobKind === 'PICKUP_DROPOFF' ? (data.dropoffAddress?.slice(0, 300) || undefined) : undefined,
-        service_mode: data.serviceMode,
+        service_mode: online ? 'REMOTE' : 'ON_SITE',
       });
+      if (group) { sent.push(group.key); setSentKeys([...sent]); }
+      }
 
       postedRef.current = true;
       setPosted(true);
       alert.show(
         'success',
-        'Requirement Posted!',
-        data.serviceMode === 'REMOTE'
+        ready.length > 1 ? 'Jobs Posted!' : 'Requirement Posted!',
+        remote
           ? "Skilled providers have been notified. You'll see who applies in My Jobs."
           : "Nearby providers have been notified. You'll see who applies in My Jobs.",
         [
@@ -237,7 +273,16 @@ export default function JobSummaryScreen() {
       // A field the server refused (e.g. in the care details) carries its
       // reason in details.errors, under a generic "Request validation failed."
       const reason = err?.details?.errors?.[0]?.message?.replace(/^Value error, /, '');
-      alert.show('error', 'Failed to Post', reason || err?.message || 'Something went wrong. Please try again.');
+      const why = reason || err?.message || 'Something went wrong. Please try again.';
+      const left = bookable.filter((g) => !sent.includes(g.key));
+      // Some are out already: leaving now clears this form, as a full post does.
+      if (several && sent.length > 0) {
+        postedRef.current = true;
+        alert.show('error', 'Not All Posted',
+          `${sent.length} of ${bookable.length} posted. ${left.map(groupName).join(' and ')} wasn’t: ${why} Tap Post to try again.`);
+        return;
+      }
+      alert.show('error', 'Failed to Post', why);
     } finally {
       setIsPosting(false);
     }
@@ -300,7 +345,7 @@ export default function JobSummaryScreen() {
               />
             )}
             {/* By the hour, night or day: its dates are below, with how long. */}
-            {!(ordinary && data.jobChoice.howLong !== 'ONCE') && (<>
+            {usesStep2Time && (<>
             <SummaryItem
               styles={styles}
               icon={Calendar}
@@ -316,7 +361,7 @@ export default function JobSummaryScreen() {
               color="#F59E0B"
             />
             </>)}
-            {data.serviceMode === 'REMOTE' ? (
+            {remote ? (
               <SummaryItem
                 styles={styles}
                 icon={MapPin}
@@ -356,17 +401,67 @@ export default function JobSummaryScreen() {
 
         {/* --- Where, how long, in care — the last decision before posting --- */}
         <Animated.View entering={FadeInUp.delay(900)} style={styles.rangeSection}>
-          <ThemedText style={styles.sectionTitle}>How should this be done?</ThemedText>
-          {ordinary && <JobShapePicker value={data.jobChoice} onChange={changeChoice} pricing={pricing} venues={venues} hosting={hosting} />}
-          {ordinary && (
-            <CareSheetForm
-              custody={data.jobChoice.inCare}
-              value={data.careSheet}
-              onChange={(careSheet) => updateData({ careSheet })}
-            />
+          <ThemedText style={styles.sectionTitle}>
+            {several ? `We’ll post this as ${bookable.length} job${bookable.length === 1 ? '' : 's'}` : 'How should this be done?'}
+          </ThemedText>
+          {several && (
+            <ThemedText style={styles.severalHint}>
+              These are booked or priced differently, so each is its own job. The description, photos and address go on all of them, and each can have a different provider.
+            </ThemedText>
           )}
+          {ordinary && skillsState === 'loading' && (
+            <ActivityIndicator style={{ paddingVertical: 16 }} color={themeColors.textSecondary} />
+          )}
+          {ordinary && skillsState === 'failed' && (
+            <View style={styles.remoteNoticeBox}>
+              <ThemedText style={styles.remoteNoticeText}>We couldn’t load how this service is booked. Check your connection.</ThemedText>
+              <TouchableOpacity onPress={retrySkills} hitSlop={8} accessibilityRole="button">
+                <ThemedText style={styles.noticeAction}>Try again</ThemedText>
+              </TouchableOpacity>
+            </View>
+          )}
+          {groups.map((g, i) => {
+            const blocked = groupNotBookable(g, hosting);
+            const sent = sentKeys.includes(g.key);
+            const note = groupPriceNote(g);
+            const choice = choiceOf(g);
+            return (
+              <View key={g.key} style={several ? styles.groupCard : undefined}>
+                {several && (
+                  <View style={styles.groupHead}>
+                    <ThemedText style={styles.groupTitle}>{i + 1}. {groupName(g)}</ThemedText>
+                    {sent ? <ThemedText style={styles.groupSent}>Posted ✓</ThemedText> : (
+                      <TouchableOpacity onPress={() => removeGroup(g)} disabled={isPosting} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove ${groupName(g)}`}>
+                        <ThemedText style={styles.noticeAction}>Remove</ThemedText>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+                {blocked ? (
+                  <View style={styles.remoteNoticeBox}>
+                    <ThemedText style={styles.remoteNoticeText}>
+                      {blocked.text}{several && bookable.length > 0 ? ' It won’t be posted.' : ''}
+                    </ThemedText>
+                    <TouchableOpacity
+                      onPress={() => (blocked.pickup ? router.replace('/pickup-drop') : router.replace('/post-requirement/step2'))}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                    >
+                      <ThemedText style={styles.noticeAction}>{blocked.pickup ? 'Open Pickup & Delivery' : 'Choose another skill'}</ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                ) : sent ? null : (
+                  <>
+                    {!!note && <ThemedText style={styles.severalHint}>{note}</ThemedText>}
+                    <JobShapePicker value={choice} onChange={(next) => changeChoice(g, next)} pricing={groupPricing(g)} venues={groupVenues(g)} hosting={hosting} />
+                    <CareSheetForm custody={choice.inCare} value={careOf(g)} onChange={(next) => changeCare(g, next)} />
+                  </>
+                )}
+              </View>
+            );
+          })}
 
-          {data.serviceMode === 'REMOTE' ? (
+          {remote ? (
             <View style={styles.remoteNoticeBox}>
               <ThemedText style={styles.remoteNoticeText}>
                 No location needed — this job will be matched to skilled providers by skill and availability, wherever they are.
@@ -380,7 +475,7 @@ export default function JobSummaryScreen() {
               </ThemedText>
             </View>
           ) : null}
-          {data.serviceMode !== 'REMOTE' && (
+          {!remote && (
             <PriceGuideNote skillIds={data.skill_ids} lat={data.lat ?? null} lng={data.lng ?? null} />
           )}
         </Animated.View>
@@ -389,16 +484,16 @@ export default function JobSummaryScreen() {
       {/* Footer Button */}
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 40 : 24) + 12 }]}>
         <TouchableOpacity
-          style={[styles.postButton, { backgroundColor: themeColors.brand, opacity: (isPosting || posted || !hasLocation) ? 0.5 : 1 }]}
+          style={[styles.postButton, { backgroundColor: themeColors.brand, opacity: (isPosting || posted || !hasLocation || nothingToPost) ? 0.5 : 1 }]}
           onPress={handleProceedToPayment}
-          disabled={isPosting || posted || !hasLocation}
+          disabled={isPosting || posted || !hasLocation || nothingToPost}
         >
           {isPosting
             ? <ActivityIndicator size="small" color="#111827" style={{ marginRight: 8 }} />
             : <CreditCard size={20} color="#111827" style={{ marginRight: 8 }} />
           }
           <ThemedText style={styles.postButtonText}>
-            {isPosting ? 'Posting...' : posted ? 'Posted ✓' : 'Post Requirement'}
+            {isPosting ? 'Posting...' : posted ? 'Posted ✓' : toPost.length === 0 && sentKeys.length > 0 ? 'Done' : toPost.length > 1 ? `Post ${toPost.length} Jobs` : 'Post Requirement'}
           </ThemedText>
         </TouchableOpacity>
       </View>
@@ -563,6 +658,12 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     backgroundColor: '#F5F3FF', borderRadius: 12, borderWidth: 1, borderColor: '#DDD6FE',
     paddingHorizontal: 14, paddingVertical: 12, marginTop: 16,
   },
+  severalHint: { fontSize: 12.5, lineHeight: 18, fontFamily: Fonts.poppins, color: t.textSecondary, marginBottom: 8 },
+  groupCard: { backgroundColor: t.card, borderWidth: 1, borderColor: t.borderSubtle, borderRadius: 18, padding: 14, marginTop: 10 },
+  groupHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 },
+  groupTitle: { flex: 1, fontSize: 15, lineHeight: 21, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
+  groupSent: { fontSize: 12.5, lineHeight: 17, fontFamily: Fonts.poppinsBold, color: '#047857' },
+  noticeAction: { marginTop: 6, fontSize: 13, lineHeight: 18, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
   remoteNoticeText: { fontSize: 12.5, fontFamily: Fonts.poppinsSemiBold, color: '#5B21B6', lineHeight: 18 },
   locationWarningBox: {
     flexDirection: 'row', alignItems: 'center', gap: 6,

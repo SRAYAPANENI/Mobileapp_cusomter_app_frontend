@@ -53,6 +53,20 @@ if (__DEV__) console.log('[SkoFyApi] BASE_URL:', BASE_URL, '__DEV__:', __DEV__);
 // payments end-to-end.
 export const STRIPE_PUBLISHABLE_KEY = 'pk_test_51TvsauRyqsQEDt0RCd5L6d51XipE7Ho1736WFkgfx3Qc2XgyDHkSMekLyCphMszlUpZhO9gaH6b5QVujtIdB24Yv00k8dcwdlg';
 
+// One key per post: the same job sent again after a lost reply is the job
+// already made, not a second one. A changed form, or a new post after one
+// that worked, gets a new key.
+const postKeys = new Map<string, string>();
+function postKeyFor(payload: unknown): string {
+  const same = JSON.stringify(payload);
+  let key = postKeys.get(same);
+  if (!key) {
+    key = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+    postKeys.set(same, key);
+  }
+  return key;
+}
+
 // ─── TOKEN STORAGE ───────────────────────────────────────────────────────────
 // This app's own names. Both apps used the same ones ('skofy_access_token'
 // and so on): where both run inside one host app — an iPhone development
@@ -1146,7 +1160,12 @@ export const SkoFyApi = {
       // "ON_SITE" (default) or "REMOTE" — no physical location/distance
       // matching at all (e.g. hiring a developer/consultant).
       service_mode?: 'ON_SITE' | 'REMOTE';
-    }) => request('/jobs', { method: 'POST', body: JSON.stringify(payload) }),
+    }) => {
+      const key = postKeyFor(payload);
+      const made = await request('/jobs', { method: 'POST', body: JSON.stringify({ ...payload, post_key: key }) });
+      postKeys.delete(JSON.stringify(payload));
+      return made;
+    },
 
     /** A pickup from a person: the value cap and what's never carried. */
     getPersonPickupRules: async (): Promise<PersonPickupRules> =>

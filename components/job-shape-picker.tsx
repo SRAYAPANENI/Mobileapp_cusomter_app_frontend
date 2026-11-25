@@ -2,7 +2,10 @@ import { DatePickerModal } from '@/components/date-picker-modal';
 import { ThemedText } from '@/components/themed-text';
 import { TimePickerModal } from '@/components/time-picker-modal';
 import { Fonts } from '@/constants/theme';
-import { HowLong, InCare, JobChoice, PRICING_RULES, SkillPricing, Where, bookedForSetTime, normalize, priceHint, wheresFor } from '@/services/job-shape';
+import {
+  HowLong, InCare, JobChoice, PRICING_RULES, QUICK_HOURS, SkillPricing, Where, bookedForSetTime, bookedHours, endAfter,
+  hoursText, longestHours, normalize, priceHint, tooLongProblem, wheresFor, withStart,
+} from '@/services/job-shape';
 import { fromParts } from '@/services/schedule-slots';
 import { CalendarClock, Home, MapPin, Sparkles } from 'lucide-react-native';
 import React, { useState } from 'react';
@@ -51,6 +54,13 @@ export function JobShapePicker({ value, onChange, pricing, venues, hosting = tru
   const wheres = wheresFor(pricing, venues, hosting);
   const [picking, setPicking] = useState<{ field: 'startISO' | 'endISO'; step: 'day' | 'time'; dayISO?: string } | null>(null);
   const isDays = value.howLong === 'DAYS';
+  const isHours = value.howLong === 'HOURS';
+  const hours = bookedHours(value);
+  const tooLong = tooLongProblem(value, pricing);
+  const endsTooSoon = !!value.startISO && !!value.endISO && hours === null;
+  // The end's calendar offers only days it can end on.
+  const pickingEnd = picking?.field === 'endISO' && !!value.startISO;
+  const lastEnd = pickingEnd && value.startISO ? endAfter(value.startISO, longestHours(value)) : null;
 
   return (
     <View style={s.wrap}>
@@ -92,6 +102,24 @@ export function JobShapePicker({ value, onChange, pricing, venues, hosting = tru
               </View>
             </TouchableOpacity>
           ))}
+          {isHours && !!value.startISO && (
+            <View style={s.row}>
+              {QUICK_HOURS.map((h) => {
+                const on = hours === h;
+                return (
+                  <TouchableOpacity key={h} style={[s.chip, s.hourChip, on && s.chipOn]} accessibilityLabel={`For ${hoursText(h)}`}
+                    onPress={() => set({ endISO: endAfter(value.startISO!, h) })}>
+                    <ThemedText style={[s.chipText, on && s.chipTextOn]}>{h} hr</ThemedText>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+          {tooLong || endsTooSoon ? (
+            <ThemedText style={s.problem}>{tooLong ?? 'The end must be after the start.'}</ThemedText>
+          ) : isHours && hours !== null ? (
+            <ThemedText style={s.hint}>Booked for {hoursText(hours)}{hours < 1 ? ', charged as 1 hour' : ''}.</ThemedText>
+          ) : null}
         </View>
       )}
 
@@ -121,6 +149,8 @@ export function JobShapePicker({ value, onChange, pricing, venues, hosting = tru
         visible={picking?.step === 'day'}
         onClose={() => setPicking(null)}
         selectedDateLabel={null}
+        minISO={pickingEnd ? value.startISO : null}
+        maxISO={lastEnd}
         onSelect={(_label, iso) => setPicking((p) => (p ? { ...p, step: 'time', dayISO: iso } : null))}
       />
       <TimePickerModal
@@ -131,7 +161,7 @@ export function JobShapePicker({ value, onChange, pricing, venues, hosting = tru
         onConfirm={(_label, hour, minute, period, day) => {
           if (!picking) return;
           const at = fromParts(day.iso, { hour, minute, period: period as 'AM' | 'PM' });
-          set({ [picking.field]: at.toISOString() } as Partial<JobChoice>);
+          set(picking.field === 'startISO' ? withStart(value, at.toISOString()) : { endISO: at.toISOString() });
           setPicking(null);
         }}
       />
@@ -147,6 +177,8 @@ const s = StyleSheet.create({
     flex: 1, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center',
     paddingVertical: 11, paddingHorizontal: 8, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#fff',
   },
+  hourChip: { paddingHorizontal: 4 },
+  problem: { fontSize: 12.5, lineHeight: 18, fontFamily: Fonts.poppins, color: '#B91C1C' },
   small: { flexBasis: '22%', flexGrow: 1 },
   chipOn: { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
   chipText: { fontSize: 12.5, lineHeight: 17, fontFamily: Fonts.poppins, color: '#374151', textAlign: 'center' },
