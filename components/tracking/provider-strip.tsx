@@ -23,10 +23,13 @@ export interface StripVehicle {
 
 // Who's coming, in one row: photo, name, trade and rating, the vehicle to
 // look out for, and the ways to reach them — call and chat — with everything
-// else (cancel, report, help) behind the "more" button.
-export function ProviderStrip({ provider, vehicle, onOpenProfile, onCall, onChat, onMore }: {
+// else (cancel, report, help) behind the "more" button. Once the job is over
+// (done, cancelled, under review) call and chat aren't offered: both would
+// only lead to "this job is closed".
+export function ProviderStrip({ provider, vehicle, contactOpen, onOpenProfile, onCall, onChat, onMore }: {
   provider: StripProvider | null;
   vehicle: StripVehicle | null;
+  contactOpen: boolean;
   onOpenProfile: () => void;
   onCall: () => void;
   onChat: () => void;
@@ -76,12 +79,16 @@ export function ProviderStrip({ provider, vehicle, onOpenProfile, onCall, onChat
       </TouchableOpacity>
 
       <View style={s.actions}>
-        <RoundButton label="Call" onPress={onCall} background="#FFCE48">
-          <Phone size={19} color="#111827" />
-        </RoundButton>
-        <RoundButton label="Chat" onPress={onChat} background="#111827">
-          <MessageCircle size={19} color="#fff" />
-        </RoundButton>
+        {contactOpen && (
+          <>
+            <RoundButton label="Call" onPress={onCall} background="#FFCE48">
+              <Phone size={19} color="#111827" />
+            </RoundButton>
+            <RoundButton label="Chat" onPress={onChat} background="#111827">
+              <MessageCircle size={19} color="#fff" />
+            </RoundButton>
+          </>
+        )}
         <RoundButton label="More options" onPress={onMore} background={t.inputFilled}>
           <MoreHorizontal size={19} color={t.textPrimary} />
         </RoundButton>

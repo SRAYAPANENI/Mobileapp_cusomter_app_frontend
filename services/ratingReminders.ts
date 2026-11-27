@@ -33,6 +33,18 @@ export function isRatingSkipped(jobId: string): boolean {
   return handledThisSession.has(jobId);
 }
 
+/** Whether this job still waits on the customer's rating — the job's own
+ *  rating status (a job that can't be rated yet reads as rated), the same
+ *  question the job's chat asks. False when it can't be told (offline):
+ *  better no prompt than one that's already done. */
+export async function ratingStillOwed(jobId: string): Promise<boolean> {
+  try {
+    return !(await SkoFyApi.ratingStatus.get(jobId)).customer_has_rated;
+  } catch {
+    return false;
+  }
+}
+
 /** The newest finished job (completed or disputed) the customer still owes a
  *  rating for and hasn't skipped this session — or null. Never throws: a
  *  reminder failing to load must not break the screen showing it. */

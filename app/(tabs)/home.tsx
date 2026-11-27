@@ -384,7 +384,13 @@ export default function HomeScreen() {
   const dotAnims = useRef([0,1,2,3].map(() => new RNAnimated.Value(1))).current;
   const dotsParallelRef = useRef<RNAnimated.CompositeAnimation | null>(null);
 
-  const params = useLocalSearchParams<{ triggerBookLocation?: string }>();
+  const params = useLocalSearchParams<{
+    triggerBookLocation?: string;
+    // "Book again" from a finished job's screen (app/track-provider.tsx).
+    rebookProviderId?: string; rebookName?: string; rebookProfession?: string;
+    // "New delivery" from a finished delivery's screen.
+    triggerPickupDrop?: string;
+  }>();
 
   useFocusEffect(
     useCallback(() => {
@@ -392,6 +398,21 @@ export default function HomeScreen() {
         setPreselectedProfession('');
         setBookChoiceModalVisible(true);
         router.setParams({ triggerBookLocation: '' });
+      }
+
+      if (params.rebookProviderId) {
+        setRebookProvider({ id: params.rebookProviderId, name: params.rebookName ?? '', profession: params.rebookProfession || null });
+        setPostMode('voice');
+        setIsLocationModalVisible(true);
+        router.setParams({ rebookProviderId: '', rebookName: '', rebookProfession: '' });
+      }
+
+      if (params.triggerPickupDrop === 'true') {
+        setRebookProvider(null);
+        setPreselectedProfession('');
+        setPostMode('pickupdrop');
+        setIsLocationModalVisible(true);
+        router.setParams({ triggerPickupDrop: '' });
       }
 
       if (location) {
@@ -425,7 +446,7 @@ export default function HomeScreen() {
     // isExitModalVisible/location would still run a stale closure that
     // read an old (pre-navigation) value of this param, silently skipping
     // the Book Now chooser below.
-    }, [isExitModalVisible, location, params.triggerBookLocation])
+    }, [isExitModalVisible, location, params.triggerBookLocation, params.rebookProviderId, params.triggerPickupDrop])
   );
 
   // Periodic live refresh while this tab stays focused — the focus effect

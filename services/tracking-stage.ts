@@ -42,6 +42,31 @@ export interface TrackingInput {
   hostedAtTheirPlace: boolean; // the customer goes to the provider
   inCare: boolean;             // something is left with the provider
   online: boolean;             // done online: nobody travels, nothing visited (a meeting instead)
+  cancelCause?: string | null; // cancelled: who called it off (server CancelCause)
+}
+
+/** A cancelled job, said truly — who called it off (server: app/domain/cancellation.py
+ *  CancelCause). It used to say "the provider cancelled" for every cancel, the
+ *  customer's own included. */
+export function cancelledLine(cause: string | null | undefined): string {
+  switch (cause) {
+    case 'CUSTOMER':
+    case 'PROVIDER_LATE':
+      return 'You cancelled this job.';
+    case 'INVOICE_REJECTED':
+      return 'You turned down the price, so this job was cancelled.';
+    case 'PROVIDER':
+    case 'BUSINESS':
+      return 'Your provider cancelled this job.';
+    case 'NO_SHOW':
+      return 'Your provider didn’t set off in time, so this job was cancelled.';
+    case 'PICKUP_REFUSED':
+      return 'Your provider didn’t take the item, so this job was cancelled.';
+    case 'CUSTOMER_NO_SHOW':
+      return 'Your provider arrived and waited, but couldn’t find you, so this job was cancelled.';
+    default:
+      return 'This job is no longer active.';
+  }
 }
 
 export interface TrackingStage {
@@ -63,11 +88,15 @@ export function trackingStage(i: TrackingInput): TrackingStage {
     const steps = stepsFor(i);
     return { key: 'done', title: 'Completed', subtitle: 'Thanks for using Dodorez.', moving: false, needsAction: false, steps, step: steps.length };
   }
-  if (i.jobStatus === 'CANCELLED' || i.jobStatus === 'DISPUTED') {
+  // Expired: nobody was hired in time (also a job reopened after its provider
+  // left) — closed, not "On the way" as it used to fall through to.
+  if (i.jobStatus === 'CANCELLED' || i.jobStatus === 'DISPUTED' || i.jobStatus === 'EXPIRED') {
     return {
       key: 'closed',
-      title: i.jobStatus === 'DISPUTED' ? 'Under review' : 'Cancelled',
-      subtitle: i.jobStatus === 'DISPUTED' ? 'Our team will get back to you within 24 hours.' : 'This job is no longer active.',
+      title: i.jobStatus === 'DISPUTED' ? 'Under review' : i.jobStatus === 'EXPIRED' ? 'Expired' : 'Cancelled',
+      subtitle: i.jobStatus === 'DISPUTED' ? 'Our team will get back to you within 24 hours.'
+        : i.jobStatus === 'EXPIRED' ? 'Nobody was hired before the deadline passed.'
+        : cancelledLine(i.cancelCause),
       moving: false, needsAction: false, steps: stepsFor(i), step: 0,
     };
   }

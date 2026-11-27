@@ -1516,6 +1516,8 @@ export const SkoFyApi = {
       set_off?: boolean;
       /** Set once the job is cancelled — shown to the customer (e.g. a refused pickup). */
       cancellation_reason?: string | null;
+      /** Who called it off (CUSTOMER, PROVIDER, NO_SHOW, PICKUP_REFUSED…) — services/tracking-stage.ts cancelledLine. */
+      cancel_cause?: string | null;
     }> => request(`/jobs/${jobId}/track`),
   },
 

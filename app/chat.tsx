@@ -13,6 +13,7 @@ import {
   Package,
   Phone,
   Receipt,
+  RotateCcw,
   Send,
   XCircle
 } from 'lucide-react-native';
@@ -34,6 +35,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
 import { alreadyRated, isRatingSkipped, markRatingSkipped, markRatingSubmitted } from '@/services/ratingReminders';
 import { SkoFyApi, TokenStore, getFreshAccessToken } from '@/services/api';
+import { jobContactOpen } from '@/services/job-contact';
 // The call's audio — through our own media server (docs/CALL_RECORDING_DESIGN.md).
 import { CallMedia, CallMediaEnded } from '@/services/call/callMedia';
 import type { TransportEvent } from '@/services/call/mediaTransport';
@@ -95,10 +97,11 @@ function formatCallLogDuration(seconds: number): string {
 
 type CallState = 'idle' | 'connecting' | 'calling' | 'ringing' | 'connected' | 'ended';
 
-// Chat and calls are open only while the job is being done — the server
-// enforces the same rule (domain/job_contact.py). History stays readable.
-const CONTACT_OPEN_STATUSES = new Set(['ACCEPTED', 'INSPECTING', 'INVOICE_PENDING', 'IN_PROGRESS']);
-const CLOSED_TEXT = "This job is closed. Chat and calls are only available while a job is active — use Book again to work together again.";
+// Chat and calls are open only while the job is being done (services/job-contact.ts,
+// the same rule the server enforces). History stays readable.
+const CLOSED_TEXT = "This job is closed. Chat and calls are only available while a job is active.";
+// Done (not cancelled or under review): the way to work together again, offered right under it.
+const CLOSED_TEXT_DONE = "This job is closed. Chat and calls are only available while a job is active — book again to work together again.";
 
 /** What the caller sees when the other side didn't pick up. */
 function endedLabelFor(reason: string | undefined, state: CallState): string | null {
@@ -246,7 +249,19 @@ export default function ChatScreen() {
   // A business's job: its team can see this chat (docs/BUSINESS_PROVIDERS_DESIGN.md §4).
   const [businessName, setBusinessName] = useState<string | null>(null);
   const [serverContactOpen, setServerContactOpen] = useState<boolean | null>(null);
-  const contactOpen = jobStatus === null || (serverContactOpen ?? CONTACT_OPEN_STATUSES.has(jobStatus));
+  const contactOpen = jobStatus === null || (serverContactOpen ?? jobContactOpen(jobStatus));
+  // Done and closed: "Book again" under the closed note — the same as Home's,
+  // sent to this provider only.
+  // From the job itself, not the `id` param — not every way in passes one.
+  const [providerId, setProviderId] = useState<string | null>(null);
+  const canBookAgain = !contactOpen && jobStatus === 'COMPLETED' && !!providerId;
+  const handleBookAgain = () => {
+    if (!providerId) return;
+    router.dismissTo({
+      pathname: '/(tabs)/home',
+      params: { rebookProviderId: providerId, rebookName: name, rebookProfession: profession },
+    } as any);
+  };
   const refreshJobStatusRef = useRef<() => void>(() => {});
   // "Ringing…" on the caller's screen once the other phone reports it.
   const [remoteRinging, setRemoteRinging] = useState(false);
@@ -620,6 +635,8 @@ export default function ChatScreen() {
       .then((job: any) => {
         if (job?.status) setJobStatus(job.status);
         setBusinessName(job?.business_name ?? null);
+        // Only someone "Book again" would reach (can_book_again: not had through a business).
+        setProviderId(job?.can_book_again === false ? null : job?.assigned_provider?.provider_id ?? null);
         // The server's word on it — a finished job reopens for a guarantee fix.
         setServerContactOpen(typeof job?.contact_open === 'boolean' ? job.contact_open : null);
       })
@@ -1256,7 +1273,13 @@ export default function ChatScreen() {
         </View>
       ) : (
         <View style={[styles.closedBanner, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-          <ThemedText style={styles.closedBannerText}>{CLOSED_TEXT}</ThemedText>
+          <ThemedText style={styles.closedBannerText}>{canBookAgain ? CLOSED_TEXT_DONE : CLOSED_TEXT}</ThemedText>
+          {canBookAgain && (
+            <TouchableOpacity style={styles.bookAgainBtn} onPress={handleBookAgain} accessibilityRole="button">
+              <RotateCcw size={17} color="#111827" />
+              <ThemedText style={styles.bookAgainText}>Book again</ThemedText>
+            </TouchableOpacity>
+          )}
         </View>
       )}
       {appAlert.element}
@@ -1446,6 +1469,22 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     lineHeight: 18,
     textAlign: 'center',
     color: '#6B7280',
+  },
+  bookAgainBtn: {
+    marginTop: 12,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#FFCE48',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  bookAgainText: {
+    color: '#111827',
+    fontSize: 15,
+    lineHeight: 21,
+    fontFamily: Fonts.poppinsBold,
   },
   inputContainer: {
     flexDirection: 'row',

@@ -5,7 +5,8 @@ import { JobMenu, type JobMenuAction } from '@/components/tracking/job-menu';
 import { ProviderStrip } from '@/components/tracking/provider-strip';
 import { TripProgress } from '@/components/tracking/trip-progress';
 import { useCareJob } from '@/hooks/use-care-job';
-import { trackingStage } from '@/services/tracking-stage';
+import { cancelledLine, trackingStage } from '@/services/tracking-stage';
+import { useAppConfig } from '@/services/queries/app-config';
 import { RouteFollower, estimate, fromEncoded, haversineKm, progress, type LatLng, type Route } from '@/services/route';
 import { CancelJobModal } from '@/components/cancel-job-modal';
 import { DisputeModal } from '@/components/dispute-modal';
@@ -20,6 +21,7 @@ import { GOOGLE_PLACES_API_KEY } from '@/services/google-places';
 import { Image } from 'expo-image';
 import { usePhotoViewer } from '@/components/photo-viewer';
 import { callTapAllowed } from '@/services/callManager';
+import { contactOpenNow, serverContactOf, type ServerContact } from '@/services/job-contact';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { useOpenScreen } from '@/services/openScreens';
@@ -27,8 +29,11 @@ import {
   CheckCircle2,
   ChevronLeft,
   LocateFixed,
+  Package,
   Receipt,
+  RotateCcw,
   ShieldCheck,
+  Star,
   Video,
 } from 'lucide-react-native';
 import { VehicleIcon } from '@/components/vehicle-icon';
@@ -44,7 +49,7 @@ import { ExtraWorkCard } from '@/components/extra-work-card';
 import { TipSheet } from '@/components/tip-sheet';
 import { QuoteGuide } from '@/components/price-guide-note';
 import type { OffAppAnswer } from '@/components/off-app-question';
-import { alreadyRated, isRatingSkipped, markRatingSkipped, markRatingSubmitted } from '@/services/ratingReminders';
+import { alreadyRated, isRatingSkipped, markRatingSkipped, markRatingSubmitted, ratingStillOwed } from '@/services/ratingReminders';
 import { CheckoutSheet } from '@/components/checkout-sheet';
 import { GoodsHoldCard, PickupCodeEditor, goodsReceiptLine } from '@/components/pickup-tracking';
 import { useHirePayment } from '@/hooks/use-hire-payment';
@@ -417,6 +422,19 @@ export default function TrackProviderScreen() {
   const [tipJobId, setTipJobId] = useState<string | null>(null);
   const [showCheckout, setShowCheckout] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
+  // Done: whether the customer still owes this job a rating (the server's
+  // pending list) — null until it's been asked. Rated already: no popup, no
+  // "Rate" button, only "Book again".
+  const [ratingOwed, setRatingOwed] = useState<boolean | null>(null);
+  const { data: appConfig } = useAppConfig();
+  // Whether chat and calls are open, as the server said on the job's detail —
+  // it alone knows about a guarantee fix reopening them (services/job-contact.ts).
+  const [serverContact, setServerContact] = useState<ServerContact | null>(null);
+  // Cancelled: who called it off, for the headline (services/tracking-stage.ts cancelledLine).
+  const [cancelCause, setCancelCause] = useState<string | null>(null);
+  // This screen has seen the job still going — so a cancel it sees next
+  // happened now and is worth a popup; one from before isn't.
+  const seenActiveRef = useRef(false);
   // Set when the job is permanently gone/inaccessible (404/403) — usually a
   // stale notification tap landing here after the job was cancelled/expired.
   // Without this, the screen just silently sits there with default
@@ -452,6 +470,38 @@ export default function TrackProviderScreen() {
   useEffect(() => {
     if (isFocused && jobId && isRatingSkipped(jobId)) setShowRatingModal(false);
   }, [isFocused, jobId]);
+
+  // Finished — done, or under review (both can be rated): is the rating still
+  // owed? Asked once, however the screen got here (a notification on a job
+  // done days ago, or watching it finish). Owed on a completed job: asked for
+  // once, unless skipped this session. Rated already: never asked again.
+  const completedNow = isCompleted || jobStatus === 'COMPLETED';
+  const finished = completedNow || jobStatus === 'DISPUTED';
+  // Done: whether "Book again" would be taken (the server's can_book_again —
+  // not for someone had through a business, or whose account is closing).
+  // Read once it's done: the first read may have been while it was under way.
+  const [bookAgainOk, setBookAgainOk] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!jobId || !completedNow || bookAgainOk !== null) return;
+    let cancelled = false;
+    SkoFyApi.jobs.get(jobId).then((j: any) => {
+      if (cancelled) return;
+      setServerContact(serverContactOf(j));
+      // An older server doesn't say: offered, as before.
+      setBookAgainOk(j?.can_book_again !== false);
+    }).catch(() => { if (!cancelled) setBookAgainOk(false); });
+    return () => { cancelled = true; };
+  }, [jobId, completedNow, bookAgainOk]);
+  useEffect(() => {
+    if (!jobId || !finished || ratingOwed !== null) return;
+    let cancelled = false;
+    void ratingStillOwed(jobId).then((owed) => {
+      if (cancelled) return;
+      setRatingOwed(owed);
+      if (owed && completedNow && !isRatingSkipped(jobId)) setShowRatingModal(true);
+    });
+    return () => { cancelled = true; };
+  }, [jobId, finished, completedNow, ratingOwed]);
   const { height: windowHeight } = useWindowDimensions();
   useOpenScreen('/track-provider', jobId, { jobId });
 
@@ -533,6 +583,7 @@ export default function TrackProviderScreen() {
         });
       }
       setVehicle(j.vehicle ?? null);
+      setServerContact(serverContactOf(j));
       if (j.lat != null && j.lng != null) {
         setDestination({ latitude: j.lat, longitude: j.lng });
       }
@@ -683,24 +734,32 @@ export default function TrackProviderScreen() {
         if (t.job_status === 'COMPLETED' && !hasShownCompletionRef.current) {
           hasShownCompletionRef.current = true;
           setIsCompleted(true);
-          if (!isRatingSkipped(jobId)) setShowRatingModal(true);
         }
-        // Pick up the provider cancelling from their own app — they need
-        // to see why, not just find themselves bounced back silently.
+        if (t.job_status === 'CANCELLED') setCancelCause(t.cancel_cause ?? null);
+        // Cancelled while this screen watched it (from the provider's app, or
+        // by the system): said, with why. Opened on a job cancelled before
+        // (a notification, My Jobs): the headline says it — no popup, which
+        // used to tell the customer "the provider cancelled" for their own cancel.
         if (t.job_status === 'CANCELLED' && !hasShownCancellationRef.current) {
           hasShownCancellationRef.current = true;
-          const reason = t.cancellation_reason ?? '';
-          const refused = reason.startsWith('Pickup refused');
-          appAlert.show(
-            'warning',
-            refused ? 'Pickup Not Completed' : 'Job Cancelled',
-            refused
-              ? `Your provider didn't take the item — ${reason.replace(/^Pickup refused:\s*/, '').toLowerCase()}. The job is cancelled and their trip fee is kept.\n\nIf that's wrong, contact support from Help.`
-              : t.cancellation_reason
-              ? `The provider cancelled this job. Reason: ${t.cancellation_reason}\n\nYou can view your job in My Jobs or post a new requirement.`
-              : 'The provider cancelled this job.\n\nYou can view your job in My Jobs or post a new requirement.',
-            [{ text: 'View My Jobs', onPress: () => router.replace('/my-jobs' as any) }],
-          );
+          if (seenActiveRef.current) {
+            const reason = t.cancellation_reason ?? '';
+            const refused = t.cancel_cause === 'PICKUP_REFUSED' || reason.startsWith('Pickup refused');
+            const byProvider = t.cancel_cause === 'PROVIDER' || t.cancel_cause === 'BUSINESS';
+            appAlert.show(
+              'warning',
+              refused ? 'Pickup Not Completed' : 'Job Cancelled',
+              refused
+                ? `Your provider didn't take the item — ${reason.replace(/^Pickup refused:\s*/, '').toLowerCase()}. The job is cancelled and their trip fee is kept.\n\nIf that's wrong, contact support from Help.`
+                : byProvider && t.cancellation_reason
+                ? `The provider cancelled this job. Reason: ${t.cancellation_reason}\n\nYou can view your job in My Jobs or post a new requirement.`
+                : `${cancelledLine(t.cancel_cause)}\n\nYou can view your job in My Jobs or post a new requirement.`,
+              [{ text: 'View My Jobs', onPress: () => router.replace('/my-jobs' as any) }],
+            );
+          }
+        }
+        if (t.job_status !== 'CANCELLED' && t.job_status !== 'COMPLETED' && t.job_status !== 'EXPIRED') {
+          seenActiveRef.current = true;
         }
         // The provider cancelled but other applicants were already in the
         // pool — the job goes back to DISTRIBUTED (not CANCELLED) so the
@@ -1115,13 +1174,26 @@ export default function TrackProviderScreen() {
       if (!alreadyRated(err)) throw err;
     }
     markRatingSubmitted(jobId);
+    setRatingOwed(false);
   };
 
-  const handleRatingModalClose = () => {
-    setShowRatingModal(false);
-    // Back to the existing Home, not a new copy of it stacked on top — the
-    // old one underneath could still be holding its own rating reminder.
-    router.dismissTo('/(tabs)/home' as any);
+  // Stays on this screen: done, it offers "Book again" (and "Rate" while owed).
+  const handleRatingModalClose = () => setShowRatingModal(false);
+
+  // The same "Book again" as Home's: describe the job, sent to this provider only.
+  const handleBookAgain = () => {
+    if (!provider) return;
+    router.dismissTo({
+      pathname: '/(tabs)/home',
+      params: { rebookProviderId: provider.id, rebookName: provider.name, rebookProfession: provider.role ?? '' },
+    } as any);
+  };
+
+  // A delivery done: another one goes through Home's Pickup & Delivery flow —
+  // offered only while that's switched on (app_configs modules.pickup_delivery).
+  const deliveriesOn = appConfig?.modules.pickup_delivery !== false;
+  const handleNewDelivery = () => {
+    router.dismissTo({ pathname: '/(tabs)/home', params: { triggerPickupDrop: 'true' } } as any);
   };
 
   const handleCompleteJob = async () => {
@@ -1131,6 +1203,7 @@ export default function TrackProviderScreen() {
       setJobStatus('COMPLETED');
       hasShownCompletionRef.current = true;
       setIsCompleted(true);
+      setRatingOwed(true);
       setShowRatingModal(true);
     } catch {
       // leave status as-is so the user can retry
@@ -1192,6 +1265,7 @@ export default function TrackProviderScreen() {
     hostedAtTheirPlace: steps.includes('CHECK_IN_CODE'),
     inCare: steps.includes('HANDBACK_CODE'),
     online,
+    cancelCause,
   });
   const stage: typeof stageNow = ready ? stageNow
     : { ...stageNow, key: 'on_the_way', title: 'Getting the latest…', subtitle: '', needsAction: false, moving: false };
@@ -1604,6 +1678,7 @@ export default function TrackProviderScreen() {
               <ProviderStrip
                 provider={provider}
                 vehicle={vehicle}
+                contactOpen={jobLoaded && contactOpenNow(isCompleted ? 'COMPLETED' : jobStatus, serverContact)}
                 onOpenProfile={openProfile}
                 onCall={handleCallProvider}
                 onChat={openChat}
@@ -1727,6 +1802,34 @@ export default function TrackProviderScreen() {
                     <ThemedText style={styles.completeJobBtnText}>Mark as completed</ThemedText>
                   </TouchableOpacity>
                 )
+              )}
+
+              {/* Done: work together again, and the rating while it's owed
+                  (under review: the rating only — not booking them again). */}
+              {provider && ((completedNow && (isDelivery ? deliveriesOn : bookAgainOk)) || ratingOwed) && (
+                <View style={styles.doneActions}>
+                  {completedNow && bookAgainOk && !isDelivery && (
+                    <TouchableOpacity style={[styles.completeJobBtn, styles.doneBtn]} onPress={handleBookAgain} accessibilityRole="button">
+                      <RotateCcw size={18} color="#111827" />
+                      <ThemedText style={styles.completeJobBtnText}>Book again</ThemedText>
+                    </TouchableOpacity>
+                  )}
+                  {/* A trip isn't booked from one provider: it goes to everyone
+                      available, through the Pickup & Delivery flow (its pickup
+                      point and the item check) — Home's own. */}
+                  {completedNow && isDelivery && deliveriesOn && (
+                    <TouchableOpacity style={[styles.completeJobBtn, styles.doneBtn]} onPress={handleNewDelivery} accessibilityRole="button">
+                      <Package size={18} color="#111827" />
+                      <ThemedText style={styles.completeJobBtnText}>New delivery</ThemedText>
+                    </TouchableOpacity>
+                  )}
+                  {ratingOwed && (
+                    <TouchableOpacity style={[styles.doneBtn, styles.rateBtn]} onPress={() => setShowRatingModal(true)} accessibilityRole="button">
+                      <Star size={18} color="#F59E0B" fill="#F59E0B" />
+                      <ThemedText style={styles.rateBtnText} numberOfLines={1}>Rate {provider.name.split(' ')[0] || 'your provider'}</ThemedText>
+                    </TouchableOpacity>
+                  )}
+                </View>
               )}
 
               {/* ── The fine print, one tap away ─────────────────────────── */}
@@ -1869,6 +1972,10 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
   etaSmall: { fontSize: 11.5, lineHeight: 15, fontFamily: Fonts.poppinsSemiBold, color: '#111827' },
   rule: { height: 1, backgroundColor: t.borderSubtle },
   quietLink: { alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 12 },
+  doneActions: { flexDirection: 'row', gap: 10 },
+  doneBtn: { flex: 1, height: 52, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  rateBtn: { backgroundColor: t.inputFilled },
+  rateBtnText: { fontSize: 15, lineHeight: 21, fontFamily: Fonts.poppinsBold, color: t.textPrimary },
   quietLinkText: { fontSize: 13.5, lineHeight: 19, fontFamily: Fonts.poppinsSemiBold, color: t.textSecondary, textDecorationLine: 'underline' },
   detailsBox: { borderTopWidth: 1, borderTopColor: t.borderSubtle },
   vehicleDetail: { flexDirection: 'row', alignItems: 'center', gap: 12 },
