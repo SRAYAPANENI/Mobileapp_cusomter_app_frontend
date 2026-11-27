@@ -23,11 +23,13 @@ const HOW_LONG: { value: HowLong; label: string }[] = [
   { value: 'DAYS', label: 'Over days' },
 ];
 
-const IN_CARE: { value: InCare; label: string }[] = [
-  { value: 'NONE', label: 'Nothing' },
-  { value: 'LIVING_BEING', label: 'A pet' },
-  { value: 'ITEM', label: 'An item' },
-  { value: 'HOME', label: 'My home' },
+// What's put in the provider's care — each said in one line under the
+// choice, since "My home" alone didn't say it means house-sitting.
+const IN_CARE: { value: InCare; label: string; hint: string }[] = [
+  { value: 'NONE', label: 'Nothing', hint: 'They do the work — nothing of yours is left with them.' },
+  { value: 'LIVING_BEING', label: 'A pet', hint: 'They look after your pet — sitting, walking or boarding.' },
+  { value: 'ITEM', label: 'An item', hint: 'You leave something of yours with them and get it back after.' },
+  { value: 'HOME', label: 'My home (house-sit)', hint: 'They look after your home while you’re away.' },
 ];
 
 const show = (iso: string | null) => iso
@@ -125,16 +127,19 @@ export function JobShapePicker({ value, onChange, pricing, venues, hosting = tru
 
       {value.where !== 'ONLINE' && (!rules || rules.inCares.length > 1) && (
         <>
-          <ThemedText style={s.question}>Leaving anything with them?</ThemedText>
+          <ThemedText style={s.question}>Leaving anything in their care?</ThemedText>
           <View style={[s.row, { flexWrap: 'wrap' }]}>
             {IN_CARE.filter((c) => (c.value !== 'HOME' || value.where === 'MY_PLACE')
               && (!rules || rules.inCares.includes(c.value))).map((c) => (
               <TouchableOpacity key={c.value} style={[s.chip, s.small, value.inCare === c.value && s.chipOn]}
-                onPress={() => set({ inCare: c.value })}>
+                onPress={() => set({ inCare: c.value })} accessibilityHint={c.hint}>
                 <ThemedText style={[s.chipText, value.inCare === c.value && s.chipTextOn]}>{c.label}</ThemedText>
               </TouchableOpacity>
             ))}
           </View>
+          {!!IN_CARE.find((c) => c.value === value.inCare) && (
+            <ThemedText style={s.hint}>{IN_CARE.find((c) => c.value === value.inCare)!.hint}</ThemedText>
+          )}
         </>
       )}
 

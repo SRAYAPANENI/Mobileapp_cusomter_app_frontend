@@ -705,6 +705,9 @@ export interface CheckoutBreakdown {
 /** The middle half of accepted quotes for a kind of job nearby (§11). */
 export interface PriceRange { low: number; typical: number; high: number; samples: number }
 
+/** Several skills charged by time, nearby (price_guide several_skills_guide). */
+export interface SeveralSkillsGuide extends PriceRange { unit: 'HOUR' | 'DAY' | 'NIGHT'; providers: number; sets_price: string | null }
+
 /** A repeat booking (§13). */
 export interface Series {
   id: string; title: string; provider_name: string | null; customer_name: string | null;
@@ -1698,6 +1701,11 @@ export const SkoFyApi = {
       request(`/price-guide?${skillIds.map((id) => `skill_id=${id}`).join('&')}&lat=${lat}&lng=${lng}`) as any,
     forJob: async (jobId: string): Promise<{ range: PriceRange | null; quote_level: 'BELOW' | 'TYPICAL' | 'ABOVE' | null }> =>
       request(`/price-guide/jobs/${jobId}`) as any,
+    /** Several skills charged by time: what providers nearby who do all of
+     *  them charge per unit (each at their highest among them), and the skill
+     *  that usually sets it — null with too few providers. */
+    forSeveral: async (skillIds: string[], unit: 'HOUR' | 'DAY' | 'NIGHT', lat: number, lng: number): Promise<SeveralSkillsGuide | null> =>
+      request(`/price-guide/several?${skillIds.map((id) => `skill_id=${id}`).join('&')}&unit=${unit}&lat=${lat}&lng=${lng}`) as any,
   },
 
   strikes: {

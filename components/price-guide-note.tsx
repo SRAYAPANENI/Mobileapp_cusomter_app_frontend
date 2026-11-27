@@ -1,6 +1,6 @@
 import { Text } from '@/components/scaled-text';
 import { Fonts } from '@/constants/theme';
-import { PriceRange, SkoFyApi } from '@/services/api';
+import { PriceRange, SeveralSkillsGuide, SkoFyApi } from '@/services/api';
 import { BadgeDollarSign } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -29,6 +29,44 @@ export function PriceGuideNote({ skillIds, lat, lng }: { skillIds: string[]; lat
       <Text style={s.text}>
         Usually {money(range.low)}–{money(range.high)} near you, from {range.samples} recent jobs. Your provider quotes
         the exact price after seeing the job.
+      </Text>
+    </View>
+  );
+}
+
+const UNIT_WORD = { HOUR: 'hour', DAY: 'day', NIGHT: 'night' } as const;
+
+/** A job of several skills charged by the hour, day or night: it's charged
+ * once, at the provider's highest price among them. Before posting, what that
+ * comes to near you, and which skill's price it usually is. Nothing when too
+ * few providers nearby do all of them to say. */
+export function SeveralSkillsPriceNote({ skillIds, unit, lat, lng }: {
+  skillIds: string[]; unit: string | null; lat: number | null; lng: number | null;
+}) {
+  const [guide, setGuide] = useState<SeveralSkillsGuide | null>(null);
+  const key = skillIds.join(',');
+  const timed = unit === 'HOUR' || unit === 'DAY' || unit === 'NIGHT' ? unit : null;
+
+  useEffect(() => {
+    if (skillIds.length < 2 || !timed || lat == null || lng == null) { setGuide(null); return; }
+    let live = true;
+    SkoFyApi.priceGuide.forSeveral(key.split(','), timed, lat, lng)
+      .then((g) => { if (live) setGuide(g); })
+      .catch(() => { if (live) setGuide(null); });
+    return () => { live = false; };
+    // skillIds is read through key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, timed, lat, lng]);
+
+  if (!guide) return null;
+  const per = UNIT_WORD[guide.unit];
+  const range = guide.low === guide.high ? `${money(guide.low)}` : `${money(guide.low)}–${money(guide.high)}`;
+  return (
+    <View style={s.box}>
+      <BadgeDollarSign size={16} color="#065F46" />
+      <Text style={s.text}>
+        Usually {range} per {per} near you, from {guide.providers} providers who do all of these.
+        {guide.sets_price ? ` The ${guide.sets_price} price is usually the highest, so it sets the rate.` : ''}
       </Text>
     </View>
   );

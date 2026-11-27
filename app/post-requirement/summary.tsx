@@ -1,5 +1,5 @@
 import { ThemedText } from '@/components/themed-text';
-import { PriceGuideNote } from '@/components/price-guide-note';
+import { PriceGuideNote, SeveralSkillsPriceNote } from '@/components/price-guide-note';
 import { useAppConfig } from '@/services/queries/app-config';
 import { JobShapePicker } from '@/components/job-shape-picker';
 import { CareSheetForm } from '@/components/care-sheet-form';
@@ -453,6 +453,11 @@ export default function JobSummaryScreen() {
                 ) : sent ? null : (
                   <>
                     {!!note && <ThemedText style={styles.severalHint}>{note}</ThemedText>}
+                    {/* Charged at the highest of its skills' prices: what that comes to near here. */}
+                    {!remote && (
+                      <SeveralSkillsPriceNote skillIds={g.skills.map((sk) => sk.id)} unit={g.pricing}
+                        lat={data.lat ?? null} lng={data.lng ?? null} />
+                    )}
                     <JobShapePicker value={choice} onChange={(next) => changeChoice(g, next)} pricing={groupPricing(g)} venues={groupVenues(g)} hosting={hosting} />
                     <CareSheetForm custody={choice.inCare} value={careOf(g)} onChange={(next) => changeCare(g, next)} />
                   </>
