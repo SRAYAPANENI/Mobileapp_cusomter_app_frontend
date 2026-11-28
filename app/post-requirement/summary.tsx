@@ -453,8 +453,9 @@ export default function JobSummaryScreen() {
                 ) : sent ? null : (
                   <>
                     {!!note && <ThemedText style={styles.severalHint}>{note}</ThemedText>}
-                    {/* Charged at the highest of its skills' prices: what that comes to near here. */}
-                    {!remote && (
+                    {/* Charged at the highest of its skills' prices: what that comes to near here
+                        (not for online work, done from anywhere). */}
+                    {choice.where !== 'ONLINE' && (
                       <SeveralSkillsPriceNote skillIds={g.skills.map((sk) => sk.id)} unit={g.pricing}
                         lat={data.lat ?? null} lng={data.lng ?? null} />
                     )}

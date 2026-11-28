@@ -28,7 +28,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Dimensions, FlatList, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { TextInput } from '@/components/scaled-text';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import Animated, { FadeIn, FadeInUp, SlideInUp } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 import { fitBottom, padBottom, useBottomInset } from '@/hooks/use-bottom-inset';
 import AnimatedLogoMark from '@/components/animated-logo-mark';
 
@@ -434,7 +434,7 @@ export default function VerifyProblemScreen() {
       {/* Profession Selection Modal */}
       <Popup closeOn="outside" statusBarTranslucent navigationBarTranslucent visible={showProfessionModal} animationType="slide" transparent onClose={() => setShowProfessionModal(false)}>
         <KeyboardAvoidingView style={styles.modalOverlay} behavior="padding" automaticOffset>
-          <Animated.View onStartShouldSetResponder={() => true} entering={SlideInUp} style={padBottom(styles.modalContent, bottomInset)}>
+          <View onStartShouldSetResponder={() => true} style={padBottom(styles.modalContent, bottomInset)}>
             <View style={styles.modalHeader}>
               <ThemedText style={styles.modalTitle}>Select Profession</ThemedText>
               <TouchableOpacity onPress={() => setShowProfessionModal(false)}>
@@ -482,14 +482,14 @@ export default function VerifyProblemScreen() {
               style={{ maxHeight: 300 }}
             />
             <SheetBottomFill color={themeColors.modalBackground} />
-          </Animated.View>
+          </View>
         </KeyboardAvoidingView>
       </Popup>
 
       {/* Skills Selection Modal */}
       <Popup closeOn="outside" statusBarTranslucent navigationBarTranslucent visible={showSkillsModal} animationType="slide" transparent onClose={() => setShowSkillsModal(false)}>
         <View style={styles.modalOverlay}>
-          <Animated.View onStartShouldSetResponder={() => true} entering={SlideInUp} style={padBottom(styles.modalContent, bottomInset)}>
+          <View onStartShouldSetResponder={() => true} style={padBottom(styles.modalContent, bottomInset)}>
             <View style={styles.modalHeader}>
               <ThemedText style={styles.modalTitle}>Edit Skills</ThemedText>
               <TouchableOpacity onPress={() => setShowSkillsModal(false)}>
@@ -534,7 +534,7 @@ export default function VerifyProblemScreen() {
               <ThemedText style={styles.doneButtonText}>Update Skills</ThemedText>
             </TouchableOpacity>
             <SheetBottomFill color={themeColors.modalBackground} />
-          </Animated.View>
+          </View>
         </View>
       </Popup>
 
@@ -952,7 +952,9 @@ function makeStyles(t: typeof Colors.light) { return StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
-    marginBottom: 32,
+    // The button's own top margin is the space to it: 32 here as well left a
+    // gap of nearly 50 under the last skill.
+    marginBottom: 8,
   },
   modalSkillChip: {
     paddingHorizontal: 16,

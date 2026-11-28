@@ -75,10 +75,8 @@ export function groupPriceNote(g: SkillGroup): string | null {
   switch (g.pricing) {
     case 'QUOTE': return g.skills.some((s) => s.pricing === 'VISIT') ? 'One quote covers everything here.' : null;
     case 'VISIT': return 'Each skill’s price is added up. Only providers who do all of these can take it.';
-    case 'HOUR': case 'DAY': case 'NIGHT': {
-      const per = g.pricing === 'HOUR' ? 'hour' : g.pricing === 'DAY' ? 'day' : 'night';
-      return `Not added up: charged once, at the provider’s highest per-${per} price among these skills. Only providers who do all of these can take it.`;
-    }
+    case 'HOUR': case 'DAY': case 'NIGHT':
+      return 'Not added up: charged once, at the provider’s price for whichever of these skills costs the most. Only providers who do all of these can take it.';
     default: return null;
   }
 }

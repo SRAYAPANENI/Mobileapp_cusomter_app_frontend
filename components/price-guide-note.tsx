@@ -65,7 +65,7 @@ export function SeveralSkillsPriceNote({ skillIds, unit, lat, lng }: {
     <View style={s.box}>
       <BadgeDollarSign size={16} color="#065F46" />
       <Text style={s.text}>
-        Usually {range} per {per} near you, from {guide.providers} providers who do all of these.
+        Usually about {range} per {per} near you, from {guide.providers} providers who do all of these.
         {guide.sets_price ? ` The ${guide.sets_price} price is usually the highest, so it sets the rate.` : ''}
       </Text>
     </View>
